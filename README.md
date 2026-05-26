@@ -4,22 +4,6 @@ Mi9 LLC public catalog of Claude Code Agent Skills.
 
 > **⚠️ Important:** Make sure you trust a skill before installing or running it. Skills can execute commands and read your files when triggered.
 
-## How installation works
-
-Install any skill in this catalog with [`skills`](https://www.npmjs.com/package/skills):
-
-```
-npx skills add https://github.com/Mi9-LLC/agent-skills --skill <skill-name>
-```
-
-To pin to a specific released version (recommended for production use):
-
-```
-npx skills add https://github.com/Mi9-LLC/agent-skills --skill <skill-name> --ref v1.0.0
-```
-
-The repo is public — no auth, no tokens. Per-skill install commands and behavior details are in each section below.
-
 ## Skills at a glance
 
 | Skill | What it does |
