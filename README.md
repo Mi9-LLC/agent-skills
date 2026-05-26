@@ -9,13 +9,13 @@ Mi9 LLC public catalog of Claude Code Agent Skills.
 Install any skill in this catalog with [`skills`](https://www.npmjs.com/package/skills):
 
 ```
-npx skills add https://github.com/Mi9Retail-ULC/skills --skill <skill-name>
+npx skills add https://github.com/Mi9-LLC/agent-skills --skill <skill-name>
 ```
 
 To pin to a specific released version (recommended for production use):
 
 ```
-npx skills add https://github.com/Mi9Retail-ULC/skills --skill <skill-name> --ref v1.0.0
+npx skills add https://github.com/Mi9-LLC/agent-skills --skill <skill-name> --ref v1.0.0
 ```
 
 The repo is public — no auth, no tokens. Per-skill install commands and behavior details are in each section below.
@@ -45,7 +45,7 @@ The repo is public — no auth, no tokens. Per-skill install commands and behavi
 **Install.**
 
 ```
-npx skills add https://github.com/Mi9Retail-ULC/skills --skill security-vulnerability-scan
+npx skills add https://github.com/Mi9-LLC/agent-skills --skill security-vulnerability-scan
 ```
 
 **Full definition:** [`skills/security-vulnerability-scan/SKILL.md`](skills/security-vulnerability-scan/SKILL.md) (plus per-category reference docs under `references/`).
@@ -67,7 +67,7 @@ npx skills add https://github.com/Mi9Retail-ULC/skills --skill security-vulnerab
 **Install.**
 
 ```
-npx skills add https://github.com/Mi9Retail-ULC/skills --skill anti-sycophancy
+npx skills add https://github.com/Mi9-LLC/agent-skills --skill anti-sycophancy
 ```
 
 **Full definition:** [`skills/anti-sycophancy/SKILL.md`](skills/anti-sycophancy/SKILL.md).

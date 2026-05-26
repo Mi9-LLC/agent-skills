@@ -4,10 +4,10 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Repository purpose
 
-This is the **Mi9 LLC public catalog of Claude Code Agent Skills**, hosted on GitHub at `github.com/Mi9Retail-ULC/skills`. Teammates and external users install individual skills with:
+This is the **Mi9 LLC public catalog of Claude Code Agent Skills**, hosted on GitHub at `github.com/Mi9-LLC/agent-skills`. Teammates and external users install individual skills with:
 
 ```
-npx skills add https://github.com/Mi9Retail-ULC/skills --skill <skill-name>
+npx skills add https://github.com/Mi9-LLC/agent-skills --skill <skill-name>
 ```
 
 It is **not** application code. There is no build, test, or lint pipeline — the entire repo is Markdown skill definitions. Do not invent commands; there are none to run.
