@@ -9,6 +9,7 @@ Mi9 LLC public catalog of Claude Code Agent Skills.
 | Skill | What it does |
 |---|---|
 | [`security-vulnerability-scan`](#security-vulnerability-scan) | [OWASP Top 10:2025](https://owasp.org/Top10/2025/) static scan of any codebase; writes `audit/<YYYY-MM-DD>/report.md`. |
+| [`live-app-security-audit`](#live-app-security-audit) | Runtime audit of a deployed live URL — headers, TLS, bundle secrets, localStorage tokens, open endpoints, login rate-limit, account enumeration; writes `audit/<YYYY-MM-DD>/live-audit.md`. |
 | [`anti-sycophancy`](#anti-sycophancy) | Behavioral mode for review/feedback/decision asks. Argues the opposing case first, names untested assumptions, refuses reflexive agreement. No file output. |
 
 ---
@@ -32,7 +33,33 @@ Mi9 LLC public catalog of Claude Code Agent Skills.
 npx skills add https://github.com/Mi9-LLC/agent-skills --skill security-vulnerability-scan
 ```
 
+**Pairs with.** [`live-app-security-audit`](#live-app-security-audit) — the runtime counterpart. This skill reads the source tree; `live-app-security-audit` probes the deployed instance. Run both for full coverage. Their reports land side-by-side under `audit/<YYYY-MM-DD>/`.
+
 **Full definition:** [`skills/security-vulnerability-scan/SKILL.md`](skills/security-vulnerability-scan/SKILL.md) (plus per-category reference docs under `references/`).
+
+---
+
+## `live-app-security-audit`
+
+**What it does.** Runtime security audit of a deployed, live web application. Walks seven checks against the running target — security headers, TLS / SSL Labs grade, frontend-bundle secret search (including the Supabase anon-vs-`service_role` triage), `localStorage` / `sessionStorage` token exposure, unauthenticated network endpoint inspection, login rate-limiting, and password-reset / login username enumeration — and writes a structured assessment to disk.
+
+**Use it for.** Auditing a "vibe-coded" SPA you just shipped, verifying that build-time env vars didn't leak into the bundle, sanity-checking the production headers/TLS posture, and probing the most common runtime weaknesses on small / fast-shipped apps. Designed to be the runtime counterpart to `security-vulnerability-scan` — run both for full coverage.
+
+**Triggers on phrases like.** "audit my live site", "audit https://…", "scan my deployed app", "are my API keys in the bundle", "Supabase anon key exposed", "check my security headers", "what's my SSL Labs grade", "JWT in localStorage", "test my login rate limit", "password reset enumeration", "vibe-coded app security check", "production security audit", "runtime security check".
+
+**What it does not do.** Touch the live app's data. Run any active probe (rate-limit, enumeration) without an explicit authorization gate at Step 0. Continue against third-party targets — if the user can't confirm ownership or authorization, the skill stops.
+
+**What it produces.**
+- A Markdown report at `<project-root>/audit/<YYYY-MM-DD>/live-audit.md` with severity-ranked findings (Critical / High / Medium / Low / Informational), CWE mappings, exact evidence (redacted), attack scenarios, remediations, and a prioritized fix list. Mirrors `security-vulnerability-scan`'s report format so the two live side-by-side under `audit/<date>/`.
+- **Read-only on the user's source tree.** Writes only to `audit/`. Never sends payloads beyond the documented probes; uses RFC-reserved `.invalid` email addresses for active probes so no real account is touched.
+
+**Install.**
+
+```
+npx skills add https://github.com/Mi9-LLC/agent-skills --skill live-app-security-audit
+```
+
+**Full definition:** [`skills/live-app-security-audit/SKILL.md`](skills/live-app-security-audit/SKILL.md) (plus per-check reference docs under `references/`).
 
 ---
 

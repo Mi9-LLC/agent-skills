@@ -24,6 +24,7 @@ There are no plugin manifests, no `.claude-plugin/` directory, and no top-level 
 ## Current skills
 
 - **`security-vulnerability-scan`** (`skills/security-vulnerability-scan/`) — OWASP Top 10:2025 static scanner. **Read-only on the target source tree**; writes only `audit/<YYYY-MM-DD>/report.md`. Never modifies source files, configs, lockfiles, or `.gitignore` of the repo being scanned.
+- **`live-app-security-audit`** (`skills/live-app-security-audit/`) — Runtime audit of a deployed live URL. Seven checks: security headers, TLS, frontend-bundle secret search, localStorage tokens, unauthenticated endpoints, login rate-limit, username enumeration. **Read-only on the user's source tree**; writes only `audit/<YYYY-MM-DD>/live-audit.md` (mirrors `security-vulnerability-scan`'s path, so both reports live side-by-side). Active probes (rate-limit, enumeration) require explicit target-authorization at Step 0; uses RFC-reserved `.invalid` emails for probes. Designed as the runtime counterpart to `security-vulnerability-scan`.
 - **`anti-sycophancy`** (`skills/anti-sycophancy/`) — Behavioral skill that swaps Claude into critical-thinking-partner mode for review/feedback/decision asks. Argues the strongest opposing case first, names untested assumptions, surfaces weaknesses before strengths, ends with a sit-with question. **No file output, no tool access** — purely shapes how Claude responds. Trigger description carved by `skill-creator`'s description-optimization loop against an Opus 4.7 eval set.
 
 ## Contributing
