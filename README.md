@@ -11,6 +11,7 @@ Mi9 LLC public catalog of Claude Code Agent Skills.
 | [`security-vulnerability-scan`](#security-vulnerability-scan) | [OWASP Top 10:2025](https://owasp.org/Top10/2025/) static scan of any codebase; writes `audit/<YYYY-MM-DD>/report.md`. |
 | [`live-app-security-audit`](#live-app-security-audit) | Runtime audit of a deployed live URL — headers, TLS, bundle secrets, localStorage tokens, open endpoints, login rate-limit, account enumeration; writes `audit/<YYYY-MM-DD>/live-audit.md`. |
 | [`anti-sycophancy`](#anti-sycophancy) | Behavioral mode for review/feedback/decision asks. Argues the opposing case first, names untested assumptions, refuses reflexive agreement. No file output. |
+| [`update-dependencies`](#update-dependencies) | Research-first dependency updates for any JS/TS project (npm/pnpm/yarn/bun, single-package or monorepo). Reads real release notes, migrates code, verifies with quality gates. Manual-only (`/update-dependencies`). |
 
 ---
 
@@ -82,6 +83,35 @@ npx skills add https://github.com/Mi9-LLC/agent-skills --skill anti-sycophancy
 ```
 
 **Full definition:** [`skills/anti-sycophancy/SKILL.md`](skills/anti-sycophancy/SKILL.md).
+
+---
+
+## `update-dependencies`
+
+**What it does.** Research-first dependency updater for any JavaScript/TypeScript project. Detects the package manager (npm, pnpm, yarn Classic, yarn Berry, or bun) and workspace layout automatically, then classifies outdated packages into safe (patch/minor) and major groups, bulk-applies safe bumps with a green gate, and handles each major group individually — fetching real release notes and changelogs before touching anything, migrating code for breaking changes, reverting groups that won't go green, and producing a structured report.
+
+**Use it for.** Keeping a project current without the manual archaeology of reading every changelog yourself. Good for periodic maintenance runs, pre-release dependency sweeps, or scoped single-package upgrades that need safe migration of breaking changes.
+
+**Invocation.** This skill is **never auto-triggered** (`disable-model-invocation: true`). Invoke it explicitly:
+
+```
+/update-dependencies                    # update everything outdated
+/update-dependencies zod                # scope to one package (+ its lockstep ecosystem)
+/update-dependencies react vitest       # scope to multiple packages
+```
+
+**What it produces.**
+- A safety branch `agent/update-dependencies/<timestamp>-<rand>` created from the auto-detected default branch. All changes land there — your working branch is never touched.
+- A structured end-of-run report: Updated / Migrated / Skipped-Reverted / Warnings / Branch.
+- **Never commits or pushes.** The branch is yours to review, squash, and merge on your own schedule.
+
+**Install.**
+
+```
+npx skills add https://github.com/Mi9-LLC/agent-skills --skill update-dependencies
+```
+
+**Full definition:** [`skills/update-dependencies/SKILL.md`](skills/update-dependencies/SKILL.md) (plus per-PM command reference and lockstep-ecosystem table under `references/`).
 
 ---
 
