@@ -8,10 +8,9 @@ for a set of queries. Outputs results as JSON.
 import argparse
 import json
 import os
-import queue
+import select
 import subprocess
 import sys
-import threading
 import time
 import uuid
 from concurrent.futures import ProcessPoolExecutor, as_completed
@@ -66,7 +65,7 @@ def run_single_query(
             f"# {skill_name}\n\n"
             f"This skill handles: {skill_description}\n"
         )
-        command_file.write_text(command_content, encoding="utf-8")
+        command_file.write_text(command_content)
 
         cmd = [
             "claude",
@@ -89,26 +88,7 @@ def run_single_query(
             stderr=subprocess.DEVNULL,
             cwd=project_root,
             env=env,
-            bufsize=0,
         )
-
-        # Use a background thread to read stdout — select.select on pipes
-        # is POSIX-only; on Windows it raises WinError 10038 ("not a socket").
-        line_queue: queue.Queue = queue.Queue()
-
-        def _reader():
-            try:
-                while True:
-                    chunk = process.stdout.read(8192)
-                    if not chunk:
-                        line_queue.put(None)
-                        return
-                    line_queue.put(chunk)
-            except Exception:
-                line_queue.put(None)
-
-        reader_thread = threading.Thread(target=_reader, daemon=True)
-        reader_thread.start()
 
         triggered = False
         start_time = time.time()
@@ -119,17 +99,19 @@ def run_single_query(
 
         try:
             while time.time() - start_time < timeout:
-                try:
-                    chunk = line_queue.get(timeout=1.0)
-                except queue.Empty:
-                    if process.poll() is not None:
-                        # process gone and queue drained
-                        break
-                    continue
-
-                if chunk is None:
+                if process.poll() is not None:
+                    remaining = process.stdout.read()
+                    if remaining:
+                        buffer += remaining.decode("utf-8", errors="replace")
                     break
 
+                ready, _, _ = select.select([process.stdout], [], [], 1.0)
+                if not ready:
+                    continue
+
+                chunk = os.read(process.stdout.fileno(), 8192)
+                if not chunk:
+                    break
                 buffer += chunk.decode("utf-8", errors="replace")
 
                 while "\n" in buffer:
