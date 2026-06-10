@@ -12,6 +12,7 @@ Mi9 LLC public catalog of Claude Code Agent Skills.
 | [`live-app-security-audit`](#live-app-security-audit) | Runtime audit of a deployed live URL — headers, TLS, bundle secrets, localStorage tokens, open endpoints, login rate-limit, account enumeration; writes `audit/<YYYY-MM-DD>/live-audit.md`. |
 | [`anti-sycophancy`](#anti-sycophancy) | Behavioral mode for review/feedback/decision asks. Argues the opposing case first, names untested assumptions, refuses reflexive agreement. No file output. |
 | [`update-dependencies`](#update-dependencies) | Research-first dependency updates for any JS/TS project (npm/pnpm/yarn/bun, single-package or monorepo). Reads real release notes, migrates code, verifies with quality gates. Manual-only (`/update-dependencies`). |
+| [`convert-plan-to-feature`](#convert-plan-to-feature) | Decompose an approved plan into a folder of independently-trackable per-feature spec files — `REQUIREMENTS.md` index + one `features/NN - <name>.md` per unit of work, each with requirements, ordered implementation steps, acceptance criteria, and dependencies. |
 
 ---
 
@@ -112,6 +113,29 @@ npx skills add https://github.com/Mi9-LLC/agent-skills --skill update-dependenci
 ```
 
 **Full definition:** [`skills/update-dependencies/SKILL.md`](skills/update-dependencies/SKILL.md) (plus per-PM command reference and lockstep-ecosystem table under `references/`).
+
+---
+
+## `convert-plan-to-feature`
+
+**What it does.** Takes a finished, approved plan — from plan mode, a conversation, or an existing file under `docs/plans/` — and decomposes it into a folder of independently-trackable per-feature spec files. The plan answered *what* and *why*; this skill produces the *per-unit-of-work execution surface*: a `REQUIREMENTS.md` index (context, blast radius, locked decisions, consolidated cross-cutting catalogs, deploy ordering, feature table with suggested models, test strategy, open questions) plus one `features/NN - <name>.md` per unit of work (requirement, ordered implementation steps with real file paths, objectively checkable acceptance criteria, dependency/risk notes).
+
+**Use it for.** Decomposing complex plans so a team or a fleet of implementation agents can pick up one feature at a time without re-reading the whole plan. Each feature file is separately assignable, reviewable, and closeable.
+
+**Triggers on phrases like.** "convert this plan into features", "split the plan up", "break this into per-feature files", "turn the plan into implementation specs", "make a feature breakdown", "decompose the plan", "create feature tickets from this plan", or any request to take a single big plan and produce one trackable file per feature.
+
+**What it produces.**
+- `docs/plans/<initiative>/REQUIREMENTS.md` — the shared index: context, blast radius, locked decisions, cross-cutting catalogs (wire-contract/enum tables, message types, error codes), deploy ordering, feature table with suggested models, test strategy, and open questions.
+- `docs/plans/<initiative>/features/NN - <Feature Name>.md` — one file per feature: requirement, ordered technical steps with real file paths, objectively checkable acceptance criteria, and dependency/risk notes.
+- **Planning documents only — no implementation.** The skill stops when the specs are written.
+
+**Install.**
+
+```
+npx skills add https://github.com/Mi9-LLC/agent-skills --skill convert-plan-to-feature
+```
+
+**Full definition:** [`skills/convert-plan-to-feature/SKILL.md`](skills/convert-plan-to-feature/SKILL.md) · **README:** [`skills/convert-plan-to-feature/README.md`](skills/convert-plan-to-feature/README.md).
 
 ---
 
