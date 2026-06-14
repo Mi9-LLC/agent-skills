@@ -4,7 +4,7 @@
 **External references:**
 - https://www.ssllabs.com/projects/best-practices/
 - https://wiki.mozilla.org/Security/Server_Side_TLS
-- https://api.ssllabs.com/api/v3/info — JSON API for programmatic scans
+- https://api.ssllabs.com/api/v3/analyze — JSON API for programmatic scans
 - https://datatracker.ietf.org/doc/html/rfc8996 — TLS 1.0/1.1 deprecation
 
 ## Description
@@ -12,6 +12,10 @@
 TLS is the perimeter for every request. Modern browsers refuse to connect over TLS 1.0/1.1 — but custom clients, mobile apps, and middleboxes still do. A site supporting weak protocols isn't usually exploited via the browser; it's exploited via lateral attackers on the same network downgrading non-browser clients (mobile push, CI calls, webhooks). Cert expiry is the other live failure mode: an expired cert breaks the app for everyone with no remediation faster than reissue, and a near-expiry cert (< 14 days) is a same-week incident waiting to happen.
 
 The ssllabs.com SSL Server Test is the de-facto runtime check. Its JSON API gives the same grade and detail without scraping HTML. Grade A or better is the modern bar; A+ requires HSTS-preload + clean chain + perfect cipher list.
+
+**API status (June 2026):** the SSL Labs **API v3 is deprecated** (since Jan 2024) but remains live and registration-free — it may be withdrawn without notice. **v4 requires registration** and an `email` request header (free-mail addresses rejected). Use the `/api/v3/analyze` endpoint while it lasts; if it disappears, fall back to a local scanner (`testssl.sh`, `sslyze`) against the reachable host.
+
+**Certificate lifetimes are shrinking (CA/Browser Forum SC-081v3):** the max public-cert validity is **200 days since 2026-03-15**, stepping down to **100 days in 2027** and **47 days in 2029**. Manual renewals will no longer be viable at these intervals — **renewal automation (ACME / cert-manager) is mandatory**, not optional.
 
 ## What to check
 

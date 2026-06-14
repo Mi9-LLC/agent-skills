@@ -42,7 +42,7 @@ Run this before anything else; everything downstream depends on it. Read `refere
 - **Workspace layout:** `pnpm-workspace.yaml`, or a `workspaces` field in the root `package.json` → monorepo; otherwise single-package.
 - **Runtime target:** derive from `engines.node`, then `.nvmrc`, then `.node-version`. If none exist, fall back to the major of `node --version` and NOTE that fallback in the final report. `@types/node` is capped at the detected major.
 - **Quality gates:** inspect root `package.json` `scripts` and take whichever of `build` / `typecheck` / `lint` / `test` exist, plus common aliases (`check`, `test:unit`). Gates that don't exist are skipped AND reported as missing in the final report.
-- **Manifest discovery:** use the Glob tool with `**/package.json`, excluding `node_modules` and build-output dirs. Note which manifest declares each dependency; the root manifest carries `packageManager` and any overrides (`pnpm.overrides` / `overrides` / `resolutions`).
+- **Manifest discovery:** use the Glob tool with `**/package.json`, excluding `node_modules` and build-output dirs. Note which manifest declares each dependency; the root manifest carries `packageManager` and any overrides (`pnpm.overrides` / `overrides` / `resolutions`). For pnpm 11+, overrides may live in `pnpm-workspace.yaml` instead of (or in addition to) `package.json` — check both locations.
 
 ## Preflight
 
@@ -81,7 +81,11 @@ pnpm install
 pnpm build && pnpm typecheck && pnpm lint && pnpm test   # run the gates that exist
 ```
 
-The in-range bulk update only moves versions within declared ranges, so re-run the outdated command afterwards: any remaining non-major bump held back by a `~` or exact range needs an explicit bump-to-version (the per-PM "explicit bump" form in the reference — e.g. `pnpm up -rL <pkg>@<target>`), or it will silently never update. Note that npm (v7+) also rewrites the manifest ranges for direct deps during the bulk update — review the manifest diff; that is expected, not an error (see the reference).
+The in-range bulk update only moves versions within declared ranges, so re-run the outdated command afterwards: any remaining non-major bump held back by a `~` or exact range needs an explicit bump-to-version (the per-PM "explicit bump" form in the reference — e.g. `pnpm up -rL <pkg>@<target>`), or it will silently never update.
+
+**Manifest-rewrite behaviour differs by PM:** pnpm rewrites direct-dependency version ranges in `package.json` during `pnpm up -r` (expected; use `--no-save` to opt out). npm (`npm update`) does **not** rewrite the manifest by default — pass `--save` if you want it to. Review the manifest diff after the bulk pass regardless of PM.
+
+**Release-age gating:** some package managers hold back freshly published versions by policy (pnpm 11 defaults to a 1-day `minimumReleaseAge`; npm has `min-release-age` settings; yarn has `--no-time-gate`; bun has `install.minimumReleaseAge`). If a version that should be available appears missing or held back, this is policy, not an error — report it in the final report and do not attempt to force past it.
 
 **yarn Berry has no in-range-only bulk command** — `yarn up` resolves to latest and crosses majors, which would break this step's safe-baseline guarantee. On a Berry repo, skip the bulk pass and instead bump each non-major outdated package explicitly (`yarn up <pkg>@<target>`), then treat every major via Step 4 as usual.
 
@@ -100,8 +104,8 @@ For each major bump (or lockstep group) — in a monorepo, process **upstream wo
 
 ## Step 5 — Root metadata
 
-- **`packageManager` / corepack** (only when the project pins a package manager; corepack applies to pnpm and yarn only): check `npm view <pm> version`; if newer, update the pin (e.g. `corepack use pnpm@latest`).
-- **Overrides** — `pnpm.overrides` (pnpm), `overrides` (npm; root manifest only), `resolutions` (yarn). Confirm every override still matches the now-installed versions. Overrides fail in both directions — a stale exact override silently pins transitive deps to old versions, and a loose range override (e.g. `>=0.27.2`) silently advances them across breaking boundaries (for 0.x packages even a minor is breaking). Check what the lockfile actually resolved for each override, not just the manifests, and disclose any override-driven jump in the report.
+- **`packageManager` / corepack** (only when the project pins a package manager; corepack applies to pnpm and yarn only): check `npm view <pm> version`; if newer, update the pin (e.g. `corepack use pnpm@latest`). **Important:** corepack is only available where explicitly installed — it was bundled with Node.js experimentally through Node 24, but is **not** bundled with Node 25+. If the project uses `devEngines.packageManager` (supported by npm ≥10.9 and pnpm 11), prefer updating that field as the modern pin. If corepack is not on PATH, fall back to the on-PATH PM binary and note it in the report.
+- **Overrides** — `pnpm.overrides` (pnpm pre-11: `package.json`; pnpm 11+: `pnpm-workspace.yaml` — check both during the transition), `overrides` (npm; root manifest only), `resolutions` (yarn). Confirm every override still matches the now-installed versions. Overrides fail in both directions — a stale exact override silently pins transitive deps to old versions, and a loose range override (e.g. `>=0.27.2`) silently advances them across breaking boundaries (for 0.x packages even a minor is breaking). Check what the lockfile actually resolved for each override, not just the manifests, and disclose any override-driven jump in the report.
 
 ## Step 6 — Clean rebuild
 

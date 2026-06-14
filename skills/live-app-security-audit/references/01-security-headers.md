@@ -9,19 +9,23 @@
 
 ## Description
 
-HTTP response headers are the browser's instruction set for what scripts can run, what origins can frame the page, whether to trust the connection in the future, whether to treat MIME types loosely, and which referrer information to leak. The browser obeys these headers per-response, so missing one anywhere on the origin partially undoes the protection elsewhere. The 2025 baseline for any auth-bearing site is the seven-header set evaluated by securityheaders.com — Strict-Transport-Security, Content-Security-Policy, X-Frame-Options (or CSP `frame-ancestors`), X-Content-Type-Options, Referrer-Policy, Permissions-Policy, and properly-flagged session cookies. Anything less leaves measurable browser-level attack surface that no amount of backend hardening can close.
+HTTP response headers are the browser's instruction set for what scripts can run, what origins can frame the page, whether to trust the connection in the future, whether to treat MIME types loosely, and which referrer information to leak. The browser obeys these headers per-response, so missing one anywhere on the origin partially undoes the protection elsewhere. The current baseline for any auth-bearing site is the seven-header set evaluated by securityheaders.com — Strict-Transport-Security, Content-Security-Policy, CSP `frame-ancestors` (with `X-Frame-Options` as a legacy fallback), X-Content-Type-Options, Referrer-Policy, Permissions-Policy, and properly-flagged session cookies. Anything less leaves measurable browser-level attack surface that no amount of backend hardening can close.
+
+> **securityheaders.com caveat:** the grading site **403s generic / non-browser User-Agents** (and its paid API was retired April 2026). When cross-checking via `curl`, spoof a browser `User-Agent`; if still blocked, grade directly from the live `curl -sI` response headers and mark the cross-check skipped.
 
 These headers are runtime-only: a static scan of the source can find that `helmet()` is wired up, but only a live response confirms the headers actually emit on the deployed CDN / reverse-proxy / framework configuration.
 
 ## What to check
 
-- `Strict-Transport-Security` present with `max-age` ≥ 6 months (`15552000`), and `includeSubDomains` on apex domains. Absence on an HTTPS site is **High** if auth runs there.
+- `Strict-Transport-Security` present with `max-age` ≥ 1 year (`31536000`, the practical minimum); OWASP recommends `max-age=63072000` (2 years) with `preload`, and `includeSubDomains` on apex domains. Absence on an HTTPS site is **High** if auth runs there.
 - `Content-Security-Policy` present and meaningful. Look for:
   - `default-src 'self'` (or stricter) and a non-`*` script-src.
-  - **No `'unsafe-inline'` in `script-src`** — in 2025, use nonces or hashes.
+  - **No `'unsafe-inline'` in `script-src`** — use nonces or hashes.
   - No `'unsafe-eval'` unless explicitly required (and document why).
-  - `frame-ancestors` set if `X-Frame-Options` is missing.
-- `X-Frame-Options: DENY` or `SAMEORIGIN`, *or* CSP `frame-ancestors` set. One is enough; both is fine.
+  - `frame-ancestors` set (this is the primary clickjacking control).
+- CSP `frame-ancestors` is the **primary** clickjacking defense; `X-Frame-Options: DENY` / `SAMEORIGIN` is a **legacy fallback** for old browsers. Prefer `frame-ancestors`; setting both is fine.
+- `X-XSS-Protection` is **deprecated** — do not set it (or set it to `0`); modern protection comes from CSP, not this header.
+- `Reporting-Endpoints` (with CSP `report-to`) is the current mechanism for collecting CSP/violation reports, superseding the deprecated `report-uri`.
 - `X-Content-Type-Options: nosniff`.
 - `Referrer-Policy` set to `strict-origin-when-cross-origin` or stricter (`no-referrer`, `same-origin`).
 - `Permissions-Policy` present and non-empty (even a minimal `camera=(), microphone=(), geolocation=()` is meaningful).
@@ -38,14 +42,14 @@ Pick the snippet matching the stack:
 import helmet from 'helmet';
 app.use(helmet({
   contentSecurityPolicy: { directives: { defaultSrc: ["'self'"], scriptSrc: ["'self'"], frameAncestors: ["'none'"] } },
-  strictTransportSecurity: { maxAge: 15552000, includeSubDomains: true, preload: true },
+  strictTransportSecurity: { maxAge: 63072000, includeSubDomains: true, preload: true },
   referrerPolicy: { policy: 'strict-origin-when-cross-origin' },
 }));
 ```
 
 **Next.js** — `next.config.js` `headers()` async function returning the array. Or middleware that sets headers globally.
 
-**Django** — `django.middleware.security.SecurityMiddleware` + `SECURE_HSTS_SECONDS = 15552000`, `SECURE_HSTS_INCLUDE_SUBDOMAINS = True`, `SECURE_CONTENT_TYPE_NOSNIFF = True`, `SECURE_REFERRER_POLICY = 'strict-origin-when-cross-origin'`. CSP via `django-csp`.
+**Django** — `django.middleware.security.SecurityMiddleware` + `SECURE_HSTS_SECONDS = 63072000`, `SECURE_HSTS_INCLUDE_SUBDOMAINS = True`, `SECURE_HSTS_PRELOAD = True`, `SECURE_CONTENT_TYPE_NOSNIFF = True`, `SECURE_REFERRER_POLICY = 'strict-origin-when-cross-origin'`. CSP via `django-csp`.
 
 **FastAPI / Flask** — `secure` library, or hand-rolled middleware setting the headers. Both frameworks lack a built-in CSP.
 

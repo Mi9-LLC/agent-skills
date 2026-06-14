@@ -19,9 +19,9 @@ This step is the single highest-yield check in the skill. On "vibe-coded" deploy
 
 Grep the downloaded bundle files for:
 
-- Provider key prefixes: `sk-`, `pk_live_`, `sk_live_`, `rk_live_`, `AKIA*`, `ASIA*`, `ghp_*`, `gho_*`, `github_pat_*`, `xox[abprs]-*`, `glpat-*`, `Bearer\s+[A-Za-z0-9._-]{20,}`.
+- Provider key prefixes: `sk-`, `sk-ant-` (Anthropic), `pk_live_`, `sk_live_`, `sk_org_` (Stripe org-scoped), `rk_live_`, `AKIA*`, `ASIA*`, `ghp_*`, `gho_*`, `github_pat_*`, `glpat-*`, `npm_[A-Za-z0-9]{36,}` (npm token), `vc[piakr]` (Vercel: `vcp`/`vci`/`vca`/`vcr`/`vck`), `xox[abcdeprs]-*` and `xapp-*` (Slack), `Bearer\s+[A-Za-z0-9._-]{20,}`.
 - JWTs: `eyJ[A-Za-z0-9_-]+\.eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+`. Decode the payload (`base64 -d` the middle segment) and read the claims.
-- Supabase: any `https://*.supabase.co` URL, plus `service_role`, `supabase_admin`, `SUPABASE_SERVICE_ROLE_KEY` strings.
+- Supabase: any `https://*.supabase.co` URL; the new prefix-based keys `sb_secret_` (server secret — **Critical** in any client asset) and `sb_publishable_` (designed-public client key — **Informational**); plus the legacy `service_role`, `supabase_admin`, `SUPABASE_SERVICE_ROLE_KEY` strings and legacy anon/service_role JWTs (**deprecated, EOL target end-2026** — flag with a migration note).
 - Database URLs: `(postgres|mysql|mongodb|redis|rediss)://[^@/]+:[^@/]+@`.
 - Generic high-entropy assignments: `(?i)(apikey|api_key|api-key|secret|password|token)\s*[:=]\s*["'][A-Za-z0-9+/=_-]{16,}["']`.
 - Build-tool env-var assignments where the value is a credential, not a URL or flag:

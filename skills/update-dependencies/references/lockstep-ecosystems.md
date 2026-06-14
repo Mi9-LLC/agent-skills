@@ -11,6 +11,9 @@ Package families whose members must move **together** — bumping one across a m
 | React | `react` + `react-dom` + `@types/react` + `@types/react-dom` | Runtime and DOM packages share a version line; the `@types/*` packages track the same major. |
 | Vitest | `vitest` + `@vitest/*` (e.g. `@vitest/ui`, `@vitest/coverage-*`) | The sub-packages pin an exact peer on the matching `vitest` version. |
 | Drizzle | `drizzle-orm` + `drizzle-kit` | The ORM and its migration CLI must stay on the same line or schema/codegen drifts. |
+| Angular | `@angular/*` packages + `@angular/cli` | All Angular scoped packages release on the same version line; move them together. |
+| typescript-eslint | `@typescript-eslint/*` packages + the `typescript-eslint` meta-package | The meta-package and all scoped sub-packages share a version line; mixing versions causes parser/plugin mismatches. |
+| Tailwind v4 | `tailwindcss` + `@tailwindcss/vite` + `@tailwindcss/postcss` + `@tailwindcss/cli` | The integrations are co-versioned with the core; mismatched versions cause build-pipeline failures. |
 
 ## Recognizing unlisted families
 
@@ -22,3 +25,7 @@ The table is not exhaustive. Treat packages as a lockstep family when any of the
 - **Tight peer-dependency webs** — when in doubt, run `npm view <pkg> peerDependencies` and look for hard pins or narrow ranges on sibling packages; those siblings belong in the same group.
 
 When you identify a family this way, also check whether any member is mirrored in the root overrides (`pnpm.overrides` / `overrides` / `resolutions`) and update the override in the same change.
+
+## Not a lockstep family
+
+- **eslint** — eslint plus its plugin/config ecosystem is a peer-range web, not same-version lockstep. Plugins declare peer ranges against eslint but do not need to match each other's versions. When crossing an eslint major, verify each plugin's declared peer range supports the target major before bumping.

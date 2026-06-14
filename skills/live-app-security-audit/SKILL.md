@@ -1,6 +1,6 @@
 ---
 name: live-app-security-audit
-description: Runtime security audit of any deployed, live web application. Use proactively and aggressively whenever the user asks to audit a live URL, scan a deployed app, check the production security posture of a running site, vet a "vibe-coded" app for common runtime mistakes, or inspect security headers / TLS / frontend bundles / localStorage / network traffic / login rate-limiting / username enumeration on a running target. Triggers on phrases like audit my live site, scan my deployed app, audit https://..., check the headers on my site, run an SSL Labs scan, inspect my JS bundle for secrets, are my API keys exposed, find leaked Supabase keys, check localStorage tokens, test rate limiting on login, password reset enumeration check, production security audit, live security audit, runtime security check. Active probes (rate-limit, enumeration) require explicit target-authorization at Step 0. Writes a structured report to audit/<YYYY-MM-DD>/live-audit.md in the project root. Complementary to security-vulnerability-scan (static source review) — run both for full coverage. If the user asks for a security review without naming a live URL or a source tree, ask which they mean and offer to run both.
+description: 'Runtime security audit of any deployed, live web application. Use proactively whenever the user asks to audit a live URL, scan a deployed app, check the production posture of a running site, vet a "vibe-coded" app, or inspect any of the seven checks on a running target: security headers, TLS/SSL, frontend-bundle secrets, localStorage tokens, unauthenticated endpoints, login rate-limiting, and username enumeration. Triggers on phrases like audit my live site, scan my deployed app, audit https://..., check my headers, run an SSL Labs scan, inspect my JS bundle for secrets, are my API keys exposed, find leaked Supabase keys, test login rate limiting, password reset enumeration, production/live/runtime security audit. Active probes (rate-limit, enumeration) require explicit authorization at Step 0. Writes a report to audit/<YYYY-MM-DD>/live-audit.md. Complementary to security-vulnerability-scan (static source review) — run both; if a review is requested without a live URL or source tree, ask which and offer both.'
 allowed-tools: Read, Grep, Glob, Bash, WebFetch, Write
 ---
 
@@ -75,15 +75,21 @@ $resp.Headers | Format-List
 WebFetch  https://securityheaders.com/?q=<URL>&followRedirects=on&hide=on
 ```
 
-Parse the grade and the list of missing headers from the response.
+```bash
+# securityheaders.com 403s generic/non-browser User-Agents — spoof a browser UA
+curl -s -A "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36" \
+  "https://securityheaders.com/?q=<URL>&followRedirects=on&hide=on"
+```
+
+Parse the grade and the list of missing headers from the response. Note: the paid securityheaders.com API was retired April 2026, so this is an HTML-scrape cross-check only. If the site still blocks the request (403/challenge), **grade directly from the Step-1 `curl -sI` headers** using the table below and mark the cross-check `Skipped — securityheaders.com unreachable` in the report.
 
 ### What to flag
 
 | Header | Expected | Severity if missing |
 |---|---|---|
-| `Strict-Transport-Security` | `max-age=15552000; includeSubDomains` (or longer) | **High** on auth-bearing sites |
-| `Content-Security-Policy` | non-empty, no `unsafe-inline` for scripts in 2025 stacks | **High** (Medium if a default-src is present but loose) |
-| `X-Frame-Options` or CSP `frame-ancestors` | `DENY` / `SAMEORIGIN` / specific origins | **Medium** (clickjacking) |
+| `Strict-Transport-Security` | `max-age=31536000; includeSubDomains` minimum (OWASP recommends `max-age=63072000; includeSubDomains; preload`) | **High** on auth-bearing sites |
+| `Content-Security-Policy` | non-empty, no `unsafe-inline` for scripts (use nonces/hashes) | **High** (Medium if a default-src is present but loose) |
+| CSP `frame-ancestors` (primary) or `X-Frame-Options` (legacy fallback) | `'none'` / `'self'` / specific origins (`DENY` / `SAMEORIGIN` for the legacy header) | **Medium** (clickjacking) |
 | `X-Content-Type-Options` | `nosniff` | **Medium** |
 | `Referrer-Policy` | `strict-origin-when-cross-origin` or stricter | **Low / Medium** |
 | `Permissions-Policy` | present, non-empty | **Low** |
@@ -103,6 +109,8 @@ What you're looking for: outdated TLS versions, weak ciphers, expired or about-t
 ```
 WebFetch  https://api.ssllabs.com/api/v3/analyze?host=<HOST>&publish=off&fromCache=on&maxAge=24
 ```
+
+> **API status (June 2026):** SSL Labs API **v3 is deprecated** (since Jan 2024) but still live and registration-free — it may be withdrawn without notice. **v4 requires registration** plus an `email` request header (no free-mail addresses). If v3 returns an error or disappears, fall back to the local TLS check — see the "Sandboxing Compatibility" note on SSL Labs unavailability below.
 
 Parse the returned JSON. The interesting fields:
 
@@ -153,17 +161,26 @@ Run all of these across the downloaded bundle files. Each is a separate Grep cal
 
 | Pattern | What it catches | Severity |
 |---|---|---|
-| `sk-[A-Za-z0-9]{20,}` | OpenAI / Anthropic / Stripe-style secret key | **Critical** |
+| `sk-[A-Za-z0-9]{20,}` | OpenAI / Stripe-style secret key | **Critical** |
+| `sk-ant-` | Anthropic API key | **Critical** |
 | `sk_live_[A-Za-z0-9]{24,}` | Stripe live key | **Critical** |
+| `sk_org_` | Stripe org-scoped secret key | **Critical** |
 | `rk_live_[A-Za-z0-9]{24,}` | Stripe restricted live key | **Critical** |
 | `AKIA[0-9A-Z]{16}` | AWS access key ID | **Critical** |
+| `ASIA[0-9A-Z]{16}` | AWS temporary (STS) access key ID | **Critical** |
 | `ghp_[A-Za-z0-9]{36}` | GitHub PAT classic | **Critical** |
 | `github_pat_[A-Za-z0-9_]{82}` | GitHub fine-grained PAT | **Critical** |
-| `xox[abprs]-[A-Za-z0-9-]{10,}` | Slack token | **Critical** |
+| `glpat-` | GitLab personal access token | **Critical** |
+| `npm_[A-Za-z0-9]{36,}` | npm access token | **Critical** |
+| `vc[piakr]` | Vercel token (`vcp`/`vci`/`vca`/`vcr`/`vck` prefixes) | **Critical** |
+| `xox[abcdeprs]-[A-Za-z0-9-]{10,}` | Slack token | **Critical** |
+| `xapp-` | Slack app-level token | **Critical** |
 | `eyJ[A-Za-z0-9_-]+\.eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+` | JWT | **Triage** — see below |
-| `service_role` | Supabase service-role key marker | **Critical** |
+| `sb_secret_` | Supabase server secret key (in any client asset) | **Critical** |
+| `service_role` | Supabase legacy service-role key marker (deprecated, EOL end-2026) | **Critical** |
 | `supabase_admin` / `SUPABASE_SERVICE_ROLE_KEY` | Same | **Critical** |
-| `anon` near a Supabase URL | Supabase anon key (designed-public, but flag for confirmation) | **Informational** |
+| `sb_publishable_` | Supabase publishable key (designed-public; flag for confirmation) | **Informational** |
+| `anon` near a Supabase URL | Supabase legacy anon key (designed-public, deprecated; flag for confirmation) | **Informational** |
 | `VITE_[A-Z_]+\s*[:=]\s*["'][^"']+["']` | Inlined Vite env var | **Triage** — read the var name |
 | `REACT_APP_[A-Z_]+\s*[:=]\s*["'][^"']+["']` | Inlined CRA env var | **Triage** |
 | `NEXT_PUBLIC_[A-Z_]+\s*[:=]\s*["'][^"']+["']` | Inlined Next public env var | **Triage** |
@@ -174,9 +191,11 @@ Run all of these across the downloaded bundle files. Each is a separate Grep cal
 
 **JWT triage:** a JWT in the bundle is usually one of three things — (a) a *test* token (decode the payload, look for `exp` in the past or `iss: "test"`), (b) a *public* anon JWT (Supabase's anon key is a JWT — check the `role: anon` claim), or (c) an actual leaked session token. Decode the payload with base64 and read it; report accordingly.
 
-**Supabase special case.** If you find `https://<id>.supabase.co` plus a JWT with `role: anon`:
-- That's the **anon key**, which is *intended* to be public. Mark **Informational**, but also check whether the project has Row-Level Security enabled (you can't tell from outside — note this in the finding and ask the user to confirm).
-- If you also find a JWT with `role: service_role` — that's **Critical**, regardless of where it appears.
+**Supabase special case.** Supabase now ships prefix-based API keys; the legacy anon/service_role JWTs are **deprecated with an EOL target of end-2026** — flag any legacy JWT you find with a "plan migration to the new key format" note.
+- **`sb_secret_…`** in any client asset — the server secret key, never meant to leave the backend. **Critical** wherever it appears.
+- **`sb_publishable_…`** — the designed-public client key (replaces the legacy anon key). **Informational**, but check whether Row-Level Security is enabled (you can't tell from outside — note this in the finding and ask the user to confirm).
+- **Legacy `https://<id>.supabase.co` + a JWT with `role: anon`** — the deprecated anon key, *intended* to be public. Mark **Informational** (+ RLS caveat + migration note).
+- **Legacy JWT with `role: service_role`** (or `service_role` / `supabase_admin` strings) — **Critical**, regardless of where it appears.
 
 ### What to flag
 
@@ -433,7 +452,7 @@ Write via the `Write` tool with this exact skeleton:
 - **Evidence:** <the redacted curl response, header line, or grep match — exact text>
 - **Attack scenario:** <how an attacker uses this>
 - **Remediation:** <how to fix; include framework-level config snippets where possible>
-- **References:** [`references/0X-<file>.md`](references/0X-<file>.md)
+- **References:** cite the canonical URL(s) from the matching reference doc's External-references list
 
 ### High
 ### Medium

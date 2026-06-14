@@ -37,7 +37,7 @@ The core principle: **a model's training knowledge of package versions and APIs 
 
 - **Safe (patch/minor)** — bulk-updated together, verified once.
 - **Major** — one lockstep group at a time, with a green gate between groups so any failure is attributable to a specific change.
-- **Lockstep ecosystems** that must move together: `@opentelemetry/*`, `fastify` + plugins, `react`/`react-dom` + types, `vitest` + `@vitest/*`, `drizzle-orm` + `drizzle-kit`. The skill also applies heuristics to detect unlisted families (matching scope prefixes, known companion packages) — see `references/lockstep-ecosystems.md`.
+- **Lockstep ecosystems** that must move together (e.g. `@opentelemetry/*`, `fastify` + plugins, `react`/`react-dom` + types, `vitest` + `@vitest/*`, `drizzle-orm` + `drizzle-kit`, `@angular/*` + `@angular/cli`, `@typescript-eslint/*` + `typescript-eslint`, `tailwindcss` + `@tailwindcss/{vite,postcss,cli}`). The skill also applies heuristics to detect unlisted families (matching scope prefixes, known companion packages) — see `references/lockstep-ecosystems.md`.
 
 ### Autonomous migration with guardrails
 
@@ -130,7 +130,7 @@ allowed-tools: Bash, Read, Grep, Glob, Edit, Write, WebSearch, WebFetch, Agent
 ### Project-specific knobs the skill respects
 
 - **Runtime target** — derived from `engines.node`, `.nvmrc`, `.node-version`, or the running Node.js major. `@types/node` is capped at this major; packages requiring a newer runtime are skipped and reported.
-- **`overrides` / `resolutions`** (root `package.json`) — the skill checks what the lockfile actually resolved for each override in both directions: a stale exact pin holds deps back; a loose range can silently advance transitive deps across breaking boundaries.
+- **`overrides` / `resolutions`** — the skill checks what the lockfile actually resolved for each override in both directions: a stale exact pin holds deps back; a loose range can silently advance transitive deps across breaking boundaries. For pnpm 11+, overrides live in `pnpm-workspace.yaml`; pre-11 pnpm uses `package.json#pnpm.overrides` — the skill checks both during the transition.
 
 ## Troubleshooting
 
@@ -154,6 +154,10 @@ The skill distinguishes failures it caused from failures that already existed by
 ### corepack / package manager pin won't activate (Windows EPERM)
 
 On some Windows setups corepack cannot write the pinned package manager binary into `Program Files`. This applies when the project pins pnpm, yarn, or another manager via the `packageManager` field in `package.json`. The skill falls back to the on-PATH binary and notes it. To fix permanently, run `corepack enable` from an elevated shell once.
+
+### corepack not found / Node 25+
+
+Node 25+ no longer bundles corepack. If corepack is missing, install it manually (`npm i -g corepack`) or use the on-PATH package manager directly.
 
 ## FAQ
 
