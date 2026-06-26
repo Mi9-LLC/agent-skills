@@ -13,6 +13,7 @@ Mi9 LLC public catalog of Claude Code Agent Skills.
 | [`anti-sycophancy`](#anti-sycophancy) | Behavioral mode for review/feedback/decision asks. Argues the opposing case first, names untested assumptions, refuses reflexive agreement. No file output. |
 | [`update-dependencies`](#update-dependencies) | Research-first dependency updates for any JS/TS project (npm/pnpm/yarn/bun, single-package or monorepo). Reads real release notes, migrates code, verifies with quality gates. Manual-only (`/update-dependencies`). |
 | [`convert-plan-to-feature`](#convert-plan-to-feature) | Decompose an approved plan into a folder of independently-trackable per-feature spec files — `REQUIREMENTS.md` index + one `features/NN - <name>.md` per unit of work, each with requirements, ordered implementation steps, acceptance criteria, and dependencies. |
+| [`sonar-issue-check`](#sonar-issue-check) | Reads SonarCloud / self-hosted SonarQube issues for the current repo — by default the new-code issues on the current branch (pre-commit / pre-PR check), or `--all` for the full backlog. Zero-dependency Node script; read-only against the Sonar API. |
 
 ---
 
@@ -136,6 +137,28 @@ npx skills add https://github.com/Mi9-LLC/agent-skills --skill convert-plan-to-f
 ```
 
 **Full definition:** [`skills/convert-plan-to-feature/SKILL.md`](skills/convert-plan-to-feature/SKILL.md) · **README:** [`skills/convert-plan-to-feature/README.md`](skills/convert-plan-to-feature/README.md).
+
+---
+
+## `sonar-issue-check`
+
+**What it does.** Runs a bundled, zero-dependency Node script that reads SonarCloud (or self-hosted SonarQube) issues for the repository you're in and prints a terminal summary — no Sonar web UI, MCP server, or extra install required. By default it reports only the unresolved issues introduced in the **new code** of the current git branch; `--all` dumps the full project backlog. Uses Node's built-in `fetch`, so it runs anywhere Node does.
+
+**Use it for.** The "did I just introduce a problem?" check before you commit or open a pull request, pulling the Sonar findings for a specific branch or PR, filtering to bugs/vulnerabilities or high severities, or exporting results to JSON for a gate (`--fail-on-issues`).
+
+**Triggers on phrases like.** "check sonar before I push", "what did sonarcloud flag on my branch", "any new code smells", "pull the sonar bugs for PR 123", "did I introduce any new issues", "show the quality-gate issues on this branch".
+
+**What it does not do.** Run the Sonar scan itself — that happens in your CI pipeline; this skill only *reads* results. Modify the repo — it's read-only against the Sonar API and writes a file only when you pass `--out`. Configure SonarLint, quality-gate thresholds, or tokens.
+
+**Configuration.** Auto-detects the project key, organization, and host from `sonar-project.properties` (the canonical scanner config), falling back to the SonarLint binding in `.vscode/settings.json`; reads the token from `SONAR_TOKEN` or a local `.env`. The `organization` parameter is sent only for SonarCloud — point `--host` at a self-hosted SonarQube server and it's omitted automatically.
+
+**Install.**
+
+```
+npx skills add https://github.com/Mi9-LLC/agent-skills --skill sonar-issue-check
+```
+
+**Full definition:** [`skills/sonar-issue-check/SKILL.md`](skills/sonar-issue-check/SKILL.md).
 
 ---
 
