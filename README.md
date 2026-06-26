@@ -15,6 +15,7 @@ Mi9 LLC public catalog of Claude Code Agent Skills.
 | [`convert-plan-to-feature`](#convert-plan-to-feature) | Decompose an approved plan into a folder of independently-trackable per-feature spec files — `REQUIREMENTS.md` index + one `features/NN - <name>.md` per unit of work, each with requirements, ordered implementation steps, acceptance criteria, and dependencies. |
 | [`sonar-issue-check`](#sonar-issue-check) | Reads SonarCloud / self-hosted SonarQube issues for the current repo — by default the new-code issues on the current branch (pre-commit / pre-PR check), or `--all` for the full backlog. Zero-dependency Node script; read-only against the Sonar API. |
 | [`sonar-issue-fix`](#sonar-issue-fix) | Companion to `sonar-issue-check` that *fixes* the findings: triages by rule, applies behavior-preserving mechanical fixes plus a characterization-tests-first refactor for cognitive-complexity issues, and re-verifies with the project's lint / type-check / test gates. Changes code; never alters runtime/wire behavior. |
+| [`trim-initial-bundle`](#trim-initial-bundle) | Find and defer vendor libraries that bloat a React + Vite app's initial JS load but are only needed behind lazy routes — shrinking first-load size, LCP, and TTI. Decides everything from the *built* `dist` (zero-dependency analyzer), diagnoses the leak, applies the fix on approval, and verifies against artifacts. Vite/Rollup/Rolldown only. |
 
 ---
 
@@ -182,6 +183,28 @@ npx skills add https://github.com/Mi9-LLC/agent-skills --skill sonar-issue-fix
 ```
 
 **Full definition:** [`skills/sonar-issue-fix/SKILL.md`](skills/sonar-issue-fix/SKILL.md) (plus per-rule fix recipes and the complexity-refactor playbook under `references/`).
+
+---
+
+## `trim-initial-bundle`
+
+**What it does.** Finds heavy vendor libraries that ship on a React + Vite app's **initial JavaScript load** but are only needed behind a lazy route or click, and gets them off first load — shrinking download/parse cost, LCP, and TTI. It decides everything from the **built `dist`** (a zero-dependency Node analyzer computes the entry's static-import closure and ranks what's on first load), never from source assumptions, then diagnoses *why* a library leaks — eager import, an un-tree-shaken barrel re-export, or a `manualChunks` hoist — applies the matching fix, and proves the result against the rebuilt artifacts.
+
+**Use it for.** "Our JS bundle is too big", "the app loads slowly", "why is recharts / monaco / cmdk in the main chunk", "lazy-load this heavy dependency", "improve LCP / TTI / Lighthouse on our Vite app". The analysis is cheap and reliably finds deferrable weight.
+
+**Triggers on phrases like.** "reduce / shrink / trim the bundle", "first-load / initial-load size", "why is `<library>` in the entry / index chunk", "defer / lazy-load `<heavy dep>`", "what's bloating my Vite build", "speed up first load".
+
+**Scope.** Vite / Rollup / Rolldown (including rolldown-vite) only — the diagnosis transfers but the fix recipes don't apply to Next.js or raw Webpack; the skill says so and stops.
+
+**What it produces.** Surgical code edits (lazy-splits, dead barrel-re-export removals, `manualChunks` adjustments) applied **only after showing you the evidence and projected saving**, plus a before/after initial-load report. Ships `references/` (leak diagnosis + fix patterns; artifact-based verification) and a zero-dependency analyzer under `scripts/`.
+
+**Install.**
+
+```
+npx skills add https://github.com/Mi9-LLC/agent-skills --skill trim-initial-bundle
+```
+
+**Full definition:** [`skills/trim-initial-bundle/SKILL.md`](skills/trim-initial-bundle/SKILL.md) (plus the diagnosis / verification references and the `analyze-initial-load.mjs` analyzer under `scripts/`).
 
 ---
 
