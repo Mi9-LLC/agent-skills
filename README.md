@@ -14,6 +14,7 @@ Mi9 LLC public catalog of Claude Code Agent Skills.
 | [`update-dependencies`](#update-dependencies) | Research-first dependency updates for any JS/TS project (npm/pnpm/yarn/bun, single-package or monorepo). Reads real release notes, migrates code, verifies with quality gates. Manual-only (`/update-dependencies`). |
 | [`convert-plan-to-feature`](#convert-plan-to-feature) | Decompose an approved plan into a folder of independently-trackable per-feature spec files — `REQUIREMENTS.md` index + one `features/NN - <name>.md` per unit of work, each with requirements, ordered implementation steps, acceptance criteria, and dependencies. |
 | [`sonar-issue-check`](#sonar-issue-check) | Reads SonarCloud / self-hosted SonarQube issues for the current repo — by default the new-code issues on the current branch (pre-commit / pre-PR check), or `--all` for the full backlog. Zero-dependency Node script; read-only against the Sonar API. |
+| [`sonar-issue-fix`](#sonar-issue-fix) | Companion to `sonar-issue-check` that *fixes* the findings: triages by rule, applies behavior-preserving mechanical fixes plus a characterization-tests-first refactor for cognitive-complexity issues, and re-verifies with the project's lint / type-check / test gates. Changes code; never alters runtime/wire behavior. |
 
 ---
 
@@ -159,6 +160,28 @@ npx skills add https://github.com/Mi9-LLC/agent-skills --skill sonar-issue-check
 ```
 
 **Full definition:** [`skills/sonar-issue-check/SKILL.md`](skills/sonar-issue-check/SKILL.md).
+
+---
+
+## `sonar-issue-fix`
+
+**What it does.** The companion to `sonar-issue-check` that actually *resolves* the findings. Reads the branch's new-code issues, triages them by rule into **mechanical** (localized, recipe-driven edits) and **structural** (cognitive-complexity refactors), applies behavior-identical fixes, and re-verifies against the project's own lint / type-check / test gates. The hard constraint: a Sonar fix never changes runtime or wire behavior — these are code-quality smells, not bug fixes.
+
+**Use it for.** Clearing the new-code smells/bugs on a branch before merge, making the quality gate green, or safely knocking out a specific cognitive-complexity warning. For structural fixes on untested code it writes **characterization tests first**, so the refactor is provably output-preserving — and those tests stay as permanent regression coverage.
+
+**Triggers on phrases like.** "fix the sonar issues", "clear the sonarcloud findings on my branch", "resolve the new code smells before I merge", "make the quality gate green", "fix the cognitive complexity warning Sonar flagged", "knock out those Sonar issues".
+
+**What it does not do.** Report-only inspection (that's `sonar-issue-check`). Change behavior — if a finding's correct fix is a real bug fix, it surfaces that to you instead of forcing a quality-pass edit. Commit or push unless you ask.
+
+**Pairs with.** [`sonar-issue-check`](#sonar-issue-check) — the read-only sibling. Install both: check finds the work (this skill calls its script to fetch the findings), fix does it. If check isn't installed, paste the findings and it proceeds.
+
+**Install.**
+
+```
+npx skills add https://github.com/Mi9-LLC/agent-skills --skill sonar-issue-fix
+```
+
+**Full definition:** [`skills/sonar-issue-fix/SKILL.md`](skills/sonar-issue-fix/SKILL.md) (plus per-rule fix recipes and the complexity-refactor playbook under `references/`).
 
 ---
 

@@ -1,20 +1,19 @@
 ---
 name: sonar-issue-check
 description: >-
-  Check SonarCloud or SonarQube for issues already analyzed for this
-  repository — by default the NEW issues introduced in the current branch's new
-  code, so you can catch bugs, code smells, and vulnerabilities before they
-  land. Use this skill whenever the user is about to commit or open a pull
-  request and wants to know what Sonar found, asks "did I introduce any new
-  issues / bugs / code smells", mentions checking SonarCloud / SonarQube / Sonar
-  results or the quality-gate status on a branch or PR, or asks to extract /
-  list / dump Sonar issues for the project — even if they don't name the skill.
-  Trigger phrases: "check sonar before I push", "what did sonarcloud flag on my
-  branch", "any new code smells", "pull the sonar bugs for PR 123". Do NOT use
-  it for tasks that only mention Sonar but need something else: fixing the
-  SonarCloud scan step in the CI pipeline, setting up SonarLint in the editor,
-  configuring quality-gate thresholds, generating a Sonar token, running npm
-  lint/audit, or a general code review of the diff — those are different tools.
+  Use this skill to look up and REPORT SonarCloud or SonarQube findings already
+  analyzed for the current repo — list, pull, show, summarize, or dump the
+  issues, without changing any code. By default report the NEW issues in the
+  current branch's or PR's new code (the pre-commit / pre-PR "did I introduce a
+  bug, vulnerability, or code smell?" check); report the full project backlog on
+  request. Trigger for ANY read-only ask to see Sonar results, even when phrased
+  "just give me the list" or "just tell me what Sonar found, don't fix anything":
+  e.g. "what did sonarcloud flag on my branch", "pull the sonar bugs for PR
+  412", "did I introduce any new code smells", "check sonar before I push", or
+  the quality-gate status on a branch/PR. Do NOT trigger when the user wants to
+  FIX or clear the issues (that edits code — use sonar-issue-fix), run the Sonar
+  scan itself, set up SonarLint in the editor, or configure quality-gate
+  thresholds.
 allowed-tools: Bash, Read
 ---
 
