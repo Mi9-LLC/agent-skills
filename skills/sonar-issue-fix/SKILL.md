@@ -68,7 +68,7 @@ Group the findings into two buckets — they have very different risk:
 - **Mechanical** (most MINOR/MAJOR rules): a localized, behavior-identical edit
   with a known recipe. Low risk. See `references/rule-fixes.md` for the
   per-rule recipes (zero-fraction literals, `replaceAll`, `.at(-1)`, explicit
-  enum values, negated-condition flips, explicit stringification, …).
+  enum values, negated-condition flips, base-to-string, …).
 - **Structural** (cognitive complexity `S3776`, and any large refactor): the fix
   reshapes a function. Higher risk, especially on code with **no test coverage**.
   These get the tests-first treatment in step 3.
@@ -82,7 +82,12 @@ before you touch anything structural.
 recipe is chosen to satisfy Sonar *and* honor the project's own house style
 (read `CLAUDE.md` / `AGENTS.md` and the linter config — e.g. a negated-condition
 fix should match whatever positive-first convention the repo already follows,
-S7735). Never trade one smell for another.
+S7735). Never trade one smell for another. A recipe that *looks* right but
+doesn't actually remove the construct the rule binds to is worse than no fix — it
+costs a whole push + scan cycle to discover. The catalog flags these traps (e.g.
+S6551's `no-base-to-string` ignores `typeof`-guard narrowing, so guarding the
+object case but still calling `String()` on the other branch stays flagged) so
+you don't burn one.
 
 **Structural fixes (cognitive complexity, untested code)** — characterization
 tests come FIRST. The point of decomposing a function is to keep its output
@@ -138,6 +143,11 @@ asked** (Sonar fixes are usually bundled into the feature branch's existing PR �
 follow the repo's own commit-message convention). Then wait for the pipeline to
 finish and re-run `sonar-issue-check`; the freshly-scanned result should show 0
 new issues (or the reduced set you expect).
+
+Each push + scan cycle costs several minutes, so before pushing be *sure* each
+fix actually clears its rule — confirm the edit removes the construct the rule
+binds to, not merely relocates or guards it. (This is what makes the per-rule
+recipes worth following over an intuitive edit.)
 
 ## Guardrails
 

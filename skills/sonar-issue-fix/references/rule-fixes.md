@@ -58,19 +58,35 @@ enum DeploymentResult {
 ```
 
 ### S6551 — "value will use Object's default stringification ('[object Object]')"
-Make the object case explicit so it no longer silently relies on
-`[object Object]`. Keep the positive guard first (no negated primary branch):
+This is SonarJS `no-base-to-string`. It flags `String(x)`, `` `${x}` ``,
+`x + ''`, and `x.toString()` when `x`'s type can be a plain object.
+
+**Trap — the rule does NOT honor `typeof` / control-flow narrowing.** Guarding
+the object case and *still* calling `String()` on the other branch does not
+clear it; both of these stay flagged:
 ```ts
-const asString = (value: unknown): string => (isNil(value) ? '' : String(value));   // before
-const asString = (value: unknown): string => {                                       // after
-    if (isNil(value)) {
+typeof value === 'object' ? JSON.stringify(value) : String(value)   // STILL flagged (String on a non-narrowed type)
+if (typeof value === 'object') return JSON.stringify(value);
+return String(value);                                               // STILL flagged here
+```
+
+**The fix is to remove the base-to-string operation entirely** — return the
+value when it's already a string, otherwise serialize explicitly with
+`JSON.stringify` (which is outside the rule's scope). Keep the positive guard
+first (S7735):
+```ts
+const asString = (value: unknown): string => (value == null ? '' : String(value));   // before (flagged)
+const asString = (value: unknown): string => {                                        // after (clean)
+    if (value == null) {
         return '';
     }
-    return typeof value === 'object' ? JSON.stringify(value) : String(value);
+    return typeof value === 'string' ? value : JSON.stringify(value);
 };
 ```
-Note: this only changes the *degenerate* object case (which was garbage either
-way); primitive inputs are unaffected, so snapshots/outputs don't move.
+Behaviour is identical for the values these coercers actually receive (strings
+are returned verbatim; finite numbers/booleans serialize the same under
+`JSON.stringify` as under `String`). If you add a string type-guard import, your
+linter may re-sort the import block — re-run lint.
 
 ### S7735 — "Unexpected negated condition"
 Flip so the positive case comes first. Applies to `if`, ternaries, and **all**

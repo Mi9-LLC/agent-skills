@@ -159,11 +159,22 @@ template:
 <What this feature must deliver and why, in the user's terms. The behavioral
 contract, not the implementation.>
 
+## Interface contract
+<**Consumes:** the upstream artifacts/types/endpoints/state this feature needs to
+already exist — name each and which feature (#) produces it. **Produces:** the new
+public surface this feature exposes for downstream features — types, method
+signatures, endpoints, message kinds, settings keys, DB columns. Downstream features
+cite these by name. If a feature consumes something no listed feature produces (and
+it doesn't already exist), that's a gap — flag it rather than assume it.>
+
 ## Technical implementation
 <Ordered, concrete steps. Real file paths (and line numbers when known). New types,
 methods, signatures. The sequence within the feature. Reference shared catalogs in
 REQUIREMENTS.md by name rather than re-pasting them. Call out any ordering
-constraints with the broader deploy sequence.>
+constraints with the broader deploy sequence. **Write complete steps — no
+placeholders:** no `// TODO`, no "… rest unchanged", no "implement X here". If a
+detail is genuinely unknown, log it under *Dependencies & notes* as an open question
+instead of stubbing it into a step.>
 
 1. …
 2. …
@@ -191,6 +202,11 @@ question rather than a fabricated spec.
 - Re-read your output cold: every feature has file paths, dependencies, and
   checkable acceptance criteria; cross-cutting catalogs are consolidated in
   REQUIREMENTS.md, not scattered; deploy ordering is explicit.
+- No placeholders survived: every step is concrete (no `// TODO` / "rest
+  unchanged"); any genuine unknown is logged as an open question, not stubbed.
+- Interface contracts line up: everything a feature lists under *Consumes* is
+  *Produced* by an earlier-numbered feature (or already exists). A consume with no
+  producer is a gap — fix the cut or flag it.
 - Confirm every feature in the REQUIREMENTS.md table has a matching file and vice
   versa, and that the numbering reflects dependency order.
 - Report the created tree and a one-line summary per feature. Flag anything the
