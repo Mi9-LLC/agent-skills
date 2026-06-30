@@ -37,12 +37,19 @@ def _call_claude(prompt: str, model: str | None, timeout: int = 300) -> str:
         input=prompt,
         capture_output=True,
         text=True,
+        # Force UTF-8 both ways: the prompt embeds the full SKILL.md, which
+        # contains non-Latin-1 chars (→, —, ✓). Without this, Windows' default
+        # cp1252 codec raises UnicodeEncodeError encoding the prompt to stdin.
+        encoding="utf-8",
+        errors="replace",
         env=env,
         timeout=timeout,
     )
     if result.returncode != 0:
         raise RuntimeError(
-            f"claude -p exited {result.returncode}\nstderr: {result.stderr}"
+            f"claude -p exited {result.returncode}\n"
+            f"stderr: {result.stderr}\n"
+            f"stdout: {(result.stdout or '')[:2000]}"
         )
     return result.stdout
 

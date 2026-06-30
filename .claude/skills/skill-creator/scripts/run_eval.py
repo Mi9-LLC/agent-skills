@@ -8,10 +8,9 @@ for a set of queries. Outputs results as JSON.
 import argparse
 import json
 import os
-import select
 import subprocess
 import sys
-import time
+import threading
 import uuid
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from pathlib import Path
@@ -43,10 +42,17 @@ def run_single_query(
     """Run a single query and return whether the skill was triggered.
 
     Creates a command file in .claude/commands/ so it appears in Claude's
-    available_skills list, then runs `claude -p` with the raw query.
-    Uses --include-partial-messages to detect triggering early from
-    stream events (content_block_start) rather than waiting for the
-    full assistant message, which only arrives after tool execution.
+    available_skills list, then runs `claude -p` with the raw query and
+    streams the stream-json transcript line by line, returning True as soon
+    as Claude emits a Skill/Read tool call referencing the command — then
+    kills the process. Early exit matters: once the skill triggers, Claude
+    goes on to actually do the work (many more turns), which would otherwise
+    blow past the per-query timeout and be miscounted as a non-trigger.
+
+    Portability note: this streams stdout with a blocking readline loop and a
+    threading.Timer watchdog instead of select.select(). select only supports
+    sockets on Windows (it raises WinError 10038 on subprocess pipes), so the
+    select-based version silently registered zero triggers there.
     """
     unique_id = uuid.uuid4().hex[:8]
     clean_name = f"{skill_name}-skill-{unique_id}"
@@ -65,14 +71,13 @@ def run_single_query(
             f"# {skill_name}\n\n"
             f"This skill handles: {skill_description}\n"
         )
-        command_file.write_text(command_content)
+        command_file.write_text(command_content, encoding="utf-8")
 
         cmd = [
             "claude",
             "-p", query,
             "--output-format", "stream-json",
             "--verbose",
-            "--include-partial-messages",
         ]
         if model:
             cmd.extend(["--model", model])
@@ -88,92 +93,62 @@ def run_single_query(
             stderr=subprocess.DEVNULL,
             cwd=project_root,
             env=env,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            bufsize=1,  # line-buffered so we see events as they arrive
         )
 
-        triggered = False
-        start_time = time.time()
-        buffer = ""
-        # Track state for stream event detection
-        pending_tool_name = None
-        accumulated_json = ""
-
-        try:
-            while time.time() - start_time < timeout:
-                if process.poll() is not None:
-                    remaining = process.stdout.read()
-                    if remaining:
-                        buffer += remaining.decode("utf-8", errors="replace")
-                    break
-
-                ready, _, _ = select.select([process.stdout], [], [], 1.0)
-                if not ready:
-                    continue
-
-                chunk = os.read(process.stdout.fileno(), 8192)
-                if not chunk:
-                    break
-                buffer += chunk.decode("utf-8", errors="replace")
-
-                while "\n" in buffer:
-                    line, buffer = buffer.split("\n", 1)
-                    line = line.strip()
-                    if not line:
-                        continue
-
-                    try:
-                        event = json.loads(line)
-                    except json.JSONDecodeError:
-                        continue
-
-                    # Early detection via stream events
-                    if event.get("type") == "stream_event":
-                        se = event.get("event", {})
-                        se_type = se.get("type", "")
-
-                        if se_type == "content_block_start":
-                            cb = se.get("content_block", {})
-                            if cb.get("type") == "tool_use":
-                                tool_name = cb.get("name", "")
-                                if tool_name in ("Skill", "Read"):
-                                    pending_tool_name = tool_name
-                                    accumulated_json = ""
-                                else:
-                                    return False
-
-                        elif se_type == "content_block_delta" and pending_tool_name:
-                            delta = se.get("delta", {})
-                            if delta.get("type") == "input_json_delta":
-                                accumulated_json += delta.get("partial_json", "")
-                                if clean_name in accumulated_json:
-                                    return True
-
-                        elif se_type in ("content_block_stop", "message_stop"):
-                            if pending_tool_name:
-                                return clean_name in accumulated_json
-                            if se_type == "message_stop":
-                                return False
-
-                    # Fallback: full assistant message
-                    elif event.get("type") == "assistant":
-                        message = event.get("message", {})
-                        for content_item in message.get("content", []):
-                            if content_item.get("type") != "tool_use":
-                                continue
-                            tool_name = content_item.get("name", "")
-                            tool_input = content_item.get("input", {})
-                            if tool_name == "Skill" and clean_name in tool_input.get("skill", ""):
-                                triggered = True
-                            elif tool_name == "Read" and clean_name in tool_input.get("file_path", ""):
-                                triggered = True
-                            return triggered
-
-                    elif event.get("type") == "result":
-                        return triggered
-        finally:
-            # Clean up process on any exit path (return, exception, timeout)
+        # Watchdog: kill the process after `timeout` seconds. This unblocks the
+        # readline loop below (it gets EOF) — portable replacement for select.
+        def _kill_on_timeout():
             if process.poll() is None:
                 process.kill()
-                process.wait()
+
+        timer = threading.Timer(timeout, _kill_on_timeout)
+        timer.start()
+
+        triggered = False
+        try:
+            for line in process.stdout:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    event = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+
+                etype = event.get("type")
+                if etype == "assistant":
+                    for content_item in event.get("message", {}).get("content", []):
+                        if content_item.get("type") != "tool_use":
+                            continue
+                        tool_name = content_item.get("name", "")
+                        tool_input = content_item.get("input", {})
+                        if tool_name == "Skill" and clean_name in str(tool_input.get("skill", "")):
+                            triggered = True
+                            break
+                        if tool_name == "Read" and clean_name in str(tool_input.get("file_path", "")):
+                            triggered = True
+                            break
+                    if triggered:
+                        break
+                elif etype == "result":
+                    # Run finished without ever invoking the skill.
+                    break
+        finally:
+            timer.cancel()
+            if process.poll() is None:
+                process.kill()
+                try:
+                    process.wait(timeout=5)
+                except subprocess.TimeoutExpired:
+                    pass
+            try:
+                process.stdout.close()
+            except Exception:
+                pass
 
         return triggered
     finally:
