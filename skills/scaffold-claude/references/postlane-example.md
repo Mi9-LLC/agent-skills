@@ -10,7 +10,7 @@ This is a complete, real-world example of what a well-written CLAUDE.md looks li
 
 **Use this example to:**
 - Calibrate the *tone* (terse, opinionated, reason-bearing).
-- See how the 8 sections relate (Stack → Commands → Architecture → Conventions → Hard constraints → Pointers → Auto-loaded → Gotchas).
+- See how the 8 sections relate (Header → Stack → Commands → Architecture → Conventions → Hard constraints → Pointers → Gotchas).
 - Recognize what *kinds* of facts belong in each section — not to copy specific facts.
 
 ---

@@ -29,7 +29,7 @@ The skill reads the plan from the conversation (plan-mode output or approved des
 1. Derives a kebab-case initiative name from the plan title (ticket prefix included when present).
 2. Creates `docs/plans/<initiative>/` and `docs/plans/<initiative>/features/`.
 3. Writes `REQUIREMENTS.md` — the shared index: context, blast radius, locked decisions, cross-cutting catalogs, deploy/build ordering, feature table with suggested models, test strategy, and open questions.
-4. Writes one `features/NN - <Feature Name>.md` per unit of work — requirement, ordered implementation steps with real file paths, objectively checkable acceptance criteria, and dependency/risk notes.
+4. Writes one `features/NN - <Feature Name>.md` per unit of work — requirement, a Consumes/Produces interface contract, ordered implementation steps with real file paths (no placeholders), objectively checkable acceptance criteria, and dependency/risk notes.
 5. Verifies consistency (every feature in the table has a file; numbering reflects dependency order) and reports the created tree with a one-line summary per feature.
 
 **Produces planning documents only — does not implement anything.**
@@ -79,7 +79,8 @@ One file per unit of work. Sections:
 |---------|---------|
 | Header | Initiative, dependencies, suggested model with rationale |
 | Requirement | What the feature delivers and why, in behavioral terms |
-| Technical implementation | Ordered steps — real file paths, new types/methods, sequence within the feature |
+| Interface contract | **Consumes** (upstream types/endpoints/state, and which feature produces each) and **Produces** (the public surface downstream features cite by name) |
+| Technical implementation | Ordered steps — real file paths, new types/methods, sequence within the feature; complete steps, no `// TODO`/placeholder |
 | Acceptance criteria | Objectively checkable "done when…" bullets |
 | Dependencies & notes | Upstream/downstream features, risk, rollback notes |
 
@@ -136,7 +137,7 @@ Skill:
 | 2. Derive initiative | Kebab-case name from plan title (ticket prefix included); create `docs/plans/<initiative>/` and `features/` subdirectory |
 | 3. Decompose | Reuse the plan's own phase/component seams; split or merge only when warranted; number in dependency/deploy order |
 | 4. Write REQUIREMENTS.md | Context, blast radius, locked decisions, consolidated catalogs, deploy ordering, feature table, test strategy, open questions |
-| 5. Write feature files | One `features/NN - <name>.md` per feature — requirement, ordered steps with real file paths, checkable acceptance criteria, dependencies |
+| 5. Write feature files | One `features/NN - <name>.md` per feature — requirement, Consumes/Produces interface contract, ordered steps with real file paths (no placeholders), checkable acceptance criteria, dependencies |
 | 6. Verify & report | Cross-check table vs files; report created tree with one-line summaries; flag ambiguities from the source plan |
 
 ## Configuration

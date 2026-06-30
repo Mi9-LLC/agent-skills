@@ -8,19 +8,19 @@ Mi9 LLC public catalog of [Claude Code](https://claude.com/claude-code) Agent Sk
 
 **What a skill is.** A folder under `skills/<name>/` containing a `SKILL.md` — YAML metadata (`name`, a `description` that tells Claude *when* to use it, and the `allowed-tools` it's permitted) plus a Markdown playbook Claude follows. Some skills also ship `references/` docs or a `scripts/` helper.
 
-**Install one** into the current project (it lands in `.claude/skills/<name>/`):
+**Install one** into the current project — it lands in your agent's skills directory (`.claude/skills/<name>/` for Claude Code):
 
 ```
 npx skills add https://github.com/Mi9-LLC/agent-skills --skill <skill-name>
 ```
 
-Add `-g` (`--global`) to install at the **user level** instead — once, then available in every project on your machine:
+Add `-g` (`--global`) to install once at the **user level** instead, available in every project:
 
 ```
 npx skills add https://github.com/Mi9-LLC/agent-skills --skill <skill-name> -g
 ```
 
-Re-run either command anytime to update — it always pulls the current state of the branch. There are no versions to manage.
+Re-run either command anytime to update — it always pulls the current state of the branch; there are no versions to manage. The installer writes to whichever agent it detects; if a skill doesn't show up, confirm it landed under your Claude Code skills path and not a neutral `.agents/skills/` location.
 
 **Two ways to run an installed skill:**
 1. **Just talk.** Claude reads every installed skill's description and auto-activates the one that matches what you're doing. The **"Triggers on"** lines below are the phrases that fire each skill.
@@ -129,7 +129,7 @@ npx skills add https://github.com/Mi9-LLC/agent-skills --skill live-app-security
 
 **Requirements.** None. Purely behavioral — no tools, no network, no files.
 
-**How to run.** Auto-triggers on review / decision / feedback asks, or run `/anti-sycophancy`. No tool access (it only shapes the reply).
+**How to run.** Auto-triggers on review / decision / feedback asks, or run `/anti-sycophancy`. Declares no `allowed-tools` (unrestricted), but it only shapes the reply — it reads nothing and writes nothing.
 
 **Use it for.** Stress-testing your own judgment on a decision, plan, interpretation, or work you're about to commit to — the friction you'd want from a sharp colleague, not the validation from a friendly one.
 
@@ -186,7 +186,7 @@ npx skills add https://github.com/Mi9-LLC/agent-skills --skill anti-sycophancy
 
 ```
 You: /update-dependencies
-→ Branch agent/update-dependencies/20260630-a1c4 off origin/main.
+→ Branch agent/update-dependencies/20260630-a1c4 off the detected default branch (origin/main here).
   Safe pass: bumped 18 patch/minor (vite 7.0.2→7.0.6, …) — gates green.
   Majors: zod 3→4 migrated (2 files); react-router 6→7 skipped (needs Node 22, project targets 20).
   No commits made. Review with `git diff`.
@@ -507,7 +507,7 @@ npx skills add https://github.com/Mi9-LLC/agent-skills --skill test-driven-devel
 
 To add or modify a skill:
 
-1. Create or edit a directory under `skills/<skill-name>/` containing a `SKILL.md` (YAML frontmatter with `name` + `description` + optional `allowed-tools`, plus a Markdown body). Long-form reference docs go under `skills/<skill-name>/references/`; helper scripts under `scripts/`.
+1. Create or edit a directory under `skills/<skill-name>/` containing a `SKILL.md` (YAML frontmatter with `name` + `description` + optional `allowed-tools`, plus a Markdown body). Long-form reference docs go under `skills/<skill-name>/references/`; helper scripts under `scripts/`. If the skill ships a standalone `skills/<skill-name>/README.md`, keep it in sync with the `SKILL.md` — divergent copies silently mislead users.
 2. Add a row to the **Skills at a glance** table and a per-skill section to this README, mirroring the template every section above uses: *what it does*, *requirements*, *how to run*, *use it for*, *triggers on*, *what it does not do*, *what it produces*, *example*, *pairs with* (if any), *install*, *full definition*. Consumers discover skills from this README — an undocumented or vaguely-documented skill is effectively unshipped, and generates support questions.
 3. Keep the table-row count, the `## ` section count, and the `skills/` directory count in agreement.
 4. Open a PR against `main`. Teammates pick up the new version on their next `npx skills add … --skill <name>`.
