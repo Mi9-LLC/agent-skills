@@ -2,6 +2,7 @@
 name: live-app-security-audit
 description: 'Runtime security audit of any deployed, live web application. Use proactively whenever the user asks to audit a live URL, scan a deployed app, check the production posture of a running site, vet a "vibe-coded" app, or inspect any of the seven checks on a running target: security headers, TLS/SSL, frontend-bundle secrets, localStorage tokens, unauthenticated endpoints, login rate-limiting, and username enumeration. Triggers on phrases like audit my live site, scan my deployed app, audit https://..., check my headers, run an SSL Labs scan, inspect my JS bundle for secrets, are my API keys exposed, find leaked Supabase keys, test login rate limiting, password reset enumeration, production/live/runtime security audit. Active probes (rate-limit, enumeration) require explicit authorization at Step 0. Writes a report to audit/<YYYY-MM-DD>/live-audit.md. Complementary to security-vulnerability-scan (static source review) — run both; if a review is requested without a live URL or source tree, ask which and offer both.'
 allowed-tools: Read, Grep, Glob, Bash, WebFetch, Write
+disallowed-tools: Edit, NotebookEdit
 ---
 
 # live-app-security-audit
@@ -12,18 +13,7 @@ This skill is the runtime counterpart to `security-vulnerability-scan` (which is
 
 ## When I Activate
 
-Activate proactively on any of the following — do not wait for the literal phrase "use the live-app-security-audit skill":
-
-- "audit my live site", "audit my deployed app", "audit https://…", "scan my production site"
-- "is my app safe", "did I leave anything exposed", "vibe-coded app security check", "did Cursor leak my keys", "check this Lovable/v0/Bolt app I just deployed"
-- "check my security headers", "what's my SSL Labs grade", "TLS check", "https grade", "are my headers OK"
-- "inspect my JS bundle", "are my API keys in the frontend", "find leaked keys in my bundle", "Supabase anon key exposed", "VITE\_ env vars in production", "REACT\_APP\_ in bundle"
-- "is the token in localStorage", "JWT in localStorage", "session token leak"
-- "test my login rate limit", "brute-force protection check", "lockout testing", "is my login rate-limited"
-- "password reset enumeration", "username enumeration", "does my reset flow leak existing accounts"
-- "production security audit", "runtime security check", "live security audit", "deployed app pentest"
-
-When the user says "audit my app" without naming a URL **or** a source tree, ask which they mean and offer to run this skill *and* `security-vulnerability-scan` for full coverage. When in doubt, **trigger**. The cost of overtriggering is a redundant report; the cost of missing a real runtime leak is shipped credentials.
+Trigger proactively — don't wait for the literal skill name. The frontmatter description already enumerates the trigger phrases and the "no URL vs source tree → offer both skills" rule; the bias to add is: when in doubt, **trigger**. A redundant report is cheap; a missed runtime credential leak ships secrets.
 
 ## Read/Write Contract
 
@@ -81,7 +71,7 @@ curl -s -A "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML,
   "https://securityheaders.com/?q=<URL>&followRedirects=on&hide=on"
 ```
 
-Parse the grade and the list of missing headers from the response. Note: the paid securityheaders.com API was retired April 2026, so this is an HTML-scrape cross-check only. If the site still blocks the request (403/challenge), **grade directly from the Step-1 `curl -sI` headers** using the table below and mark the cross-check `Skipped — securityheaders.com unreachable` in the report.
+Parse the grade and the list of missing headers from the response. Treat securityheaders.com as an HTML-scrape cross-check only — it serves a browser-oriented grading page and 403s generic / non-browser User-Agents (hence the spoofed UA above). If it still blocks the request (403/challenge), **grade directly from the Step-1 `curl -sI` headers** using the table below and mark the cross-check `Skipped — securityheaders.com unreachable` in the report.
 
 ### What to flag
 
@@ -110,7 +100,7 @@ What you're looking for: outdated TLS versions, weak ciphers, expired or about-t
 WebFetch  https://api.ssllabs.com/api/v3/analyze?host=<HOST>&publish=off&fromCache=on&maxAge=24
 ```
 
-> **API status (June 2026):** SSL Labs API **v3 is deprecated** (since Jan 2024) but still live and registration-free — it may be withdrawn without notice. **v4 requires registration** plus an `email` request header (no free-mail addresses). If v3 returns an error or disappears, fall back to the local TLS check — see the "Sandboxing Compatibility" note on SSL Labs unavailability below.
+> **SSL Labs API:** v3 is deprecated (since Jan 2024) but still live and registration-free — it may be withdrawn without notice. **v4 requires registration** plus an `email` request header (no free-mail addresses). If v3 returns an error or disappears, fall back to the local TLS check — see the "Sandboxing Compatibility" note on SSL Labs unavailability below.
 
 Parse the returned JSON. The interesting fields:
 
@@ -157,41 +147,21 @@ done < /tmp/bundles.txt
 
 ### Grep targets
 
-Run all of these across the downloaded bundle files. Each is a separate Grep call.
+The highest-value patterns are below — run each as a separate Grep call across the downloaded bundle files. The **complete** secret table (all provider prefixes, webhook URLs, env-var inlining, connection strings, ~30 patterns) lives in [`references/03-frontend-bundle-secrets.md`](references/03-frontend-bundle-secrets.md); load it and run the full set when triaging this step.
 
 | Pattern | What it catches | Severity |
 |---|---|---|
-| `sk-[A-Za-z0-9]{20,}` | OpenAI / Stripe-style secret key | **Critical** |
-| `sk-ant-` | Anthropic API key | **Critical** |
+| `sk-[A-Za-z0-9]{20,}` / `sk-ant-` | OpenAI / Anthropic / Stripe-style secret key | **Critical** |
 | `sk_live_[A-Za-z0-9]{24,}` | Stripe live key | **Critical** |
-| `sk_org_` | Stripe org-scoped secret key | **Critical** |
-| `rk_live_[A-Za-z0-9]{24,}` | Stripe restricted live key | **Critical** |
-| `AKIA[0-9A-Z]{16}` | AWS access key ID | **Critical** |
-| `ASIA[0-9A-Z]{16}` | AWS temporary (STS) access key ID | **Critical** |
-| `ghp_[A-Za-z0-9]{36}` | GitHub PAT classic | **Critical** |
-| `github_pat_[A-Za-z0-9_]{82}` | GitHub fine-grained PAT | **Critical** |
-| `glpat-` | GitLab personal access token | **Critical** |
-| `npm_[A-Za-z0-9]{36,}` | npm access token | **Critical** |
-| `vc[piakr]` | Vercel token (`vcp`/`vci`/`vca`/`vcr`/`vck` prefixes) | **Critical** |
-| `xox[abcdeprs]-[A-Za-z0-9-]{10,}` | Slack token | **Critical** |
-| `xapp-` | Slack app-level token | **Critical** |
-| `eyJ[A-Za-z0-9_-]+\.eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+` | JWT | **Triage** — see below |
+| `AKIA[0-9A-Z]{16}` / `ASIA[0-9A-Z]{16}` | AWS access key ID (incl. STS temporary) | **Critical** |
 | `sb_secret_` | Supabase server secret key (in any client asset) | **Critical** |
-| `service_role` | Supabase legacy service-role key marker (deprecated, EOL end-2026) | **Critical** |
-| `supabase_admin` / `SUPABASE_SERVICE_ROLE_KEY` | Same | **Critical** |
-| `sb_publishable_` | Supabase publishable key (designed-public; flag for confirmation) | **Informational** |
-| `anon` near a Supabase URL | Supabase legacy anon key (designed-public, deprecated; flag for confirmation) | **Informational** |
-| `VITE_[A-Z_]+\s*[:=]\s*["'][^"']+["']` | Inlined Vite env var | **Triage** — read the var name |
-| `REACT_APP_[A-Z_]+\s*[:=]\s*["'][^"']+["']` | Inlined CRA env var | **Triage** |
-| `NEXT_PUBLIC_[A-Z_]+\s*[:=]\s*["'][^"']+["']` | Inlined Next public env var | **Triage** |
-| `Bearer\s+[A-Za-z0-9._-]{20,}` | Hard-coded bearer | **Critical** |
-| `(?i)apikey\s*[:=]\s*["'][^"']{16,}["']` | Generic `apiKey` assignment | **Critical** |
+| `service_role` | Supabase legacy service-role key marker (deprecated legacy JWT — disable targeted late 2026, TBC) | **Critical** |
 | `-----BEGIN (RSA \|EC \|OPENSSH \|DSA \|)PRIVATE KEY-----` | Private key material | **Critical** |
-| Connection strings `(postgres\|mysql\|mongodb\|redis)://[^@/]+:[^@/]+@` | DB URLs with creds | **Critical** |
+| `eyJ[A-Za-z0-9_-]+\.eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+` | JWT | **Triage** — see below |
 
 **JWT triage:** a JWT in the bundle is usually one of three things — (a) a *test* token (decode the payload, look for `exp` in the past or `iss: "test"`), (b) a *public* anon JWT (Supabase's anon key is a JWT — check the `role: anon` claim), or (c) an actual leaked session token. Decode the payload with base64 and read it; report accordingly.
 
-**Supabase special case.** Supabase now ships prefix-based API keys; the legacy anon/service_role JWTs are **deprecated with an EOL target of end-2026** — flag any legacy JWT you find with a "plan migration to the new key format" note.
+**Supabase special case.** Supabase now ships prefix-based API keys; the legacy anon/service_role JWTs are **deprecated** — new projects stopped issuing them in November 2025 and existing keys are targeted for disable in **late 2026 (TBC)**, though they still work today — flag any legacy JWT you find with a "plan migration to the new key format" note.
 - **`sb_secret_…`** in any client asset — the server secret key, never meant to leave the backend. **Critical** wherever it appears.
 - **`sb_publishable_…`** — the designed-public client key (replaces the legacy anon key). **Informational**, but check whether Row-Level Security is enabled (you can't tell from outside — note this in the finding and ask the user to confirm).
 - **Legacy `https://<id>.supabase.co` + a JWT with `role: anon`** — the deprecated anon key, *intended* to be public. Mark **Informational** (+ RLS caveat + migration note).
@@ -281,7 +251,7 @@ curl -s "${SUPABASE_URL}/rest/v1/<table>?select=*" \
   --max-time 10
 ```
 
-A `200` returning rows confirms that RLS is **disabled** for `<table>` — a Critical finding. A `401`/`403` or `200 []` (empty due to RLS filtering) means RLS is enforced. Probe a few candidate tables: `users`, `profiles`, `orders`, `posts`, `messages`, `payments`. Do not enumerate exhaustively.
+A `200` returning rows confirms that RLS is **disabled** for `<table>` — a Critical finding. A `401`/`403` or `200 []` (empty due to RLS filtering) means RLS is enforced. Probe a few candidate tables: `users`, `profiles`, `orders`, `posts`, `messages`, `payments`, `tenants`, `files`. Do not enumerate exhaustively.
 
 ### What to flag
 
@@ -327,12 +297,7 @@ done
 
 ### What to interpret
 
-- All 15 responses return `401` with similar timing and no `Retry-After` / `429` → **High** finding: no rate limit detected.
-- A `429 Too Many Requests` after N attempts → expected; record N and `Retry-After`.
-- A `403` or temporary lockout after N attempts → expected; record N.
-- A CAPTCHA challenge appearing in the response body after N attempts → expected; record N.
-- Responses get measurably slower per attempt (exponential backoff) → expected (good defense).
-- The endpoint starts returning `500` after N attempts → **Medium**: rate-limit fails open or the server is crashing.
+Interpret the results per [`references/06-auth-rate-limiting.md`](references/06-auth-rate-limiting.md). The short version: **High** if all 15 return `401` with no `429`/`Retry-After`/slowdown (no rate limit detected); expected if a `429`/`403`/CAPTCHA/backoff kicks in after N attempts (record N); **Medium** if the endpoint starts returning `500` (rate-limit fails open or the server is crashing).
 
 ### Important guardrails
 
@@ -371,25 +336,9 @@ for email in "$EMAIL_A" "$EMAIL_B"; do
 done
 ```
 
-### What to compare
+### What to compare & flag
 
-Diff the two responses for each endpoint along five axes:
-
-1. **Status code** — `200` vs `404`, `400` vs `200`.
-2. **Response body text** — "If that email exists, we sent a link" (good) vs "No account with that email" (bad).
-3. **Response time** — > 50ms difference is suspicious (DB lookup gate vs. early-return).
-4. **Set-Cookie behavior** — only one variant sets a cookie.
-5. **Headers** — `X-RateLimit-Remaining` only decremented for the existing user.
-
-Any single axis differing is a finding.
-
-### What to flag
-
-- Different status codes between exists / not-exists → **High** (clear enumeration).
-- Different body text → **High**.
-- Consistent >50ms timing gap → **Medium**.
-- Different `Set-Cookie` or rate-limit-header behavior → **Medium**.
-- All five axes identical → ✅ — record as "no enumeration detected on tested endpoints."
+Diff the two responses along five axes — status code, body text, response time (>50ms gap), `Set-Cookie` behavior, and rate-limit headers — per [`references/07-username-enumeration.md`](references/07-username-enumeration.md). Any single axis differing is a finding: differing status code, body text, or `Set-Cookie` → **High**; a consistent >50ms timing gap or a differing rate-limit-header decrement → **Medium**; all five axes identical → ✅ record as "no enumeration detected on tested endpoints."
 
 > **For full guidance read `references/07-username-enumeration.md`.**
 

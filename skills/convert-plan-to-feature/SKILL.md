@@ -15,7 +15,7 @@ description: >-
   feature. Reach for this aggressively once a plan exists and the user signals
   they want it decomposed — don't hand-roll an ad-hoc folder layout when this
   skill encodes the conventions.
-allowed-tools: Bash, Read, Write, Glob, Grep, Agent
+allowed-tools: Read, Write, Glob, Grep
 ---
 
 # Convert Plan → Per-Feature Specs

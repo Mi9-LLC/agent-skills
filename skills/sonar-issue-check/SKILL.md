@@ -30,10 +30,12 @@ Node is available. Each person just needs their own Sonar token.
 - **Default:** unresolved issues introduced in the **new code** of the current
   git branch. This is the "did I just introduce a problem?" check you run
   before committing or opening a pull request.
-- **`--all`:** every open issue on the project, regardless of branch or new-code
-  period — use this for a full backlog export.
+- **`--all`:** every unresolved issue on the analyzed branch/PR, not just the
+  new-code period — use this for a full backlog export.
 
 ## Prerequisites — the token
+
+Requires **Node.js 18 or later** (the script uses Node's built-in `fetch`).
 
 The script reads `SONAR_TOKEN` from the environment first (handy in CI), then
 from a local `.env` file (`.env`, then `env/.env`, or whatever `--env-file`
@@ -44,8 +46,10 @@ tell the user to:
 1. Sign in to their Sonar instance (e.g. https://sonarcloud.io) → avatar (top
    right) → **My Account** → **Security**.
 2. Generate a **User Token**, copy it (shown only once).
-3. Either `export SONAR_TOKEN=<token>` in their shell, or add
-   `SONAR_TOKEN=<token>` to `.env`.
+3. Set it as an environment variable, or add it to `.env`:
+   - bash: `export SONAR_TOKEN=<token>`
+   - PowerShell: `$env:SONAR_TOKEN = "<token>"`
+   - `.env` file: add a line `SONAR_TOKEN=<token>`
 
 ## Configuration — how it finds the project
 
@@ -72,7 +76,7 @@ that guess is wrong.
 ## How to run
 
 ```bash
-node .claude/skills/sonar-issue-check/scripts/extract-sonar-issues.mjs
+node ${CLAUDE_SKILL_DIR}/scripts/extract-sonar-issues.mjs
 ```
 
 Pick the variant that matches what the user asked for:
@@ -82,9 +86,13 @@ Pick the variant that matches what the user asked for:
 | New issues before commit/PR (default) | *(no extra flags)* |
 | A specific pull request | `--pull-request <id>` |
 | A specific branch | `--branch <name>` |
-| Full project backlog | `--all` |
+| Full unresolved backlog on the branch/PR | `--all` |
 | Only bugs & vulnerabilities | `--types BUG,VULNERABILITY` |
-| Only high-severity issues | `--severities BLOCKER,CRITICAL` |
+| Only high-severity issues | `--severities BLOCKER,CRITICAL`<br>(legacy severity names — Sonar deprecated `severities` and `types` in Aug 2023 for MQR impact severities/qualities, but the API still honors both flags; the script also reports each issue's MQR `impacts`) |
+| Include resolved/closed issues too | `--include-resolved` |
+| Target a different project than auto-detected | `--project <key>` |
+| Target a different organization than auto-detected | `--org <org>` |
+| Read the token from a custom `.env` file | `--env-file <path>` |
 | Self-hosted SonarQube | `--host https://sonar.mycompany.com` |
 | Save full results to a file | `--out sonar-issues.json` |
 | Use as a hard gate (non-zero exit on findings) | `--fail-on-issues` |

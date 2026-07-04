@@ -30,29 +30,18 @@ When the bundle reveals only an RPC base URL and no per-call paths, this step's 
 
 ## What to check
 
+The executable probe commands live in SKILL.md Step 5; this reference covers interpretation, limitations (tRPC/GraphQL/gRPC opacity), and remediation depth.
+
 ### Endpoint extraction (from already-downloaded bundles in Step 3)
 
-Pull URL strings out of the JS:
-
-```bash
-for f in /tmp/bundle_*.js; do
-  grep -oE '"https?://[^"]+"' "$f"
-  grep -oE '"/[a-zA-Z0-9_/.-]{3,}"' "$f"
-done | sort -u > /tmp/endpoints.txt
-```
-
-Filter to high-signal patterns:
+The extraction command lives in SKILL.md Step 5. Filter the resulting URLs to high-signal patterns:
 
 - Paths containing: `/api/`, `/rest/`, `/v1/`, `/v2/`, `/graphql`, `/trpc`, `/admin`, `/internal`, `/debug`, `/private`, `/me`, `/users`, `/orders`, `/payments`.
 - Different-origin URLs (other Supabase / Hasura / API Gateway / Edge Function hosts).
 
 ### Probes
 
-For each candidate, send an unauthenticated GET (and a HEAD for safety on write-shaped paths):
-
-```bash
-curl -s -o /tmp/body -w "%{http_code} %{size_download} %{content_type}\n" --max-time 10 "$URL"
-```
+The probe loop lives in SKILL.md Step 5. When probing manually, add `%{content_type}` to the `curl -w` format (`-w "%{http_code} %{size_download} %{content_type}\n"`) and send a `HEAD` rather than a `GET` on write-shaped paths for safety.
 
 Inspect the body of each `200`. The finding shape:
 
@@ -65,17 +54,7 @@ Inspect the body of each `200`. The finding shape:
 
 ### Supabase REST quick check (only if you found an anon key in Step 3)
 
-```bash
-ANON="<anon-key>"
-for table in users profiles orders posts messages payments tenants files; do
-  printf "%-15s " "$table"
-  curl -s -o /tmp/body -w "%{http_code} %{size_download}\n" --max-time 10 \
-    "${SUPABASE_URL}/rest/v1/${table}?select=*&limit=1" \
-    -H "apikey: $ANON" -H "Authorization: Bearer $ANON"
-done
-```
-
-Interpretation:
+The Supabase REST probe command and the candidate-table list (`users`, `profiles`, `orders`, `posts`, `messages`, `payments`, `tenants`, `files`) live in SKILL.md Step 5 — run that single-table `curl` against each listed table. Interpretation:
 
 - `200 [{...}]` — table accessible to anon, RLS disabled or wide-open → **Critical**.
 - `200 []` — table exists, RLS filtering to no rows → ✅.

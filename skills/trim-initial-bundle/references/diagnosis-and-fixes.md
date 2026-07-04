@@ -1,7 +1,8 @@
 # Diagnosis and fixes
 
-The three ways a lazy-only library leaks into the initial load of a Vite/Rollup
-build, how to tell which you're facing, and the exact fix for each. A single
+The three ways a lazy-only library leaks into the initial load of a Vite build
+(Rollup on Vite ≤7, Rolldown on Vite 8), how to tell which you're facing, and the
+exact fix for each. A single
 library often has more than one path at once — find and cut all of them.
 
 ## Contents
@@ -73,10 +74,11 @@ shared barrel.
 
 ## Mechanism 3 — manualChunks hoisting
 
-**Symptom:** `vite.config` has a `manualChunks` entry that forces the library into
-its own vendor chunk (e.g. `['heavy', /[\\/]heavy[\\/]/]`), the library is reached
-**only** behind a lazy boundary, yet `dist` shows the entry **statically importing
-the heavy vendor chunk** (and `index.html` preloading it).
+**Symptom:** `vite.config` has a `manualChunks` entry (Vite ≤7 / Rollup) — or an
+`advancedChunks` / `codeSplitting` group (Vite 8 / Rolldown) — that forces the
+library into its own vendor chunk (e.g. `['heavy', /[\\/]heavy[\\/]/]`), the library
+is reached **only** behind a lazy boundary, yet `dist` shows the entry **statically
+importing the heavy vendor chunk** (and `index.html` preloading it).
 
 **Confirm:**
 - All source importers are lazy (Mechanism-1 check fails — no eager use).
@@ -200,7 +202,7 @@ eager paths already removed it from the initial load, the manualChunk was innoce
 already-lazy chunk; it's churn, not a fix.
 
 ```diff
-// vite.config.ts
+// vite.config.ts  — Vite ≤7 / Rollup
   build: {
     rollupOptions: {
       output: {
@@ -217,6 +219,14 @@ already-lazy chunk; it's churn, not a fix.
     },
   },
 ```
+
+**On Vite 8 / Rolldown** the object-form `manualChunks` is removed and the function
+form is deprecated; the same grouping lives in Rolldown's `output.advancedChunks`
+(being renamed `output.codeSplitting`) as a `groups` array of `{ name, test }`
+(where `test` is a regex matched against the module id). The fix is identical —
+delete the deferred library's group from that array. See Rolldown's
+[Manual Code Splitting](https://rolldown.rs/in-depth/advanced-chunks) docs for the
+current syntax.
 
 After removal, the library folds into the lazy chunk that imports it. You lose a
 separately-named chunk (less "trackability" in the build output), but you gain the
@@ -235,7 +245,7 @@ You'll fix these faster if you hold the reasons, not the rules:
 - **Tree-shaking is conservative across re-exports.** Without a hard
   `sideEffects: false` signal, a bundler keeps a re-exported module rather than
   risk dropping a side effect. So a barrel re-export is a near-guaranteed retain.
-- **`manualChunks` is an output-grouping directive, not a "make lazy" directive.**
+- **`manualChunks` (Rollup) / `advancedChunks` (Rolldown) is an output-grouping directive, not a "make lazy" directive.**
   It says "put these modules in a chunk named X," and the linker then wires X into
   whatever chunks need it — including initial ones. It cannot know you intended X
   to be lazy.

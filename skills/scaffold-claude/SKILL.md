@@ -2,6 +2,7 @@
 name: scaffold-claude
 description: Use when the user wants to create, draft, or scaffold a CLAUDE.md file for a project from scratch. Triggers on "scaffold CLAUDE.md", "write a CLAUDE.md", "set up CLAUDE.md", "create project instructions for Claude", "bootstrap CLAUDE.md", "/scaffold-claude", or any request to author project-level Claude Code instructions. Produces a reviewable scratchpad draft that captures edge cases and tribal knowledge — NOT facts Claude can already read off package.json, the directory tree, or the README. Do NOT trigger to edit an existing CLAUDE.md surgically (just edit it) or to add a nested per-subsystem file (the body explains that path).
 allowed-tools: Read, Glob, Grep, Write
+disallowed-tools: Bash, Edit, NotebookEdit
 ---
 
 # scaffold-claude

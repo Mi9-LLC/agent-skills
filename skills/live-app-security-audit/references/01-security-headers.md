@@ -11,11 +11,13 @@
 
 HTTP response headers are the browser's instruction set for what scripts can run, what origins can frame the page, whether to trust the connection in the future, whether to treat MIME types loosely, and which referrer information to leak. The browser obeys these headers per-response, so missing one anywhere on the origin partially undoes the protection elsewhere. The current baseline for any auth-bearing site is the seven-header set evaluated by securityheaders.com — Strict-Transport-Security, Content-Security-Policy, CSP `frame-ancestors` (with `X-Frame-Options` as a legacy fallback), X-Content-Type-Options, Referrer-Policy, Permissions-Policy, and properly-flagged session cookies. Anything less leaves measurable browser-level attack surface that no amount of backend hardening can close.
 
-> **securityheaders.com caveat:** the grading site **403s generic / non-browser User-Agents** (and its paid API was retired April 2026). When cross-checking via `curl`, spoof a browser `User-Agent`; if still blocked, grade directly from the live `curl -sI` response headers and mark the cross-check skipped.
+> **securityheaders.com caveat:** the grading site **403s generic / non-browser User-Agents**. When cross-checking via `curl`, spoof a browser `User-Agent`; if still blocked, grade directly from the live `curl -sI` response headers and mark the cross-check skipped.
 
 These headers are runtime-only: a static scan of the source can find that `helmet()` is wired up, but only a live response confirms the headers actually emit on the deployed CDN / reverse-proxy / framework configuration.
 
 ## What to check
+
+The expected-value + severity matrix is in SKILL.md Step 1's table; the points below are the finer details that table does not capture.
 
 - `Strict-Transport-Security` present with `max-age` ≥ 1 year (`31536000`, the practical minimum); OWASP recommends `max-age=63072000` (2 years) with `preload`, and `includeSubDomains` on apex domains. Absence on an HTTPS site is **High** if auth runs there.
 - `Content-Security-Policy` present and meaningful. Look for:
@@ -25,12 +27,8 @@ These headers are runtime-only: a static scan of the source can find that `helme
   - `frame-ancestors` set (this is the primary clickjacking control).
 - CSP `frame-ancestors` is the **primary** clickjacking defense; `X-Frame-Options: DENY` / `SAMEORIGIN` is a **legacy fallback** for old browsers. Prefer `frame-ancestors`; setting both is fine.
 - `X-XSS-Protection` is **deprecated** — do not set it (or set it to `0`); modern protection comes from CSP, not this header.
-- `Reporting-Endpoints` (with CSP `report-to`) is the current mechanism for collecting CSP/violation reports, superseding the deprecated `report-uri`.
-- `X-Content-Type-Options: nosniff`.
-- `Referrer-Policy` set to `strict-origin-when-cross-origin` or stricter (`no-referrer`, `same-origin`).
+- `Reporting-Endpoints` header (named by the CSP `report-to` directive) is the current mechanism for collecting CSP/violation reports — it supersedes the deprecated `Report-To` header, just as the CSP `report-to` directive supersedes the deprecated `report-uri` directive.
 - `Permissions-Policy` present and non-empty (even a minimal `camera=(), microphone=(), geolocation=()` is meaningful).
-- `Cache-Control: no-store` on authenticated responses (account page, settings, anywhere returning PII).
-- `Set-Cookie` flags on session/auth cookies: `Secure; HttpOnly; SameSite=Lax` minimum (`Strict` if no cross-origin auth flows).
 - A securityheaders.com **grade ≥ B**. Grade is itself a finding when below B.
 
 ## How to fix

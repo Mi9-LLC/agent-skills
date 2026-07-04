@@ -132,6 +132,12 @@ allowed-tools: Bash, Read, Grep, Glob, Edit, Write, WebSearch, WebFetch, Agent
 - **Runtime target** — derived from `engines.node`, `.nvmrc`, `.node-version`, or the running Node.js major. `@types/node` is capped at this major; packages requiring a newer runtime are skipped and reported.
 - **`overrides` / `resolutions`** — the skill checks what the lockfile actually resolved for each override in both directions: a stale exact pin holds deps back; a loose range can silently advance transitive deps across breaking boundaries. For pnpm 11+, overrides live in `pnpm-workspace.yaml`; pre-11 pnpm uses `package.json#pnpm.overrides` — the skill checks both during the transition.
 
+## Install
+
+```
+npx skills add https://github.com/Mi9-LLC/agent-skills --skill update-dependencies
+```
+
 ## Troubleshooting
 
 ### "Working tree not clean" — skill stops at preflight

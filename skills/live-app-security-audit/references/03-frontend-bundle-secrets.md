@@ -17,19 +17,49 @@ This step is the single highest-yield check in the skill. On "vibe-coded" deploy
 
 ## What to check
 
-Grep the downloaded bundle files for:
+Grep the downloaded bundle files for the complete pattern set below (SKILL.md Step 3 inlines the 7 highest-value rows; this is the full table). Each is a separate Grep call.
 
-- Provider key prefixes: `sk-`, `sk-ant-` (Anthropic), `pk_live_`, `sk_live_`, `sk_org_` (Stripe org-scoped), `rk_live_`, `AKIA*`, `ASIA*`, `ghp_*`, `gho_*`, `github_pat_*`, `glpat-*`, `npm_[A-Za-z0-9]{36,}` (npm token), `vc[piakr]` (Vercel: `vcp`/`vci`/`vca`/`vcr`/`vck`), `xox[abcdeprs]-*` and `xapp-*` (Slack), `Bearer\s+[A-Za-z0-9._-]{20,}`.
-- JWTs: `eyJ[A-Za-z0-9_-]+\.eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+`. Decode the payload (`base64 -d` the middle segment) and read the claims.
-- Supabase: any `https://*.supabase.co` URL; the new prefix-based keys `sb_secret_` (server secret — **Critical** in any client asset) and `sb_publishable_` (designed-public client key — **Informational**); plus the legacy `service_role`, `supabase_admin`, `SUPABASE_SERVICE_ROLE_KEY` strings and legacy anon/service_role JWTs (**deprecated, EOL target end-2026** — flag with a migration note).
-- Database URLs: `(postgres|mysql|mongodb|redis|rediss)://[^@/]+:[^@/]+@`.
-- Generic high-entropy assignments: `(?i)(apikey|api_key|api-key|secret|password|token)\s*[:=]\s*["'][A-Za-z0-9+/=_-]{16,}["']`.
-- Build-tool env-var assignments where the value is a credential, not a URL or flag:
-  - `VITE_[A-Z0-9_]+\s*[:=]\s*["'][^"']{16,}["']`
-  - `REACT_APP_[A-Z0-9_]+\s*[:=]\s*["'][^"']{16,}["']`
-  - `NEXT_PUBLIC_[A-Z0-9_]+\s*[:=]\s*["'][^"']{16,}["']`
-- Private key material: `-----BEGIN (RSA |EC |OPENSSH |DSA |)PRIVATE KEY-----`.
-- Webhook URLs with embedded secrets: `https://hooks\.slack\.com/services/[A-Z0-9/]+`, `https://discord(app)?\.com/api/webhooks/[0-9]+/[A-Za-z0-9_-]+`.
+| Pattern | What it catches | Severity |
+|---|---|---|
+| `sk-[A-Za-z0-9]{20,}` | OpenAI / Stripe-style secret key | **Critical** |
+| `sk-ant-` | Anthropic API key | **Critical** |
+| `pk_live_[A-Za-z0-9]{24,}` | Stripe publishable live key (designed-public) | **Informational** |
+| `sk_live_[A-Za-z0-9]{24,}` | Stripe live secret key | **Critical** |
+| `sk_org_` | Stripe org-scoped secret key | **Critical** |
+| `rk_live_[A-Za-z0-9]{24,}` | Stripe restricted live key | **Critical** |
+| `AKIA[0-9A-Z]{16}` | AWS access key ID | **Critical** |
+| `ASIA[0-9A-Z]{16}` | AWS temporary (STS) access key ID | **Critical** |
+| `ghp_[A-Za-z0-9]{36}` | GitHub PAT classic | **Critical** |
+| `gho_[A-Za-z0-9]{36}` | GitHub OAuth token | **Critical** |
+| `github_pat_[A-Za-z0-9_]{82}` | GitHub fine-grained PAT | **Critical** |
+| `gh[usr]_[A-Za-z0-9_]{20,}` | GitHub user-to-server (`ghu_`) / server (`ghs_`) / refresh (`ghr_`) tokens — `ghs_` app-installation went stateless & variable-length in Apr 2026, so match loosely, not a fixed 40 chars | **Critical** |
+| `gl(pat\|dt\|rt\|rtr\|cbt\|ptt\|ft\|imt\|agent\|soat\|ffct\|oas\|wt)-` | GitLab token family — PAT, deploy, runner, CI-job, pipeline-trigger, feed, workspace (`glwt-`, added 2025), … | **Critical** |
+| `npm_[A-Za-z0-9]{36,}` | npm access token | **Critical** |
+| `vc[piakr]` | Vercel token (`vcp`/`vci`/`vca`/`vcr`/`vck` prefixes) | **Critical** |
+| `xox[abcdeprs]-[A-Za-z0-9-]{10,}` | Slack token | **Critical** |
+| `xapp-` | Slack app-level token | **Critical** |
+| `xwfp-` / `xoxe[.-]` | Slack workflow token (`xwfp-`) + token-rotation access/refresh (`xoxe`) | **Critical** |
+| `Bearer\s+[A-Za-z0-9._-]{20,}` | Hard-coded bearer token | **Critical** |
+| `eyJ[A-Za-z0-9_-]+\.eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+` | JWT | **Triage** — see note |
+| `sb_secret_` | Supabase server secret key (in any client asset) | **Critical** |
+| `service_role` | Supabase legacy service-role key marker (deprecated legacy JWT — disable targeted late 2026, TBC) | **Critical** |
+| `supabase_admin` / `SUPABASE_SERVICE_ROLE_KEY` | Same | **Critical** |
+| `sb_publishable_` | Supabase publishable key (designed-public; flag for confirmation) | **Informational** |
+| `anon` near a Supabase URL | Supabase legacy anon key (designed-public, deprecated; flag for confirmation) | **Informational** |
+| `VITE_[A-Z0-9_]+\s*[:=]\s*["'][^"']{16,}["']` | Inlined Vite env var | **Triage** — read the var name |
+| `REACT_APP_[A-Z0-9_]+\s*[:=]\s*["'][^"']{16,}["']` | Inlined CRA env var | **Triage** |
+| `NEXT_PUBLIC_[A-Z0-9_]+\s*[:=]\s*["'][^"']{16,}["']` | Inlined Next public env var | **Triage** |
+| `(?i)(apikey\|api_key\|api-key\|secret\|password\|token)\s*[:=]\s*["'][A-Za-z0-9+/=_-]{16,}["']` | Generic high-entropy assignment | **Critical** |
+| `-----BEGIN (RSA \|EC \|OPENSSH \|DSA \|)PRIVATE KEY-----` | Private key material | **Critical** |
+| `(postgres\|mysql\|mongodb\|redis\|rediss)://[^@/]+:[^@/]+@` | DB connection URL with embedded creds | **Critical** |
+| `https://hooks\.slack\.com/services/[A-Z0-9/]+` | Slack incoming webhook URL | **Critical** |
+| `https://discord(app)?\.com/api/webhooks/[0-9]+/[A-Za-z0-9_-]+` | Discord webhook URL | **Critical** |
+
+**Regex note:** the `\|` inside the table cells above is Markdown table-escaping — the actual regex alternation operator is a single `|`. Replace `\|` with `|` when you paste a pattern into Grep/ripgrep (otherwise `\|` matches a literal pipe and the alternation is lost).
+
+**JWT triage:** decode the payload (`base64 -d` the middle segment) and read the claims — a bundle JWT is usually a *test* token (`exp` in the past, `iss: "test"`), a *public* anon JWT (Supabase's anon key carries `role: anon`), or an actual leaked session token.
+
+**Supabase note:** any `https://*.supabase.co` URL is the locator that makes the key rows above worth chasing. The legacy anon/`service_role` JWTs are **deprecated** — new projects stopped issuing them in November 2025 and existing keys are targeted for disable in **late 2026 (TBC)**, though they still work today — so flag any legacy JWT with a "plan migration to the new `sb_secret_`/`sb_publishable_` key format" note.
 
 ## How to fix
 

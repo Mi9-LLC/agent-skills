@@ -6,7 +6,7 @@ Mi9 LLC public catalog of [Claude Code](https://claude.com/claude-code) Agent Sk
 
 ## How these skills work
 
-**What a skill is.** A folder under `skills/<name>/` containing a `SKILL.md` — YAML metadata (`name`, a `description` that tells Claude *when* to use it, and the `allowed-tools` it's permitted) plus a Markdown playbook Claude follows. Some skills also ship `references/` docs or a `scripts/` helper.
+**What a skill is.** A folder under `skills/<name>/` containing a `SKILL.md` — YAML metadata (`name`, a `description` that tells Claude *when* to use it, and an optional `allowed-tools` list) plus a Markdown playbook Claude follows. `allowed-tools` only pre-approves those tools (skips permission prompts) — it doesn't restrict what the skill can use. A skill that promises restraint (e.g. read-only, no shell) declares `disallowed-tools` instead, which removes those tools from Claude's pool while the skill is active — the restriction clears on your next message, so it guards the activating turn rather than a whole multi-turn flow (a permanent block needs a permission deny rule). Some skills also ship `references/` docs or a `scripts/` helper.
 
 **Install one** into the current project — it lands in your agent's skills directory (`.claude/skills/<name>/` for Claude Code):
 
@@ -38,7 +38,7 @@ Re-run either command anytime to update — it always pulls the current state of
 | [`update-dependencies`](#update-dependencies) | Research-first dependency updates for any JS/TS project (npm/pnpm/yarn/bun, single-package or monorepo). Reads real release notes, migrates code, verifies with quality gates. **Manual-only** (`/update-dependencies`). |
 | [`convert-plan-to-feature`](#convert-plan-to-feature) | Decompose an approved plan into a folder of independently-trackable per-feature spec files — `REQUIREMENTS.md` index + one `features/NN - <name>.md` per unit of work, each with requirements, steps, interface contract, acceptance criteria, and dependencies. |
 | [`new-feature`](#new-feature) | Investigative Q&A workflow that turns a fuzzy feature request into a fully-specified design *before* any code is written: researches the code + current best practices, then surfaces every ambiguous decision as categorized questions with `[REC]`-marked defaults, one category per message, until zero ambiguity remains. Design-only. |
-| [`sonar-issue-check`](#sonar-issue-check) | Reads SonarCloud / self-hosted SonarQube issues for the current repo — by default the new-code issues on the current branch, or `--all` for the full backlog. Zero-dependency Node script; read-only against the Sonar API. |
+| [`sonar-issue-check`](#sonar-issue-check) | Reads SonarCloud / self-hosted SonarQube issues for the current repo's analyzed branch or PR — by default just the new-code issues, or `--all` for the full unresolved backlog on that branch/PR. Zero-dependency Node script; read-only against the Sonar API. |
 | [`sonar-issue-fix`](#sonar-issue-fix) | Companion to `sonar-issue-check` that *fixes* the findings: triages by rule, applies behavior-preserving mechanical fixes plus a characterization-tests-first refactor for cognitive-complexity issues, and re-verifies with the project's gates. Never alters runtime/wire behavior. |
 | [`trim-initial-bundle`](#trim-initial-bundle) | Find and defer vendor libraries that bloat a React + Vite app's initial JS load but are only needed behind lazy routes — shrinking first-load size, LCP, and TTI. Decides everything from the *built* `dist`, diagnoses the leak, fixes on approval, verifies against artifacts. Vite/Rollup/Rolldown only. |
 | [`scaffold-claude`](#scaffold-claude) | Interview-driven `CLAUDE.md` author: asks one section at a time, captures only edge cases and tribal knowledge (never facts inferred from the manifest/tree/README), stubs what you skip, and writes a reviewable draft to `docs/scratchpad/CLAUDE.md`. No shell — Windows-clean. |
@@ -59,7 +59,7 @@ Re-run either command anytime to update — it always pulls the current state of
 
 **Triggers on phrases like.** "review this code", "security review", "audit this app", "scan for vulnerabilities", "OWASP check", "find secrets", "harden security", "pentest this", "is this safe to ship".
 
-**What it does not do.** Modify anything — never touches source, configs, dependencies, lockfiles, `.env*`, or `.gitignore`; the only write is under `audit/`. It surfaces a "add `audit/` to `.gitignore`" suggestion but won't edit `.gitignore` itself. The report body proposes no code edits.
+**What it does not do.** Modify anything — never touches source, configs, dependencies, lockfiles, `.env*`, or `.gitignore`; the only write is under `audit/`. It declares `disallowed-tools: Edit, NotebookEdit`, which drops those tools while the skill is active (a per-turn guard — the restriction clears on your next message). It surfaces a "add `audit/` to `.gitignore`" suggestion but won't edit `.gitignore` itself. The report body proposes no code edits.
 
 **What it produces.** A Markdown report at `<project-root>/audit/<YYYY-MM-DD>/report.md` (a same-day re-run writes `report-HHMMSS.md` so nothing is overwritten) with findings ranked Critical / High / Medium / Low, OWASP A0X:2025 + CWE mappings, `file:line` citations, attack scenarios, remediations, and a prioritized fix list. **Read-only on your source tree.** It echoes the report path and previews the top 3 findings in chat.
 
@@ -97,7 +97,7 @@ npx skills add https://github.com/Mi9-LLC/agent-skills --skill security-vulnerab
 
 **Triggers on phrases like.** "audit my live site", "audit https://…", "are my API keys in the bundle", "Supabase anon key exposed", "check my security headers", "what's my SSL Labs grade", "JWT in localStorage", "test my login rate limit", "production security audit".
 
-**What it does not do.** Touch the live app's data or your source tree. Send any payload beyond the documented probes. Skip Step 0 — a hedged "I think I own it" is treated as No, and a prior session's authorization does not carry over. It caps active probes (≤15 login attempts, one endpoint per run) and uses RFC-reserved `@example.invalid` emails so no real account is touched. On finding a new attack path it stops and recommends rotation rather than exploiting it.
+**What it does not do.** Touch the live app's data or your source tree — it declares `disallowed-tools: Edit, NotebookEdit` to drop those tools while the skill is active (a per-turn guard; the restriction clears on your next message). Send any payload beyond the documented probes. Skip Step 0 — a hedged "I think I own it" is treated as No, and a prior session's authorization does not carry over. It caps active probes (≤15 login attempts, one endpoint per run) and uses RFC-reserved `@example.invalid` emails so no real account is touched. On finding a new attack path it stops and recommends rotation rather than exploiting it.
 
 **What it produces.** A Markdown report at `<project-root>/audit/<YYYY-MM-DD>/live-audit.md` (same-day re-runs append `-HHMMSS`), mirroring the static scan's path so both sit side-by-side under `audit/<date>/`. Findings are ranked Critical → Informational with CWE mappings, redacted evidence, attack scenarios, and remediations. **Read-only on your source and the live app.** A Critical bundle secret makes the reply lead with "Rotate this credential immediately."
 
@@ -208,7 +208,7 @@ npx skills add https://github.com/Mi9-LLC/agent-skills --skill update-dependenci
 
 **Requirements.** An approved/finished plan to convert (plan-mode output, a confirmed design in the conversation, or an existing file under `docs/plans/`). It writes under `docs/plans/` (or a top-level `plans/` fallback). No tokens or network.
 
-**How to run.** Auto-triggers once a plan exists and you ask to decompose it, or run `/convert-plan-to-feature`. `allowed-tools: Bash, Read, Write, Glob, Grep, Agent`.
+**How to run.** Auto-triggers once a plan exists and you ask to decompose it, or run `/convert-plan-to-feature`. `allowed-tools: Read, Write, Glob, Grep`.
 
 **Use it for.** Breaking a complex plan into separately assignable, reviewable, closeable units of work — feature tickets/specs a team or implementation agents can run in parallel.
 
@@ -280,7 +280,7 @@ npx skills add https://github.com/Mi9-LLC/agent-skills --skill new-feature
 
 ## `sonar-issue-check`
 
-**What it does.** Runs a bundled, zero-dependency Node script that reads SonarCloud (or self-hosted SonarQube) issues for the repo you're in and prints a terminal summary — no Sonar web UI, MCP server, or extra install. By default it reports only the unresolved issues in the **new code** of the current branch; `--all` dumps the full backlog.
+**What it does.** Runs a bundled, zero-dependency Node script that reads SonarCloud (or self-hosted SonarQube) issues for the repo you're in and prints a terminal summary — no Sonar web UI, MCP server, or extra install. It always queries the analyzed branch or PR; by default it reports only the unresolved issues in that branch/PR's **new code**, and `--all` reports every unresolved issue on that same branch/PR instead.
 
 **Requirements.**
 - **Node 18+** (uses the built-in `fetch`; zero npm dependencies).
@@ -289,7 +289,7 @@ npx skills add https://github.com/Mi9-LLC/agent-skills --skill new-feature
 - **Project config** — `sonar-project.properties` at the repo root (project key / org / host), or a SonarLint binding in `.vscode/settings.json`; otherwise pass `--project`.
 - Run inside a **git repo** (it reads the current branch), or pass `--branch`. For self-hosted SonarQube, point `--host` at it (the `organization` field is sent only for SonarCloud).
 
-**How to run.** Auto-triggers on read-only Sonar asks, or run `/sonar-issue-check`. `allowed-tools: Bash, Read`. Useful flags: `--all` (full backlog), `--branch <name>`, `--pull-request <id>`, `--types BUG,VULNERABILITY,CODE_SMELL`, `--severities BLOCKER,…,INFO`, `--out <file>` (also write JSON), `--host <url>`, `--fail-on-issues` (exit 1 when matches found — for a gate).
+**How to run.** Auto-triggers on read-only Sonar asks, or run `/sonar-issue-check`. `allowed-tools: Bash, Read`. Useful flags: `--all` (full unresolved backlog on the analyzed branch/PR, not just new code), `--include-resolved` (also include already-resolved issues), `--branch <name>`, `--pull-request <id>`, `--types BUG,VULNERABILITY,CODE_SMELL`, `--severities BLOCKER,…,INFO`, `--out <file>` (also write JSON), `--host <url>`, `--fail-on-issues` (exit 1 when matches found — for a gate).
 
 **Use it for.** The pre-commit / pre-PR "did I just introduce a problem?" check, pulling findings for a specific branch or PR, filtering to bugs/vulnerabilities or high severities, or exporting JSON for a CI gate.
 
@@ -407,7 +407,7 @@ npx skills add https://github.com/Mi9-LLC/agent-skills --skill trim-initial-bund
 
 **Triggers on phrases like.** "scaffold CLAUDE.md", "write a CLAUDE.md", "set up CLAUDE.md", "create project instructions for Claude", "bootstrap CLAUDE.md".
 
-**What it does not do.** Surgically edit an existing `CLAUDE.md` (just edit it directly). Infer or fabricate content to fill a section — an empty stub beats a confident guess. Write to the repo root — the draft lands in `docs/scratchpad/` for you to move. Run any shell command, so it's Windows-clean by construction.
+**What it does not do.** Surgically edit an existing `CLAUDE.md` (just edit it directly). Infer or fabricate content to fill a section — an empty stub beats a confident guess. Write to the repo root — the draft lands in `docs/scratchpad/` for you to move. Run any shell command, so it's Windows-clean by construction — and, along with editing, it declares `disallowed-tools: Bash, Edit, NotebookEdit` to drop those tools while the skill is active (a per-turn guard; the restriction clears on your next message).
 
 **What it produces.** A reviewable draft at `docs/scratchpad/CLAUDE.md` — confirmed sections filled, skipped sections left as `<!-- TODO -->` stubs. Ships `references/` (an annotated one-shot example + the interview scripts) and a `templates/` stub.
 
@@ -438,7 +438,7 @@ npx skills add https://github.com/Mi9-LLC/agent-skills --skill scaffold-claude
 
 **Requirements.** A failure you can reproduce, and a way to run it — your test runner / build / repro command (it uses `dotnet test`, `npm test`, etc.). git helps for the "what recently changed" step. No tokens or network.
 
-**How to run.** Auto-triggers on debugging asks, or run `/systematic-debugging`. `allowed-tools: Read, Grep, Glob, Bash, Edit`.
+**How to run.** Auto-triggers on debugging asks, or run `/systematic-debugging`. `allowed-tools: Read, Grep, Glob, Bash, Edit, Write`.
 
 **Use it for.** Any failure you're about to fix — a bug, a failing or flaky test, a regression, a build break, a crash, "works locally but not in CI", or a repeated failed-fix loop. Most valuable exactly when it's tempting to skip: under time pressure and when a fix "looks obvious."
 

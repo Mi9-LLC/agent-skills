@@ -14,9 +14,11 @@ this domain source-level reasoning is unreliable.
 - [Measuring the saving](#measuring-the-saving)
 - [The Windows EPERM gotcha](#the-windows-eperm-gotcha)
 
-The analyzer script does most of step 0 and the initial-load listing for you:
-`node <skill>/scripts/analyze-initial-load.mjs <dist>`. The greps below are for
-spot-checking a specific library and for the before/after proof.
+The analyzer script does most of step 0 and the initial-load listing for you —
+run the same `scripts/analyze-initial-load.mjs` Phase 1 uses, giving its full
+path (the working directory in the blocks below is your project root, not the
+skill directory). The greps below are for spot-checking a specific library and
+for the before/after proof.
 
 ## Step 0 — find the true entry
 
@@ -97,10 +99,12 @@ entry's static closure / not in `index.html`).
 ## Build cleanliness and gates
 
 ```bash
-# No INEFFECTIVE_DYNAMIC_IMPORT — that warning means the module you lazy-imported
-# is ALSO statically imported somewhere, so the split did nothing.
-<build command> 2>&1 | grep -i 'INEFFECTIVE_DYNAMIC_IMPORT' && echo "LEAK: also static" \
-  || echo "OK: dynamic import is clean"
+# No "ineffective dynamic import" warning — it means the module you lazy-imported
+# is ALSO statically imported somewhere, so the split did nothing. Rollup (Vite ≤7)
+# emits the code INEFFECTIVE_DYNAMIC_IMPORT; Vite 8 / Rolldown may word it
+# differently, so also match the human-readable phrasing.
+<build command> 2>&1 | grep -iE 'INEFFECTIVE_DYNAMIC_IMPORT|dynamic import will not move module' \
+  && echo "LEAK: also static" || echo "OK: dynamic import is clean"
 
 # Then the project's gates:
 <typecheck>  &&  <lint>  &&  <tests>
@@ -118,12 +122,13 @@ for reasons unrelated to your edit.
 
 ```bash
 # From a clean working tree state, snapshot your edits first if needed, then:
+ANALYZER=<path-to-skill>/scripts/analyze-initial-load.mjs   # same script as Phase 1; use its full path so it runs from the project-root cwd this block needs
 git stash -u                       # or: git worktree add ../baseline HEAD
 <build command>
-node <skill>/scripts/analyze-initial-load.mjs "$DIST" > /tmp/baseline.txt
+node "$ANALYZER" "$DIST" > /tmp/baseline.txt
 git stash pop                      # restore your edits
 <build command>
-node <skill>/scripts/analyze-initial-load.mjs "$DIST" > /tmp/after.txt
+node "$ANALYZER" "$DIST" > /tmp/after.txt
 diff /tmp/baseline.txt /tmp/after.txt
 ```
 

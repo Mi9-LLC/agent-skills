@@ -12,7 +12,7 @@ description: >-
   locally but not in CI", a crash/stack trace, or any repeated failed-fix loop.
   Do NOT trigger for trivial, self-evident edits with no failure to diagnose —
   a typo, a rename, an obvious one-line correction.
-allowed-tools: Read, Grep, Glob, Bash, Edit
+allowed-tools: Read, Grep, Glob, Bash, Edit, Write
 ---
 
 # Systematic debugging

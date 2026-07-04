@@ -48,6 +48,11 @@ branch's **new-code** issues — the default scope, which is almost always what
 node .claude/skills/sonar-issue-check/scripts/extract-sonar-issues.mjs
 ```
 
+If the script isn't found at that path (e.g. a personal install under
+`~/.claude/skills/`), use the Glob tool to locate
+`**/sonar-issue-check/scripts/extract-sonar-issues.mjs` before falling back to
+asking the user to paste the issue list.
+
 Use `--pull-request <id>` or `--branch <name>` if the user named a specific
 target. **If the check skill isn't installed, or the user already pasted a list
 of findings, use that and skip the fetch** — all this step needs is, per

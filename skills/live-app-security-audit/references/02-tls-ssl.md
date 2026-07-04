@@ -13,9 +13,9 @@ TLS is the perimeter for every request. Modern browsers refuse to connect over T
 
 The ssllabs.com SSL Server Test is the de-facto runtime check. Its JSON API gives the same grade and detail without scraping HTML. Grade A or better is the modern bar; A+ requires HSTS-preload + clean chain + perfect cipher list.
 
-**API status (June 2026):** the SSL Labs **API v3 is deprecated** (since Jan 2024) but remains live and registration-free — it may be withdrawn without notice. **v4 requires registration** and an `email` request header (free-mail addresses rejected). Use the `/api/v3/analyze` endpoint while it lasts; if it disappears, fall back to a local scanner (`testssl.sh`, `sslyze`) against the reachable host.
+**SSL Labs API:** the SSL Labs **API v3 is deprecated** (since Jan 2024) but remains live and registration-free — it may be withdrawn without notice. **v4 requires registration** and an `email` request header (free-mail addresses rejected). Use the `/api/v3/analyze` endpoint while it lasts; if it disappears, fall back to a local scanner (`testssl.sh`, `sslyze`) against the reachable host.
 
-**Certificate lifetimes are shrinking (CA/Browser Forum SC-081v3):** the max public-cert validity is **200 days since 2026-03-15**, stepping down to **100 days in 2027** and **47 days in 2029**. Manual renewals will no longer be viable at these intervals — **renewal automation (ACME / cert-manager) is mandatory**, not optional.
+**Certificate lifetimes are shrinking (CA/Browser Forum SC-081v3):** the max public-cert validity is **200 days since 2026-03-15**, stepping down to **100 days on 2027-03-15** and **47 days on 2029-03-15** (the domain-validation reuse window drops further, to **10 days**, at the 2029 step). Manual renewals will no longer be viable at these intervals — **renewal automation (ACME / cert-manager) is mandatory**, not optional.
 
 ## What to check
 

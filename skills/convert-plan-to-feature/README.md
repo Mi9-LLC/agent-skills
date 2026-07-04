@@ -146,7 +146,7 @@ Skill:
 
 ```yaml
 name: convert-plan-to-feature
-allowed-tools: Bash, Read, Write, Glob, Grep, Agent
+allowed-tools: Read, Write, Glob, Grep
 ```
 
 ### Folder convention

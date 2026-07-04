@@ -4,8 +4,9 @@
  *
  * By default it reports only the issues introduced in the *new code* of the
  * current git branch — the same "did I just introduce a problem?" signal you
- * want before committing or opening a pull request. Pass --all to dump every
- * open issue on the project instead.
+ * want before committing or opening a pull request. Pass --all to report every
+ * unresolved issue on the analyzed branch/PR instead, not just the new-code
+ * period.
  *
  * No external dependencies: it uses Node's built-in fetch. Configuration
  * (project key, organization, host) is discovered from the project's own
@@ -23,7 +24,7 @@
 import { readFileSync, writeFileSync } from 'node:fs';
 import { execSync } from 'node:child_process';
 import { parseArgs } from 'node:util';
-import { resolve, join } from 'node:path';
+import { resolve } from 'node:path';
 
 const DEFAULT_HOST = 'https://sonarcloud.io';
 const PAGE_SIZE = 500;
@@ -590,7 +591,7 @@ function printHelp() {
     console.log(`Extract SonarCloud / SonarQube issues for this repository.
 
 Usage:
-  node ${join('.claude', 'skills', 'sonar-issue-check', 'scripts', 'extract-sonar-issues.mjs')} [options]
+  node <path-to-skill>/scripts/extract-sonar-issues.mjs [options]
 
 Default behaviour:
   Reports unresolved issues introduced in the NEW CODE of the current git
@@ -606,7 +607,8 @@ Options:
                           on SonarCloud, else derived from the key prefix)
   -b, --branch <name>     Branch to query (default: current git branch)
       --pull-request <id> Query a pull request instead of a branch
-      --all               Report ALL issues, not just new-code ones
+      --all               Report every unresolved issue on the analyzed
+                          branch/PR, not just the new-code period
       --include-resolved  Include resolved/closed issues
       --types <list>      Comma list: BUG,VULNERABILITY,CODE_SMELL
       --severities <list> Comma list: BLOCKER,CRITICAL,MAJOR,MINOR,INFO
@@ -621,7 +623,7 @@ Examples:
   # New issues on the branch I'm about to push
   node .../extract-sonar-issues.mjs
 
-  # Everything on the project, dumped to a file
+  # Every unresolved issue on the branch/PR, dumped to a file
   node .../extract-sonar-issues.mjs --all --out sonar-all.json
 
   # New issues on a specific pull request, only bugs & vulnerabilities

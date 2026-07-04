@@ -24,10 +24,14 @@ are only needed behind a lazy route or a click. The user downloads and parses th
 initial load before the page is interactive; every kilobyte of a library they
 won't use on first paint is wasted LCP/TTI.
 
-**Scope:** Vite (including rolldown-vite) and the Rollup/Rolldown `manualChunks`
-model. The diagnosis transfers to other bundlers but the *fixes* here are
-Vite/Rollup-specific. If the project is Next.js or raw Webpack, stop and say so —
-this skill's fix recipes won't apply.
+**Scope:** Vite of any version. On **Vite ≤7** the bundler is Rollup and chunk
+grouping is `manualChunks`; on **Vite 8** (released March 2026) the bundler is
+Rolldown — now the default — and grouping moved to `output.advancedChunks` (being
+renamed `output.codeSplitting`). The diagnosis below is identical across both; only
+the grouping config knob differs (Fix C in `diagnosis-and-fixes.md` covers each).
+The diagnosis transfers to other bundlers too, but the *fixes* here are Vite-specific.
+If the project is Next.js or raw Webpack, stop and say so — this skill's fix recipes
+won't apply.
 
 ## The one rule that matters
 
@@ -66,7 +70,7 @@ subtle enough that you should show the user the evidence and the proposed change
    (Vite default `dist/`; check `vite.config.*` `build.outDir`).
 2. Run the bundled analyzer against the output's asset dir:
    ```bash
-   node <skill>/scripts/analyze-initial-load.mjs <path-to-dist>
+   node ${CLAUDE_SKILL_DIR}/scripts/analyze-initial-load.mjs <path-to-dist>
    ```
    It finds the true entry from `index.html`, computes the entry's static import
    closure, and prints **what is on the initial load, ranked by size**, plus the
@@ -92,11 +96,12 @@ for the package name and the local wrapper module's path). Then classify the lea
    barrel does `export { X } from './heavy'`; Vite/Rollup do **not** reliably drop
    it even when nothing uses `X`, so the heavy module rides into every barrel
    consumer (and the shell consumes the barrel).
-3. **`manualChunks` hoisting** — the library is forced into its own
-   `manualChunks` vendor chunk, but it's reached only behind a lazy boundary;
-   Rollup/Rolldown then **promote that vendor chunk into the initial graph**
+3. **`manualChunks` hoisting** — the library is forced into its own vendor chunk
+   by a `manualChunks` entry (Vite ≤7 / Rollup) or an `advancedChunks` /
+   `codeSplitting` group (Vite 8 / Rolldown), but it's reached only behind a lazy
+   boundary; the bundler then **promotes that vendor chunk into the initial graph**
    (most reliably when two or more lazy chunks share it). This is the
-   counterintuitive one: the manualChunks entry *causes* the leak.
+   counterintuitive one: the grouping entry *causes* the leak.
 
 A single library often has more than one of these at once (e.g. an eager barrel
 re-export *and* a manualChunks entry). Identify all paths before planning.
@@ -130,7 +135,9 @@ Match the fix to the mechanism (patterns and code in `diagnosis-and-fixes.md`):
   rendering it inside `<Suspense fallback={…}>`. Pull any constants/helpers that
   the *eager* shell also needs into a small dependency-free module, so the shell
   imports those without importing the heavy child.
-- **C. Remove the library's `manualChunks` entry** — but only after you've cut
+- **C. Remove the library's chunk-grouping entry** (`manualChunks` on Vite ≤7 /
+  Rollup; its `advancedChunks` / `codeSplitting` group on Vite 8 / Rolldown) — but
+  only after you've cut
   every eager path (A/B), rebuilt, and confirmed the library is **still** on the
   initial load *despite all its source consumers now being lazy* (the entry still
   statically imports the named vendor chunk). That standalone-still-eager state is
@@ -153,8 +160,10 @@ Rebuild and prove it (recipes in `references/verification.md`):
   chunk.
 - It **is** present in the intended lazy chunk, and **not duplicated** across
   chunks.
-- Build is clean — no `INEFFECTIVE_DYNAMIC_IMPORT` warning (that means the module
-  is *also* statically imported somewhere, defeating the split).
+- Build is clean — no `INEFFECTIVE_DYNAMIC_IMPORT` warning (Rollup / Vite ≤7; on
+  Vite 8 / Rolldown skim for the equivalent "dynamic import will not move module"
+  warning). Such a warning means the module is *also* statically imported somewhere,
+  defeating the split.
 - The app's quality gates pass (typecheck, lint, tests).
 - **Compare against a clean baseline build** (stash/checkout the changes, build,
   diff the initial-load set). This separates a real win from a pre-existing leak
@@ -186,6 +195,10 @@ Report before/after initial-load sizes for the affected library and overall.
 - **Windows + Vite `emptyOutDir`:** never leave your shell `cd`'d inside `dist`
   (or any path under it) when you rebuild — the directory delete fails with
   `EPERM`. Build from the project root and use absolute paths.
+- **Vite 8 / Rolldown emits more, smaller chunks than Rollup did.** The analyzer's
+  ranked initial-load list will be longer, and a deferred library may land in (or
+  share) several smaller chunks — the method is unchanged, but re-check for
+  duplication across them.
 - **A library used by 2+ lazy routes** may, after deferral, land in a shared chunk
   loaded by just those routes (good). Verify it didn't get re-hoisted to the entry
   and isn't duplicated into each route.
