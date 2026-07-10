@@ -13,7 +13,9 @@ description: >-
   answer (syntax, config, debugging, lookups, conversions, proofreading) even
   when phrased as "is this correct". When activated, lead with the strongest
   opposing case, name the load-bearing untested assumption, and refuse to
-  retreat without new evidence.
+  retreat without new evidence. Do NOT trigger for a structured
+  pre-implementation review of a written implementation plan — that is
+  `plan-eng-review`'s job.
 ---
 
 # anti-sycophancy

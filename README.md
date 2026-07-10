@@ -44,6 +44,12 @@ Re-run either command anytime to update — it always pulls the current state of
 | [`scaffold-claude`](#scaffold-claude) | Interview-driven `CLAUDE.md` author: asks one section at a time, captures only edge cases and tribal knowledge (never facts inferred from the manifest/tree/README), stubs what you skip, and writes a reviewable draft to `docs/scratchpad/CLAUDE.md`. No shell — Windows-clean. |
 | [`systematic-debugging`](#systematic-debugging) | Root-cause-first debugging discipline: investigate before fixing, test one hypothesis at a time, fix the cause behind a failing test, and after 3 failed fixes stop and question the architecture. .NET + JS examples. |
 | [`test-driven-development`](#test-driven-development) | **Opt-in** red-green-refactor discipline for work you choose to drive test-first — failing test → watch it fail → minimal code to pass → refactor. Triggers only on explicit TDD asks / new test-driven features, never on every edit. .NET + JS examples. |
+| [`session-handoff`](#session-handoff) | Create and resume handoff documents for transferring work between AI agent sessions — bundled Python scripts scaffold the document, validate it (secret scan + completeness score), and grade staleness before a resume. Writes under `.claude/handoffs/`. |
+| [`retro`](#retro) | Data-grounded engineering retrospective from the current repo's git history — commits, sessions, churn, test ratio, focus score, AI-assisted share — by default the last 7 days, or `--compare` for a trend against the prior window. Zero-dependency Node script; every number traces to its JSON output, never estimated. |
+| [`verify-frontend-change`](#verify-frontend-change) | Never calls a UI change done from a clean edit alone — starts the dev server, opens the affected page in Chrome (via the Chrome DevTools MCP server), interacts with the change, gates on zero new console errors, records a performance trace. Any failure is fixed and the loop rerun from the top. |
+| [`health`](#health) | Local quality-gate dashboard for the current repo — runs the project's own typecheck/lint/test/dead-code/shell-lint gates, scores each 0–10 against a weighted rubric, and computes a composite; `--save` tracks the trend against repo history. Zero-dependency Node script; every number traces to its JSON output, never estimated. |
+| [`plan-eng-review`](#plan-eng-review) | Pre-implementation review gate for a *written* implementation plan — scope challenge, what-already-exists reuse check, four review dimensions (architecture / code quality / tests / performance), evidence-gated findings, then a verdict plus a `## ENG REVIEW REPORT` spliced into the plan file (terminal-only when the plan has no file on disk). Never implements the plan. |
+| [`document-generate`](#document-generate) | Writes Diataxis documentation files (tutorial / how-to / reference / explanation) for a named feature, module, or project — end-to-end codebase archaeology first, a partition plan approved before any file is written, every example executed, traced, or labeled illustrative. Never edits `CLAUDE.md`/`AGENTS.md`, never commits. |
 
 ---
 
@@ -135,7 +141,7 @@ npx skills add https://github.com/Mi9-LLC/agent-skills --skill live-app-security
 
 **Triggers on phrases like.** "should I", "I'm planning to", "I've decided", "what do you think", "is this the right call", "review my plan", "am I seeing this right", plus explicit asks: "play devil's advocate", "be brutal", "punch holes", "challenge me". Stated confidence or stakeholder buy-in ("the team agrees") *amplifies* activation rather than skipping it.
 
-**What it does not do.** Activate on objective questions with one knowable answer — syntax, config values, debugging, conversions, proofreading — even when phrased "is this correct?" Those need execution, not opposition. It won't manufacture a flaw to look thorough; if the idea holds up, it says so.
+**What it does not do.** Activate on objective questions with one knowable answer — syntax, config values, debugging, conversions, proofreading — even when phrased "is this correct?" Those need execution, not opposition. It won't manufacture a flaw to look thorough; if the idea holds up, it says so. It also does not run the structured pre-implementation review of a written implementation plan — that is [`plan-eng-review`](#plan-eng-review)'s job.
 
 **What it produces.** Nothing on disk — a behavioral mode that shapes the conversation.
 
@@ -149,6 +155,8 @@ You: I'm going to move all our services to a monorepo this sprint — sounds rig
   What would the last 20 PRs have looked like under a monorepo — actually faster, or just
   rebased more often?
 ```
+
+**Pairs with.** [`plan-eng-review`](#plan-eng-review) — anti-sycophancy supplies the skepticism *stance* for any decision or idea; plan-eng-review is the structured *gate* for a written implementation plan. The plan-review carve-out sentence above was appended to this skill's description after its skill-creator description-eval run — the eval-carved core is otherwise unchanged, and re-running the description eval remains an optional follow-up.
 
 **Install.**
 
@@ -267,6 +275,8 @@ You: I want to add SSO to the portal
   A2. Session model: (a) [REC] reuse existing JWT cookie  (b) new server session store
   Confirm A1–A2.
 ```
+
+**Pairs with.** [`document-generate`](#document-generate) — this skill settles the design decisions before a line of code is written; that one documents the feature once it exists.
 
 **Install.**
 
@@ -422,6 +432,8 @@ You: set up a CLAUDE.md for this project
   repo root when you're happy with it.
 ```
 
+**Pairs with.** [`document-generate`](#document-generate) — this skill authors the agent-facing context (`CLAUDE.md`); that one authors the human-facing docs for the same project.
+
 **Install.**
 
 ```
@@ -500,6 +512,235 @@ npx skills add https://github.com/Mi9-LLC/agent-skills --skill test-driven-devel
 ```
 
 **Full definition:** [`skills/test-driven-development/SKILL.md`](skills/test-driven-development/SKILL.md) (plus the anti-patterns reference). Adapted from [`obra/superpowers`](https://github.com/obra/superpowers) (MIT) — reframed as opt-in, decoupled, with .NET/xUnit + TS/Vitest examples.
+
+---
+
+## `session-handoff`
+
+**What it does.** Creates comprehensive handoff documents so a fresh AI agent session can pick up work with zero ambiguity, and resumes from them later. Two modes: **CREATE** — scaffold a handoff, fill in state/decisions/next-steps, validate it before finalizing; **RESUME** — list available handoffs, grade staleness against the current repo state, then load the handoff (and its chain of predecessors, if any) before starting work.
+
+**Requirements.** **Python 3.9+** (the bundled scripts use built-in generics like `list[str]`; stdlib only — `argparse`, `os`, `re`, `subprocess`, `datetime`, `pathlib` — nothing to `pip install`). A git repository improves the auto-filled metadata (branch, recent commits, modified files) but isn't required. No tokens or network.
+
+**How to run.** Auto-triggers on save-state / handoff / resume asks, or run `/session-handoff`. Declares no `allowed-tools` (unrestricted).
+
+**Use it for.** Preserving context before a long session runs out of room, handing off to a different agent or teammate, or picking a project back up after a break without re-deriving what you already figured out.
+
+**Triggers on phrases like.** "save state", "create handoff", "I need to pause", "context is getting full", "load handoff", "resume from", "continue where we left off". Also self-triggers proactively after substantial work (5+ file edits, complex debugging, an architecture decision).
+
+**What it does not do.** Let you finalize a handoff with secrets detected or a validation score below 70 — `validate_handoff.py` scans for API keys, passwords, tokens, private keys, and common connection-string/bearer-token patterns before sign-off. Let a resume proceed blind — `check_staleness.py` grades the handoff FRESH → SLIGHTLY_STALE → STALE → VERY_STALE from time elapsed, commits since, files changed, and branch divergence, and a VERY_STALE result is a signal to create a fresh handoff rather than trust the old one.
+
+**What it produces.** A Markdown handoff at `.claude/handoffs/YYYY-MM-DD-HHMMSS-<slug>.md` — metadata, current state summary, codebase understanding, decisions made with rationale, immediate next steps, pending work, critical files, patterns discovered, and gotchas — optionally linked to a predecessor with `--continues-from` to form a chain. The documented workflow writes only under `.claude/handoffs/`. Ships `scripts/` (`create_handoff.py`, `list_handoffs.py`, `validate_handoff.py`, `check_staleness.py`) and `references/` (`handoff-template.md`, `resume-checklist.md`).
+
+**Example.**
+
+```
+You: context is getting full, save state before we continue tomorrow
+→ python scripts/create_handoff.py implementing-user-auth
+  Wrote .claude/handoffs/2026-07-08-143022-implementing-user-auth.md
+  Validation: 88/100, no secrets detected, no TODOs remaining.
+  First step next session: wire the refresh-token rotation in src/auth/session.ts.
+```
+
+**Install.**
+
+```
+npx skills add https://github.com/Mi9-LLC/agent-skills --skill session-handoff
+```
+
+**Full definition:** [`skills/session-handoff/SKILL.md`](skills/session-handoff/SKILL.md) · **README:** [`skills/session-handoff/README.md`](skills/session-handoff/README.md) (plus the handoff template and resume checklist under `references/`).
+
+---
+
+## `retro`
+
+**What it does.** Engineering retrospective for the current git repository. A bundled, zero-dependency Node script (`scripts/git-retro.mjs`) computes every metric deterministically from git history — commits, contributors, LOC, test ratio, per-author work sessions (45-minute-gap detection), an hourly histogram, commit-type mix, churn hotspots, approximate PR count/size buckets, focus score, ship-of-the-window, streaks, and AI-assisted-commit share (via `Co-Authored-By` trailers) — and emits one JSON document; the model's only job is to turn that JSON into a narrative, never to compute or round a number itself.
+
+**Requirements.** **Node 18+** (built-in `fetch`; zero npm dependencies). A git repository with commit history. The script does one best-effort `git fetch` unless `--no-fetch` is passed. No token required.
+
+**How to run.** Auto-triggers on retro / velocity / "what did we ship" asks, or run `/retro`. `allowed-tools: Bash, Read, Write`. Useful flags: `--window 7d|24h|Nd|Nh|Nw` (default 7-day window), `--compare` (adds the prior same-length window, computed live from git, plus deltas), `--base <ref>` (default `origin/<default-branch>`, auto-detected), `--no-fetch`, `--save [dir]` (writes a JSON snapshot to `docs/retros/`, then the model writes the markdown narrative alongside it).
+
+**Use it for.** Weekly or sprint retros, "are we shipping faster than last month" trend checks, or a fast read on team velocity, focus, and churn hotspots without hand-computing git-log arithmetic.
+
+**Triggers on phrases like.** "what did we ship this week", "weekly retro", "engineering retrospective", "team velocity", "commit stats for the last N days", "who worked on what lately", "are we shipping faster than last month".
+
+**What it does not do.** State a number that isn't in the script's JSON — the iron rule is every figure in the retro traces back to that JSON, or the skill says the metric is unavailable. Grade, rank, or critique individual teammates — per-author output is stats-only (a leaderboard plus a personal deep-dive for the runner), improvement suggestions stay team-level, and it declines performance-review / HR asks outright. Pad a quiet window — a zero-commit window is reported as exactly that. Commit, push, or write anything beyond the optional `docs/retros/` snapshot and narrative on an explicit `--save`.
+
+**What it produces.** By default, a 1,500–2,500-word narrative straight into the conversation: a tweetable one-liner, then a summary table, time/session patterns, shipping velocity, code-quality signals, focus & ship-of-the-window, a personal "your week" section for the runner, a team leaderboard, top 3 wins, 3 things to improve, 3 habits for next week, and — with `--compare` — a deltas table. Any true guard from the JSON (`zeroCommits`, `staleBase`, `fetchFailed`, `noRemote`, `detachedHead`, `shallowClone`) is carried into the narrative as a caveat, verbatim. With `--save`, also a JSON snapshot at `docs/retros/<YYYY-MM-DD>-<n>.json` and a markdown report at `docs/retros/<YYYY-MM-DD>-retro.md`. **Read-only on the repository otherwise.**
+
+**Example.**
+
+```
+You: what did we ship this week?
+→ Week of Jul 1: 47 commits (3 contributors), 3.2k LOC, 38% tests, 12 PRs, peak: 22:00 | streak 12d
+  … summary table, time & session patterns, shipping velocity, code-quality signals,
+  focus & ship of the window, your week, team leaderboard, top 3 wins, 3 things to
+  improve, 3 habits for next week.
+```
+
+**Install.**
+
+```
+npx skills add https://github.com/Mi9-LLC/agent-skills --skill retro
+```
+
+**Full definition:** [`skills/retro/SKILL.md`](skills/retro/SKILL.md) (plus the `git-retro.mjs` script under `scripts/`). Adapted from [`garrytan/gstack`](https://github.com/garrytan/gstack) (MIT) — rebuilt so a deterministic script replaces model-computed arithmetic; gstack-state integrations (learnings, Greptile, telemetry, global mode) dropped.
+
+---
+
+## `verify-frontend-change`
+
+**What it does.** Closes the "should work now" gap on frontend work. After a UI change it runs a five-step browser verification loop via the Chrome DevTools MCP server: start (or reuse) the dev server → open the affected page → interact with the changed behavior → require zero new console errors → record a performance trace. A change is reported *done* only when every step passes in one uninterrupted pass; any failure gets fixed and the loop reruns from the top.
+
+**Requirements.** The [Chrome DevTools MCP server](https://github.com/ChromeDevTools/chrome-devtools-mcp) registered in Claude Code (`claude mcp add chrome-devtools --scope user npx chrome-devtools-mcp@latest` — needs Node 20.19+/22.12+/23+ and a current Chrome). Without it the skill stops and reports the change **unverified** instead of pretending. Plus a web app with a runnable dev server.
+
+**How to run.** Auto-triggers when a frontend change is about to be declared done, and on verify-asks; or run `/verify-frontend-change`. Declares no `allowed-tools` (unrestricted) — shell and browser actions prompt per your own permission settings, including your `chrome-devtools` MCP tools.
+
+**Use it for.** Any web-app change you'd otherwise sign off from a green build — component behavior, style tweaks, routes, client state — in any framework with a dev server (Vite, Next.js, CRA, Angular, Nuxt, Astro, SvelteKit, Remix; same loop for Rails/Django/ASP.NET-served frontends).
+
+**Triggers on phrases like.** "verify it works", "check it in the browser", "make sure nothing broke", "does it actually render", "test the UI change" — and proactively whenever a frontend edit is about to be called done/fixed/working. Does **not** trigger for backend-only, CLI, test-only, or docs-only changes.
+
+**What it does not do.** Call a change done from a clean edit, green build, or HMR reload. Resume mid-loop after a fix — a fix voids earlier evidence, so it reruns from Step 1. Patch forever — after 3 failed fix-and-rerun cycles on the same step it stops and questions the approach instead of trying a 4th. Invent login credentials, kill a dev server it didn't start, or hide a blocked step — "blocked, here's exactly what wasn't checked" is a valid end state; fake-verified is not.
+
+**What it produces.** No repo artifacts — an evidence-backed verdict in chat: the URL verified, the interactions performed, console triage (new vs pre-existing), and trace numbers (LCP/CLS, flagged long tasks) with dev-mode caveats. Ships `references/` (`chrome-devtools-mcp.md` tool cheatsheet, `dev-server-playbook.md`).
+
+**Example.**
+
+```
+You: swap the settings page's theme toggle for the new ThemePicker — done?
+→ Not yet — verifying. Started `pnpm dev` (localhost:5174 — port hopped), opened
+  /settings, picked "dark", saved, reloaded — persisted. Console: 1 new error
+  (ThemePicker.tsx:42, `prefs` undefined) → fixed, reran from the top: 0 errors.
+  Trace: LCP 1.1s, CLS 0.00, no new long tasks (dev-mode numbers).
+  Verified — done. Dev server stopped.
+```
+
+**Pairs with.** [`trim-initial-bundle`](#trim-initial-bundle) — when the trace step flags heavy first-load JS on a Vite app, that skill finds and defers the vendor weight.
+
+**Install.**
+
+```
+npx skills add https://github.com/Mi9-LLC/agent-skills --skill verify-frontend-change
+```
+
+**Full definition:** [`skills/verify-frontend-change/SKILL.md`](skills/verify-frontend-change/SKILL.md) (plus the tool cheatsheet and dev-server playbook under `references/`).
+
+---
+
+## `health`
+
+**What it does.** A local quality-gate dashboard for the current repository. A bundled, zero-dependency Node script (`scripts/check-health.mjs`) runs the project's own tools — typecheck, lint, test, dead-code, shell lint — parses their output, scores each category 0–10 against a weighted rubric (typecheck 25 / lint 20 / test 30 / deadcode 15 / shell 10, renormalized over whichever gates actually ran), and computes one weighted composite; the model's only job is to narrate that JSON, never to compute or estimate a score itself.
+
+**Requirements.** **Node 18+** (zero npm dependencies). Whatever quality-gate tools the project already uses — a typechecker, linter, test runner, dead-code detector, shell linter. A category without an installed tool is skipped, not failed, and its weight redistributes across the rest. On first run there's no `.claude/health.json` yet — the skill detects a proposed config and has you confirm it before anything runs.
+
+**How to run.** Auto-triggers on whole-project quality-overview asks, or run `/health`. `allowed-tools: Bash, Read, Write`. First run: `--detect-only` prints the proposed config (command/weight/reason per category) for you to confirm via AskUserQuestion before it's saved to `.claude/health.json` and anything executes. After that: no flags for a normal check, `--only typecheck,lint` to run a subset, `--config <path>` for a specific config file, `--save [dir]` to append a line to `docs/health/history.jsonl` (trend is read from that file automatically whenever it exists).
+
+**Use it for.** A whole-project quality snapshot before a release or a big refactor, a "how healthy is this codebase" gut-check on an unfamiliar repo, or tracking whether quality is trending up or down over time via `--save` history.
+
+**Triggers on phrases like.** "check project health", "how healthy is the codebase", "quality dashboard", "run all the quality gates", "code health score", "full quality check", "are we getting better or worse".
+
+**What it does not do.** Fix anything it finds — that's a separate ask (`sonar-issue-fix` for Sonar findings). Run a single gate — "just run the tests" needs no dashboard. Set up CI pipelines, or substitute its own linter/test runner for the project's — it wraps the project's own commands and configs exactly. Score a skipped category — no tool installed means skipped, never a zero. State a number that isn't in the script's JSON.
+
+**What it produces.** A terminal dashboard: a header (repo/branch/date), a category table (gate, command, score, label, findings, duration — skipped rows say *skipped (reason)*, never a score), the composite (`X.X/10` with a CLEAN/WARNING/NEEDS WORK/CRITICAL label), a details block quoting real output for anything scoring below 7, script-ranked recommendations, a trend section when history exists, and a caveat line for every true honesty guard (`noToolsDetected`, `notGitRepo`, `dirtyWorkingTree`, `anyTimeout`, `anyParseFallback`, `firstRun`). Writes nothing by default; `--save` appends one line to `docs/health/history.jsonl`, and only on an explicit ask does the model also Write `docs/health/<YYYY-MM-DD>-health.md`. **Never commits or pushes.**
+
+**Example.**
+
+```
+You: how healthy is this codebase?
+→ No .claude/health.json yet — detected: typecheck (tsc, 25), lint (eslint, 20), test (vitest, 30),
+  dead-code (knip, 15), shell (shellcheck, 10). Save this and run? (yes)
+→ Composite: 6.8/10 NEEDS WORK
+  typecheck 9.0 · lint 7.2 · test 5.5 (12 failing) · deadcode 8.0 · shell skipped (no .sh files)
+  Top recommendation (HIGH): 12 failing tests in src/orders/*.spec.ts are dragging the composite down.
+```
+
+**Install.**
+
+```
+npx skills add https://github.com/Mi9-LLC/agent-skills --skill health
+```
+
+**Full definition:** [`skills/health/SKILL.md`](skills/health/SKILL.md) (plus the `check-health.mjs` script under `scripts/`). Adapted from [`garrytan/gstack`](https://github.com/garrytan/gstack) (MIT) — rebuilt so a deterministic script replaces model-computed scoring; the gstack-only gbrain dimension and `~/.gstack` global state are dropped (weights renormalized to 100); config moves to a user-confirmed `.claude/health.json`; history is opt-in (`--save`) and lives in-repo under `docs/health/`.
+
+---
+
+## `plan-eng-review`
+
+**What it does.** The gate between "a plan exists" and "code gets written". Reviews a written implementation plan (the plan-mode draft, a file under `docs/plans/`, or a pasted plan) before any code is written: scope challenge → what-already-exists reuse check → four dimensions (architecture; code quality of the planned code; tests — the heaviest; performance) → verdict. Iron law: no finding without evidence — a presence finding quotes the plan or a `file:line` verified with Read/Grep; an absence finding quotes the plan text that creates the obligation plus the negative search that verified the absence. REGRESSION RULE: if the plan modifies existing behavior and no existing test covers the changed path, a regression test goes into Required plan changes — never asked, never waived.
+
+**Requirements.** A written implementation plan to review, and the codebase it targets — the review grounds itself in the repo's `CLAUDE.md` and the files the plan touches. No tokens, no network.
+
+**How to run.** Auto-triggers when a written plan exists and you ask for it to be reviewed, or run `/plan-eng-review`. `allowed-tools: Read, Grep, Glob, Bash, Write` (Bash is used read-only: git context, existence probes).
+
+**Use it for.** Gating a plan before implementation — catching rebuilt-what-already-exists, untested behavior changes, silent failure paths, and bloated scope while they are still cheap to fix.
+
+**Triggers on phrases like.** "review this plan", "eng review the plan", "is this plan sound", "architecture review before we build", "check the implementation plan before I start".
+
+**What it does not do.** Implement the plan (whatever the verdict). Design a feature from scratch (that's `new-feature`), decompose an approved plan (`convert-plan-to-feature`), devil's-advocate a decision or idea that isn't a written plan (`anti-sycophancy`), or review written code/diffs. It never edits any plan byte outside the report — the only mutation is replacing/appending the `## ENG REVIEW REPORT` section via a single whole-file Write-splice. Findings are batched into the report (each with a `[REC]`); AskUserQuestion is reserved for genuine scope/design forks, batched per section; an unanswered fork is recorded under `UNRESOLVED DECISIONS:`, never silently defaulted. Never commits or pushes.
+
+**What it produces.** An `## ENG REVIEW REPORT` section appended at the end of the plan file (replacing any prior report; resolved decisions carry forward on re-runs and are never re-asked): a VERDICT (APPROVED / APPROVED WITH CHANGES / NEEDS REVISION — bound by a decision table: any CRITICAL GAP or unresolved decision ⇒ NEEDS REVISION; non-empty Required plan changes ⇒ at most APPROVED WITH CHANGES), scope-reduction opportunities, what-already-exists reuse findings, per-dimension findings (max 8 each, severity-ranked, confidence 1–10), a Required plan changes checklist, a failure-modes table (failure / test? / handled? / user-visible?), a test-coverage summary (★★★/★★/★/GAP planned-coverage legend + `COVERAGE: N/M`), a Decisions block, a NOT-in-scope list, a low-confidence appendix, and a closing `NO UNRESOLVED DECISIONS` / `UNRESOLVED DECISIONS:` marker. Terminal-only (zero writes) when the plan has no file on disk. Optional outside voice on explicit ask only: one subagent prompted to refute the verdict, tensions shown neutrally. Ships `references/review-dimensions.md`.
+
+**Example.**
+
+```
+You: review docs/plans/csv-import.md before I start building
+→ Grounded in CLAUDE.md + the 6 files the plan touches. 1 decision batch: processing
+  model (sync in request vs [REC] async job). Spliced ## ENG REVIEW REPORT into the plan:
+  VERDICT: NEEDS REVISION — importOrders() failure path is silent, untested, unhandled
+  (CRITICAL GAP). Required plan changes: 2 (regression test for calculateTotals — the
+  plan changes tested-by-nobody behavior; explicit error path for failed rows).
+  What already exists: parseCsv() at src/lib/csv.ts — plan rebuilds it; reuse instead.
+```
+
+**Pairs with.** [`new-feature`](#new-feature) → plan mode → **this gate** → [`convert-plan-to-feature`](#convert-plan-to-feature) — design the feature, plan it, gate the plan, then decompose it. Also [`anti-sycophancy`](#anti-sycophancy) — that skill is the skepticism *stance* for any decision or idea; this one is the structured, evidence-gated *workflow* for a written plan. They complement, not compete. Also [`document-generate`](#document-generate) — this gate reviews the plan before implementation; that skill writes the user-facing docs once the code exists.
+
+**Install.**
+
+```
+npx skills add https://github.com/Mi9-LLC/agent-skills --skill plan-eng-review
+```
+
+**Full definition:** [`skills/plan-eng-review/SKILL.md`](skills/plan-eng-review/SKILL.md) (plus the review checklists, calibration tables, and report skeleton under `references/`). Adapted from [`garrytan/gstack`](https://github.com/garrytan/gstack) (MIT) — rebuilt so per-finding question gates become per-section decision batching, the automatic Codex outside voice becomes an optional on-request Claude subagent, the separate test-plan/tasks artifacts fold into the single in-plan report, and gstack state is dropped.
+
+---
+
+## `document-generate`
+
+**What it does.** Writes human-facing documentation files — Diataxis tutorials, how-to guides, reference pages, and explanations — for a named feature, module, or whole project. Reads the implementation and tests end-to-end before writing a word (codebase archaeology), classifies what's needed across the four Diataxis quadrants via a decision matrix, gets the partition plan approved, then writes in a fixed order: reference, explanation, how-to, tutorial.
+
+**Requirements.** A codebase to document — the whole project, or a named feature/module/file within it. No bundled script, token, or network dependency; it works entirely from the repo's own source, tests, and existing docs.
+
+**How to run.** Auto-triggers on doc-writing asks, or run `/document-generate`. `allowed-tools: Read, Grep, Glob, Bash, Write, Edit`.
+
+**Use it for.** Producing an actual documentation file for a feature, module, or project — a tutorial that gets a newcomer to a working result, a how-to for one specific task, a reference page covering the full public surface, or an explanation of a design decision.
+
+**Triggers on phrases like.** "write docs for this", "generate documentation", "document this feature / module / project", "create a tutorial for X", "write a how-to for X", "add reference docs".
+
+**What it does not do.** Answer a "how does X work?" question asked in conversation — that gets answered directly, no files produced. Author `CLAUDE.md` or `AGENTS.md` agent context (`scaffold-claude`'s job — never touched by this skill). Design a feature that isn't built yet (`new-feature`) or decompose an approved plan into specs (`convert-plan-to-feature`). Run an automated stale-docs sweep across a diff — "document the changes I just made" gets redirected at Step 0 to name the actual targets, since the code is the documentation source, not the diff. Commit or push, under any circumstance.
+
+**What it produces.** New or extended Markdown files in the resolved docs home — target-local convention, then repo `docs/`, then a detected doc framework (Docusaurus / MkDocs / VitePress / Nextra, with its sidebar updated), then a new root `docs/` as the last resort — written in order reference → explanation → how-to → tutorial, plus link lines added to the README's documentation section (a minimal `## Documentation` section is appended if none exists) and any existing docs sidebar. Ends with a report: files new/extended, quadrant counts, quality-gate results, a per-example verification list (executed / traced / illustrative), and a Corrections field for anywhere existing docs contradicted the code.
+
+**Example.**
+
+```
+You: document the retry helper in src/retry.ts
+→ Archaeology: retry(fn, opts) — maxAttempts (default 3), baseDelayMs (default 100);
+  maxAttempts=0 throws RangeError (retry.test.ts:71).
+  Partition plan: reference (new) + how-to (new) — approved as-is.
+→ Wrote docs/reference-retry.md, docs/how-to-retry-flaky-calls.md. 1 link line added to
+  README's ## Documentation.
+  Corrections: README said the default maxAttempts is 5; src/retry.ts:14 says 3 — both
+  new docs and the README now say 3.
+```
+
+**Pairs with.** [`scaffold-claude`](#scaffold-claude) — that skill authors the agent-facing context (`CLAUDE.md`); this one authors the human-facing docs for the same project. Also [`new-feature`](#new-feature) and [`plan-eng-review`](#plan-eng-review) — those settle decisions before the code is built; this skill documents it once it exists.
+
+**Install.**
+
+```
+npx skills add https://github.com/Mi9-LLC/agent-skills --skill document-generate
+```
+
+**Full definition:** [`skills/document-generate/SKILL.md`](skills/document-generate/SKILL.md) (plus the quadrant templates, anti-mixing table, and collision-policy detail under `references/`). Adapted from [`garrytan/gstack`](https://github.com/garrytan/gstack) (MIT) — rebuilt so the commit/push/PR-update tail is dropped (this skill never commits), the `gstack-redact` binary becomes a placeholder-credentials rule, the confirm-above-5-docs threshold becomes an always-on partition-plan approval gate, upstream's inline-summaries-plus-standalone-files default narrows to standalone files plus minimal link lines, and the gstack machinery is dropped.
 
 ---
 
