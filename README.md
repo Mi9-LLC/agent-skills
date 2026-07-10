@@ -156,7 +156,7 @@ You: I'm going to move all our services to a monorepo this sprint — sounds rig
   rebased more often?
 ```
 
-**Pairs with.** [`plan-eng-review`](#plan-eng-review) — anti-sycophancy supplies the skepticism *stance* for any decision or idea; plan-eng-review is the structured *gate* for a written implementation plan. The plan-review carve-out sentence above was appended to this skill's description after its skill-creator description-eval run — the eval-carved core is otherwise unchanged, and re-running the description eval remains an optional follow-up.
+**Pairs with.** [`plan-eng-review`](#plan-eng-review) — anti-sycophancy supplies the skepticism *stance* for any decision or idea; plan-eng-review is the structured *gate* for a written implementation plan.
 
 **Install.**
 
