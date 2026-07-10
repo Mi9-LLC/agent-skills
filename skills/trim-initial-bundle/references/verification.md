@@ -120,10 +120,27 @@ reshuffling. Build the **unchanged** tree and compare its initial-load set to
 yours. The library you targeted may already have been on (or off) the initial load
 for reasons unrelated to your edit.
 
+**Primary: `git worktree`.** Builds the baseline exactly once, in a side directory,
+so the tree with your fix is never rebuilt a second time just for this comparison —
+reuse the `$DIST` build Phase 5 already produced:
+
 ```bash
-# From a clean working tree state, snapshot your edits first if needed, then:
 ANALYZER=<path-to-skill>/scripts/analyze-initial-load.mjs   # same script as Phase 1; use its full path so it runs from the project-root cwd this block needs
-git stash -u                       # or: git worktree add ../baseline HEAD
+BASELINE=../baseline
+git worktree add "$BASELINE" HEAD    # clean checkout of HEAD — untouched by your uncommitted fix
+(cd "$BASELINE" && <build command>)
+node "$ANALYZER" "$BASELINE/<same relative dist path as $DIST>" > /tmp/baseline.txt
+node "$ANALYZER" "$DIST" > /tmp/after.txt   # the fix build from Phase 5 — no rebuild needed
+diff /tmp/baseline.txt /tmp/after.txt
+git worktree remove "$BASELINE"       # add --force if build artifacts block removal
+```
+
+**Fallback: `git stash`**, for when a worktree isn't practical (no spare disk, a
+workspace/submodule layout that doesn't tolerate a second checkout). This rebuilds
+the fix tree a second time after popping the stash:
+
+```bash
+git stash -u
 <build command>
 node "$ANALYZER" "$DIST" > /tmp/baseline.txt
 git stash pop                      # restore your edits

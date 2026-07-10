@@ -238,17 +238,18 @@ function resolveOrg(props, host, projectKey) {
     if (!isEmpty(opts.org)) {
         return { org: opts.org, derived: false };
     }
+    if (!isSonarCloudHost(host)) {
+        // Self-hosted SonarQube has no organizations concept; never auto-resolve one.
+        return { org: undefined, derived: false };
+    }
     if (!isEmpty(process.env.SONAR_ORG)) {
         return { org: process.env.SONAR_ORG.trim(), derived: false };
     }
     if (!isEmpty(props['sonar.organization'])) {
         return { org: props['sonar.organization'], derived: false };
     }
-    if (isSonarCloudHost(host)) {
-        return { org: deriveOrg(projectKey), derived: true };
-    }
 
-    return { org: undefined, derived: false };
+    return { org: deriveOrg(projectKey), derived: true };
 }
 
 function isSonarCloudHost(host) {
@@ -381,8 +382,14 @@ async function fetchIssues(cfg) {
             componentKeys: cfg.projectKey,
             ps: String(PAGE_SIZE),
             p: String(page),
-            resolved: String(cfg.includeResolved),
         });
+
+        if (!cfg.includeResolved) {
+            // Sonar's `resolved` param is exclusive: resolved=true returns ONLY
+            // resolved issues. Omit it to get the union (resolved + unresolved)
+            // that --include-resolved promises; default stays unresolved-only.
+            params.set('resolved', 'false');
+        }
 
         if (!isEmpty(cfg.organization)) {
             params.set('organization', cfg.organization);

@@ -14,7 +14,8 @@ Usage:
     python validate_handoff.py .claude/handoffs/2024-01-15-143022-auth.md
 """
 
-import os
+from __future__ import annotations
+
 import re
 import sys
 from pathlib import Path

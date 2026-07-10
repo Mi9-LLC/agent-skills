@@ -190,7 +190,7 @@ Only where the plan plausibly touches these — no generic advice:
   [REC] <the recommended action>
 ```
 
-### Verdict rules
+### Verdict rules (verbatim)
 
 Checked top-down; the first matching row wins. Judgment never overrides
 the table.

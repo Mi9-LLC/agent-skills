@@ -86,6 +86,9 @@ into the narrative as a caveat, in plain words:
 - `detachedHead` — informational; mention only if it affects the base choice.
 - `shallowClone` — streak numbers are unreliable; say so where streaks appear.
 
+Under `--compare` there is no top-level `guards` key — check `current.guards`
+and `prior.guards` separately; they can differ.
+
 ## Narrative structure
 
 Open with a **tweetable one-liner** (one line, from JSON values only, e.g.
@@ -101,10 +104,12 @@ then these sections, in order:
    detected per author (45-minute gap), so speak of them per person or as
    team totals — never as one interleaved stream.
 3. **Shipping velocity** — commit-type mix (merges excluded), PR count and
-   size buckets (note they are approximate — the JSON marks `approx: true`),
-   and the `fixRatioHigh` flag if set: a fix share above 50% signals
-   ship-fast-fix-fast and possible review gaps. Call out fix-chains
-   (repeated fixes on the same area) when hotspots corroborate.
+   size buckets (note they are approximate — the JSON marks `approx: true`;
+   if `prs.diffCapped` is true, say N merges (`prs.skipped`) were excluded
+   from sizing entirely, not just approximated), and the `fixRatioHigh` flag
+   if set: a fix share above 50% signals ship-fast-fix-fast and possible
+   review gaps. Call out fix-chains (repeated fixes on the same area) when
+   hotspots corroborate.
 4. **Code-quality signals** — test ratio, test files changed, churn hotspots
    (files changed 5+ times), test-vs-prod tags on the hotspot list.
 5. **Focus & ship of the window** — focus score with its modal directory
@@ -148,7 +153,10 @@ then these sections, in order:
 
 1. Run the script with `--save` — it writes the collision-safe JSON snapshot
    (`docs/retros/<YYYY-MM-DD>-<n>.json`) itself.
-2. Write your finished narrative to `docs/retros/<YYYY-MM-DD>-retro.md`.
+2. Write your finished narrative to `docs/retros/<YYYY-MM-DD>-retro.md`. If
+   that file already exists (e.g. a second `--save` run today), don't
+   overwrite it — use `docs/retros/<YYYY-MM-DD>-retro-2.md` (then `-3`, …)
+   instead.
 3. Tell the user both paths. Do not commit them.
 
 Trends need no persistence: `--compare` recomputes the prior window live

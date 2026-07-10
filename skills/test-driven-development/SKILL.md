@@ -75,7 +75,7 @@ import { retryOperation } from './retry';
 
 test('retries a failing operation until the third attempt succeeds', async () => {
   let attempts = 0;
-  const op = () => {
+  const op = async () => {
     attempts++;
     if (attempts < 3) throw new Error('fail');
     return 'success';
@@ -151,6 +151,9 @@ export async function retryOperation<T>(fn: () => Promise<T>): Promise<T> {
   throw new Error('unreachable');
 }
 ```
+
+(The C# GREEN implementation for `Retry.OperationAsync` is intentionally left
+to the reader here, mirroring the TS example above.)
 
 ### Verify GREEN — watch it pass (mandatory)
 

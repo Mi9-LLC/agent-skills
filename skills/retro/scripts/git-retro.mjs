@@ -19,8 +19,14 @@
 
 import { execFileSync } from 'node:child_process';
 import { writeFileSync, mkdirSync, existsSync } from 'node:fs';
-import { parseArgs } from 'node:util';
+import * as nodeUtil from 'node:util';
 import { resolve, join } from 'node:path';
+
+if (typeof nodeUtil.parseArgs !== 'function') {
+    console.error('Error: requires Node 18.3+ (util.parseArgs not found).');
+    process.exit(1);
+}
+const { parseArgs } = nodeUtil;
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -778,23 +784,6 @@ function computeShip(sizedEntries, nonMergeCommits) {
     return { kind: 'commit', hash: biggest.hash.slice(0, 7), subject: biggest.subject, author: biggest.authorName, loc: biggest.insertions + biggest.deletions };
 }
 
-function peakHourOf(commits) {
-    if (commits.length === 0) {
-        return null;
-    }
-    const histogram = new Array(24).fill(0);
-    for (const c of commits) {
-        histogram[new Date(c.authorDate).getHours()]++;
-    }
-    let peak = 0;
-    for (let h = 1; h < 24; h++) {
-        if (histogram[h] > histogram[peak]) {
-            peak = h;
-        }
-    }
-    return peak;
-}
-
 /** One row per author, non-merge commits only, current user pinned first when known. */
 function computeAuthors(nonMergeCommits, perAuthorSessions, currentUser) {
     const byAuthor = groupBy(nonMergeCommits, (c) => c.authorName);
@@ -831,7 +820,7 @@ function computeAuthors(nonMergeCommits, perAuthorSessions, currentUser) {
             netLoc: insertions - deletions,
             testRatio: testIns + prodIns > 0 ? round3(testIns / (testIns + prodIns)) : null,
             topAreas,
-            peakHour: peakHourOf(cs),
+            peakHour: computeHourly(cs).peakHour,
             biggestCommit: { hash7: biggest.hash.slice(0, 7), subject: biggest.subject, loc: biggest.insertions + biggest.deletions },
             sessions,
         });

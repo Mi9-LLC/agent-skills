@@ -12,6 +12,8 @@ Usage:
     python list_handoffs.py /path     # List handoffs in specified path
 """
 
+from __future__ import annotations
+
 import os
 import re
 import sys
@@ -103,7 +105,8 @@ def main():
     handoffs = list_handoffs(project_path)
 
     if not handoffs:
-        print(f"No handoffs found in {project_path}/.claude/handoffs/")
+        handoffs_path = Path(project_path) / ".claude" / "handoffs"
+        print(f"No handoffs found in {handoffs_path}")
         print("\nTo create a handoff, run: python create_handoff.py [task-slug]")
         return
 

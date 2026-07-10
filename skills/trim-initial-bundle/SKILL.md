@@ -70,7 +70,7 @@ subtle enough that you should show the user the evidence and the proposed change
    (Vite default `dist/`; check `vite.config.*` `build.outDir`).
 2. Run the bundled analyzer against the output's asset dir:
    ```bash
-   node ${CLAUDE_SKILL_DIR}/scripts/analyze-initial-load.mjs <path-to-dist>
+   node ${CLAUDE_SKILL_DIR}/scripts/analyze-initial-load.mjs <path-to-dist> --all
    ```
    It finds the true entry from `index.html`, computes the entry's static import
    closure, and prints **what is on the initial load, ranked by size**, plus the
@@ -151,6 +151,8 @@ Match the fix to the mechanism (patterns and code in `diagnosis-and-fixes.md`):
 Keep edits surgical and match the codebase's existing lazy-loading convention
 (grep for existing `lazy(() => import(...))` calls and mirror their shape).
 
+Never commit or push; leave changes for the user to review.
+
 ### Phase 5 — Verify against the artifacts
 
 Rebuild and prove it (recipes in `references/verification.md`):
@@ -175,12 +177,8 @@ Report before/after initial-load sizes for the affected library and overall.
 
 - **Source lies; artifacts don't.** Every "obvious" source fix in this domain has
   a decent chance of not moving the chunk. Grep `dist`, don't assume.
-- **`manualChunks` can hoist a lazy-only library to the entry — but prove it's the
-  cause before removing it.** A manualChunk is only the culprit if the library
-  stays on the initial load *after* every eager path is cut. Don't reflexively
-  delete a manualChunks entry because a heavy lib is on first load — first cut the
-  eager paths (barrel/eager import) and rebuild; often that alone fixes it and the
-  manualChunk was innocent. And never *add* one to "isolate" a deferred lib.
+- **`manualChunks` can hoist a lazy-only library to the entry.** Don't reflexively
+  remove it — see Fix C (Phase 4) for how to confirm it's actually the cause first.
 - **Barrels don't reliably tree-shake heavy re-exports.** A `export { X } from
   './heavy'` in a shell-consumed barrel leaks `heavy` even when `X` is unused.
 - **Static import vs lazy dep-map.** In a chunk, `from"./x-HASH.js"` is a static

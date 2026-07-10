@@ -2,19 +2,18 @@
 name: verify-frontend-change
 description: >-
   Use this skill EVERY time a frontend/UI change is about to be called done,
-  fixed, or working — in a web app, a successful edit, a clean build, or an
-  HMR reload is NOT evidence. It verifies the change in a real Chrome via the
-  Chrome DevTools MCP server: start (or reuse) the dev server, open the
-  affected page, interact with the changed behavior, require zero new console
-  errors, and record a performance trace — any failure is fixed and the whole
-  loop rerun from the top. Trigger after any change that alters what the
-  browser loads or does — components, pages, styles, routes, client state,
+  fixed, or working — in a web app, a successful edit, a clean build, or an HMR
+  reload is NOT evidence. It verifies the change in a real Chrome via the Chrome
+  DevTools MCP server (console errors and a performance trace), with a
+  fix-and-rerun loop on any failure. Trigger after any change that alters what
+  the browser loads or does — components, pages, styles, routes, client state,
   bundler/dev-server config, client dependencies, static assets or the HTML
   shell — even a "trivial" one-liner — and on asks like "verify it works",
   "check it in the browser", "make sure nothing broke", "does it actually
   render". Do NOT trigger for backend-only, CLI, test-only, or docs-only
-  changes, for running an existing e2e/test suite, for native (React Native)
-  UI, or when there is no runnable web frontend.
+  changes, for running an existing e2e/test suite, for native (React Native) UI,
+  when there is no runnable web frontend, or when a failure is already known and
+  needs root-cause diagnosis first (systematic-debugging).
 ---
 
 # Verify frontend change

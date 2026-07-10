@@ -1,6 +1,17 @@
 ---
 name: session-handoff
-description: "Creates comprehensive handoff documents for seamless AI agent session transfers. Triggered when: (1) user requests handoff/memory/context save, (2) context window approaches capacity, (3) major task milestone completed, (4) work session ending, (5) user says 'save state', 'create handoff', 'I need to pause', 'context is getting full', (6) resuming work with 'load handoff', 'resume from', 'continue where we left off'. Proactively suggests handoffs after substantial work (multiple file edits, complex debugging, architecture decisions). Solves long-running agent context exhaustion by enabling fresh agents to continue with zero ambiguity."
+description: >-
+  Creates comprehensive handoff documents for seamless AI agent session
+  transfers. Triggered when: (1) user requests handoff/memory/context save, (2)
+  context window approaches capacity, (3) major task milestone completed, (4)
+  work session ending, (5) user says 'save state', 'create handoff', 'I need to
+  pause', 'context is getting full', (6) resuming work with 'load handoff',
+  'resume from', 'continue where we left off'. Proactively suggests handoffs
+  after substantial work (multiple file edits, complex debugging, architecture
+  decisions). Solves long-running agent context exhaustion by enabling fresh
+  agents to continue with zero ambiguity. Do NOT trigger on an ordinary
+  same-conversation "keep going" or "continue" when no handoff file exists or is
+  referenced and the current agent can just proceed.
 ---
 
 # Handoff
@@ -17,7 +28,7 @@ Determine which mode applies:
 **Resuming from a handoff?** User wants to continue previous work, load context, or mentions an existing handoff.
 - Follow: RESUME Workflow below
 
-**Proactive suggestion?** After substantial work (5+ file edits, complex debugging, major decisions), suggest:
+**Proactive suggestion?** After substantial work (5+ file edits, complex debugging, major decisions) **or when the conversation has grown very long / context feels constrained**, suggest:
 > "We've made significant progress. Consider creating a handoff document to preserve this context for future sessions. Say 'create handoff' when ready."
 
 ## CREATE Workflow
@@ -83,6 +94,8 @@ Report to user:
 ## RESUME Workflow
 
 ### Step 1: Find Available Handoffs
+
+Skip this step if the user already named the specific handoff file; go directly to Step 2 (check_staleness.py on the named file).
 
 List handoffs in the current project:
 

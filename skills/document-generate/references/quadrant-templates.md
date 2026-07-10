@@ -16,7 +16,7 @@ Read top-to-bottom before writing the first doc. Contents:
 Information-oriented. The reader is working and needs a fact — a signature,
 a default, a constraint. Factual, complete, derived directly from code.
 
-```markdown
+````markdown
 # [Entity Name]
 
 [One paragraph: what it is, what it does, when you'd use it.]
@@ -40,7 +40,7 @@ as written.]
 
 [Links: the how-to(s) that use this surface, the explanation that
 motivates it.]
-```
+````
 
 Rules:
 
@@ -58,7 +58,7 @@ Rules:
 Understanding-oriented. The reader wants to know why it works this way.
 This is the design rationale.
 
-```markdown
+````markdown
 # [Concept / Design Decision]
 
 [Opening paragraph: the problem this design solves, stated for a smart
@@ -83,7 +83,7 @@ below.]
 
 [Only if discoverable from code comments, ADRs, or git history: what was
 tried or rejected, and why.]
-```
+````
 
 Rules:
 
@@ -103,7 +103,7 @@ Rules:
 Task-oriented. The reader knows the basics and wants to accomplish one
 specific thing.
 
-```markdown
+````markdown
 # How to [accomplish specific task]
 
 [One sentence: what you'll accomplish and the end result.]
@@ -133,7 +133,7 @@ config state. Be specific.]
 
 [Common failure modes and their fixes — pulled from tests and
 error-handling code, not imagination.]
-```
+````
 
 Rules:
 
@@ -150,7 +150,7 @@ Rules:
 Learning-oriented. Takes a newcomer from zero to a working example. The
 hardest quadrant to write, and the most valuable.
 
-```markdown
+````markdown
 # [Tutorial title — what you'll build/learn]
 
 [Opening paragraph: what you'll build and why it's useful. Concrete —
@@ -182,7 +182,7 @@ on first encounter.]
 
 [Recap what the reader now has and what it can do. Link to the reference
 and how-to docs. Suggest a next step.]
-```
+````
 
 Rules:
 

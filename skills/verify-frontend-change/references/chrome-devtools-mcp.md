@@ -15,14 +15,10 @@ Registered under the server name `chrome-devtools`, tools appear as
 user may have registered it under a different server name — what matters is that
 tools with these names exist, not the prefix.
 
-If none are available, give the user the official command and stop (end state:
-**Blocked**):
+If none are available, this is a **Blocked** end state — the install command to
+give the user is in SKILL.md's Requirements section.
 
-```
-claude mcp add chrome-devtools --scope user npx chrome-devtools-mcp@latest
-```
-
-or the JSON equivalent in `.mcp.json` / MCP settings:
+The JSON equivalent, for `.mcp.json` / MCP settings:
 
 ```json
 { "mcpServers": { "chrome-devtools": { "command": "npx", "args": ["-y", "chrome-devtools-mcp@latest"] } } }
@@ -68,15 +64,12 @@ tree won't show styling.
 ## Reading the console (Step 4)
 
 `list_console_messages` returns the messages **since the last navigation** of the
-selected page. That cuts both ways: the fresh load at the start of a pass scopes
-out stale pre-fix messages, but any *further* navigation (a redirect after a form
-submit, a link click, the next route of a multi-route change) silently wipes what
-came before it. So read the console once per navigation — after each load and the
-interactions on it, before anything that navigates again — and gate on the union.
-Optional `types` filter narrows to e.g. errors; when triaging, read everything —
-warnings carry hydration/deprecation signals. `get_console_message` fetches one
-message in full when the list view truncates; stack traces are source-mapped, which
-is what lets you attribute an error to a changed file.
+selected page — the mechanism behind the Step 4 read-once-per-navigation rule: a
+fresh load scopes out stale pre-fix noise, and any further navigation wipes it
+again. Optional `types` filter narrows to e.g. errors; when triaging, read
+everything — warnings carry hydration/deprecation signals. `get_console_message`
+fetches one message in full when the list view truncates; stack traces are
+source-mapped, which is what lets you attribute an error to a changed file.
 
 ## Recording the trace (Step 5)
 
@@ -97,17 +90,11 @@ tasks, document latency). Drill into any of them with
 insight names the responsible resource or script, which is how you tell "my
 change did this" from ambient dev-server noise.
 
-Judging the result:
-
-- **Attributable regression = step failure.** The insight or long task points at
-  code/resources your change introduced (your new import render-blocking, your
-  component shifting layout, your handler's long task).
-- **Ambient result = pass with numbers reported.** Dev servers are unminified and
-  unoptimized; absolute numbers run worse than production. Report them as
-  "current, dev-mode" figures — never as proof the change costs nothing.
-- When performance *is* the point of the change, offer a follow-up trace against
-  the production build (`npm run build` + `vite preview` / `next start`, then the
-  same trace against that URL) — those numbers are comparable to real Web Vitals.
+Judging the result: same pass/fail rule as Step 5 in the body (attributable
+regression fails; otherwise pass with dev-mode numbers reported as "current," not
+proof of cost). One addition: the production-build comparison is `npm run build` +
+`vite preview` / `next start`, then the same trace against that URL — those numbers
+are the ones comparable to real Web Vitals.
 
 `lighthouse_audit` also exists on current server versions; it's a heavier,
 opinionated adjunct — the loop's required artifact is the trace, but a Lighthouse

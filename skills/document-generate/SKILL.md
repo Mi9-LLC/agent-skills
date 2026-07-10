@@ -2,12 +2,13 @@
 name: document-generate
 description: >-
   Write documentation FILES — Diataxis tutorials, how-to guides, reference
-  pages, and explanations — for a named feature, module, or whole project,
-  grounded in end-to-end code research done before a word of prose. Use
-  whenever the user wants docs produced: "write docs for this", "generate
-  documentation", "document this feature / module / project", "create a
-  tutorial for X", "write a how-to for X", "add reference docs". Do NOT
-  trigger for: answering a how-does-X-work question in conversation (just
+  pages, and explanations — for a named feature, module, file, or whole project,
+  grounded in end-to-end code research done before a word of prose; also adds a
+  short cross-link line in the README or docs index. Use whenever the user wants
+  docs produced or refreshed: "write docs for this", "generate documentation",
+  "document this feature / module / project", "create a tutorial for X", "write
+  a how-to for X", "add reference docs", "update the docs to match the code". Do
+  NOT trigger for: answering a how-does-X-work question in conversation (just
   answer it — no files are wanted), authoring CLAUDE.md or AGENTS.md agent
   context (scaffold-claude), designing a feature that is not built yet
   (new-feature), or decomposing an approved plan into feature specs
@@ -157,15 +158,10 @@ Partition plan:
   csv parser    explanation  extend  docs/design.md (exists — merge)
 ```
 
-**Collisions are `extend` rows.** A planned file that already exists —
-including one this skill wrote in a previous or interrupted run — is never
-blindly overwritten. The same goes for an existing doc that already covers
-the target under a different name in the docs home: fold into it (`extend`)
-rather than creating a parallel file. Either way: read it fully first, merge
-under its structure, and preserve its authored prose *except where it
-contradicts the code*. **Code
-wins every factual or API claim in any file this skill extends**; every such
-correction is reported. Full mechanics live in the references file.
+**Collisions are `extend` rows.** A planned file that already exists — from
+a previous run or under a different name — becomes an `extend` row, not a
+new file. Merge mechanics live in `references/quadrant-templates.md` §8,
+"Collision policy detail".
 
 **Iron-law tensions surface here.** If a matrix-prescribed quadrant cannot
 be produced to the evidence standard (execution infeasible and the shape

@@ -1,21 +1,21 @@
 ---
 name: plan-eng-review
 description: >-
-  Structured engineering review of a WRITTEN implementation plan — the
-  plan-mode draft, a plan file (e.g. under docs/plans/), or a plan pasted
-  into the chat — run BEFORE any code is written. Challenges scope, checks
-  every proposed helper against what already exists, reviews four dimensions
-  (architecture, code quality, tests, performance), and ends with a verdict
-  (APPROVED / APPROVED WITH CHANGES / NEEDS REVISION) plus a report appended
-  to the plan file; every finding must quote its evidence. Trigger when a
-  written plan exists and the user wants it checked: "review this plan",
-  "eng review the plan", "is this plan sound", "architecture review before
-  we build", "check the implementation plan before I start". Do NOT trigger
-  for designing a feature from scratch (new-feature), decomposing an
-  already-approved plan into feature specs (convert-plan-to-feature),
-  devil's-advocate pushback on a decision or idea that is not a written
-  implementation plan (anti-sycophancy), or reviewing written code/diffs.
-allowed-tools: Read, Grep, Glob, Bash, Write
+  Structured engineering review of a WRITTEN implementation plan — the plan-mode
+  draft, a plan file under docs/plans/, or a plan pasted into the chat — run
+  BEFORE any code is written. Challenges scope, checks every proposed helper
+  against what already exists, reviews four dimensions (architecture, code
+  quality, tests, performance), and ends with a verdict (APPROVED / APPROVED
+  WITH CHANGES / NEEDS REVISION) plus a report appended to the plan file; every
+  finding must quote its evidence. Trigger when a written plan exists and the
+  user wants it checked: "review this plan", "eng review the plan", "is this
+  plan sound", "architecture review before we build", "check the implementation
+  plan before I start". Do NOT trigger for designing a feature from scratch
+  (new-feature), decomposing an approved plan into feature specs
+  (convert-plan-to-feature), devil's-advocate pushback on a decision or idea
+  that is not a written implementation plan (anti-sycophancy), or reviewing
+  written code/diffs (code review / sonar-issue-check).
+allowed-tools: Read, Grep, Glob, Bash, Write, Agent
 disallowed-tools: Edit, NotebookEdit
 ---
 
@@ -182,7 +182,8 @@ whole-file Write (full skeleton in the references file):
 1. Read the entire plan file.
 2. Find H2 boundaries: lines starting with `## ` at column zero — exactly
    two `#` (a third makes it an H3, not a boundary) — **outside fenced code
-   blocks** (track ``` fences while scanning), tolerating a trailing `\r`.
+   blocks** (track ``` and ~~~ fences — 3+ of the same character, matched
+   open/close — while scanning), tolerating a trailing `\r`.
 3. Delete **every** existing `## ENG REVIEW REPORT` section, wherever it
    sits: each runs from its heading line through the line before the next
    H2 boundary, or EOF.
@@ -209,7 +210,9 @@ A one-line run stamp (run number, date, plan path) sits between the heading
 and the verdict; then:
 
 1. **`VERDICT:`** — one of three verdicts plus a one-sentence rationale,
-   bound by this table, checked top-down (judgment never overrides it):
+   bound by this table (verbatim — kept identical to the copy in
+   `references/review-dimensions.md`), checked top-down (judgment never
+   overrides it):
 
    | Condition | Verdict |
    |---|---|
@@ -243,12 +246,12 @@ and the verdict; then:
 ### Optional outside voice — on explicit ask only
 
 Only when the user asks for a second opinion: spawn one general-purpose
-subagent, hand it the plan and the finished report, and prompt it to
-**refute the verdict** — argue the verdict is wrong, findings are mistaken,
-or something material was missed. Where it disagrees, show both positions
-neutrally as tensions and let the user decide; never auto-adopt its
-recommendations. Where it agrees, one line says so. Nothing runs
-automatically, and no other AI system is involved.
+subagent via the `Agent` tool, hand it the plan and the finished report,
+and prompt it to **refute the verdict** — argue the verdict is wrong,
+findings are mistaken, or something material was missed. Where it
+disagrees, show both positions neutrally as tensions and let the user
+decide; never auto-adopt its recommendations. Where it agrees, one line
+says so. Nothing runs automatically, and no other AI system is involved.
 
 ## After the review
 
@@ -258,6 +261,7 @@ automatically, and no other AI system is involved.
   with `convert-plan-to-feature`, or implement it.
 - Either way, **this skill never proceeds to implementation itself** — the
   review ends when the report is delivered.
+- **Never commits or pushes.**
 
 ## When NOT to use this skill
 

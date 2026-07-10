@@ -17,11 +17,12 @@ Usage:
     python create_handoff.py  # auto-generates slug from timestamp
 """
 
+from __future__ import annotations
+
 import argparse
 import os
 import re
 import subprocess
-import sys
 from datetime import datetime
 from pathlib import Path
 

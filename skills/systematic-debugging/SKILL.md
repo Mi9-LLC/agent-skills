@@ -1,17 +1,18 @@
 ---
 name: systematic-debugging
 description: >-
-  Use this skill when debugging any failure before proposing a fix — a bug,
-  test failure, flaky test, regression, build break, crash, or unexpected
-  behavior. It enforces a four-phase discipline: investigate the root cause
-  first, analyze the pattern/context, test ONE hypothesis at a time, then fix
-  the cause (not the symptom) behind a failing test. Hard rule: no fix without
-  root-cause investigation first, and after 3 failed fixes, stop and question
-  the architecture instead of trying a 4th. Trigger for "why is this broken",
-  "this test is flaky", "my fix didn't work", "this keeps failing", "it works
-  locally but not in CI", a crash/stack trace, or any repeated failed-fix loop.
-  Do NOT trigger for trivial, self-evident edits with no failure to diagnose —
-  a typo, a rename, an obvious one-line correction.
+  Use this skill when debugging any failure before proposing a fix — a bug, test
+  failure, flaky test, regression, build break, crash, slow/latency symptom, or
+  unexpected behavior. It enforces a four-phase discipline: investigate the root
+  cause first, analyze the pattern/context, test ONE hypothesis at a time, then
+  fix the cause (not the symptom) behind a failing test. Hard rule: no fix
+  without root-cause investigation first, and after 3 failed fixes, stop and
+  question the architecture instead of trying a 4th. Trigger for "why is this
+  broken", "why is this slow", "this test is flaky", "my fix didn't work", "this
+  keeps failing", "it works locally but not in CI", "latency" or "performance
+  regression", a crash/stack trace, or any repeated failed-fix loop. Do NOT
+  trigger for trivial, self-evident edits with no failure to diagnose — a typo,
+  a rename, an obvious one-line correction.
 allowed-tools: Read, Grep, Glob, Bash, Edit, Write
 ---
 
@@ -96,7 +97,8 @@ Apply the scientific method. One variable at a time.
    suspects at once — if it goes green you won't know which one mattered, and you
    may have added a new bug.
 3. **Verify before continuing.** Worked? Move to Phase 4. Didn't? Form a *new*
-   hypothesis — do not pile a second fix on top of the first.
+   hypothesis — do not pile a second fix on top of the first — and that failed
+   test counts toward the 3-attempt limit in Phase 4.
 4. **If you don't understand something, say so.** "I don't understand why X happens"
    is a valid, useful state. Research it or ask — don't fake certainty and fix
    blind.

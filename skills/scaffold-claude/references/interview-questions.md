@@ -8,7 +8,7 @@ Question scripts for each section. Use these verbatim or close to it. The goal o
 2. **Offer "skip" every time.** "If there's nothing non-obvious here, say skip and I'll stub it."
 3. **One section at a time.** Don't batch all questions. The user's attention is the bottleneck.
 4. **Echo what they said before writing.** "OK so I'll write: '<paraphrase>'. Sound right?" — catches misinterpretation before it hardens into the file.
-5. **Confirm overwrites.** If `CLAUDE.md` already exists, ask before reading or replacing.
+5. **Confirm overwrites.** If `CLAUDE.md` (or `AGENTS.md`) already exists, reading it to scan/detect is fine — mention that it exists and ask whether to merge or start fresh before replacing it.
 
 ---
 

@@ -97,22 +97,8 @@ you don't burn one.
 **Structural fixes (cognitive complexity, untested code)** — characterization
 tests come FIRST. The point of decomposing a function is to keep its output
 identical while making it readable; you cannot claim that safely without a test
-that locks the current output. So:
-
-1. **Write characterization tests first.** Build representative fixtures that
-   fork down every branch the function takes, call the function, and snapshot
-   the result (your test framework's snapshot assertion, or an equality check
-   against captured literals). Run them and confirm green — this captures
-   *current* behavior as the baseline, before any refactor.
-2. **Refactor to identical output.** Extract helpers, replace repeated ternaries
-   with a single branch that assembles a variant object, pull nested
-   conditionals into well-named functions — whatever drops the cognitive
-   complexity under the limit. In a typed language, a structural type assertion
-   on the assembled object (e.g. TypeScript's `satisfies <Type>`) is a strong
-   compile-time guard that you didn't drop or rename a field.
-3. **Re-run the snapshots.** They must stay **byte-identical**. That is the
-   pass/fail signal for the refactor. If a snapshot changes, the refactor
-   changed behavior — revert and redo, do not update the snapshot.
+that locks the current output. Write characterization tests before
+refactoring — see `references/refactor-playbook.md` for the loop and gotchas.
 
 These characterization tests are not throwaway — they stay as permanent
 regression coverage for code that previously had none.
@@ -145,9 +131,11 @@ Local gates prove the code is correct and clean, but only Sonar's gate closes
 the loop. Because Sonar reads scanned commits (the timing caveat above), the
 user must push so the CI pipeline re-scans. Commit + push **only if the user
 asked** (Sonar fixes are usually bundled into the feature branch's existing PR —
-follow the repo's own commit-message convention). Then wait for the pipeline to
-finish and re-run `sonar-issue-check`; the freshly-scanned result should show 0
-new issues (or the reduced set you expect).
+follow the repo's own commit-message convention). Then confirm the pipeline
+finished — ask the user, or check status via the repo's CI CLI (e.g. `gh pr
+checks`); don't poll indefinitely. Once confirmed, re-run `sonar-issue-check`;
+the freshly-scanned result should show 0 new issues (or the reduced set you
+expect).
 
 Each push + scan cycle costs several minutes, so before pushing be *sure* each
 fix actually clears its rule — confirm the edit removes the construct the rule

@@ -1,7 +1,21 @@
 ---
 name: live-app-security-audit
-description: 'Runtime security audit of any deployed, live web application. Use proactively whenever the user asks to audit a live URL, scan a deployed app, check the production posture of a running site, vet a "vibe-coded" app, or inspect any of the seven checks on a running target: security headers, TLS/SSL, frontend-bundle secrets, localStorage tokens, unauthenticated endpoints, login rate-limiting, and username enumeration. Triggers on phrases like audit my live site, scan my deployed app, audit https://..., check my headers, run an SSL Labs scan, inspect my JS bundle for secrets, are my API keys exposed, find leaked Supabase keys, test login rate limiting, password reset enumeration, production/live/runtime security audit. Active probes (rate-limit, enumeration) require explicit authorization at Step 0. Writes a report to audit/<YYYY-MM-DD>/live-audit.md. Complementary to security-vulnerability-scan (static source review) — run both; if a review is requested without a live URL or source tree, ask which and offer both.'
-allowed-tools: Read, Grep, Glob, Bash, WebFetch, Write
+description: >-
+  Runtime security audit of any deployed, live web application. Use proactively
+  whenever the user asks to audit a live URL, scan a deployed app, check the
+  production posture of a running site, vet a "vibe-coded" app, pentest a live
+  or deployed app, or run any of the seven checks on a running target: security
+  headers, TLS/SSL, frontend-bundle secrets, localStorage tokens,
+  unauthenticated endpoints, login rate-limiting, and username enumeration.
+  Triggers on phrases like audit my live site, scan my deployed app, run an SSL
+  Labs scan, are my API keys exposed, test login rate limiting, password reset
+  enumeration, penetration test the production site, production/live/runtime
+  security audit. Step 0 requires target-ownership confirmation before any step,
+  and separate consent for active probes (rate-limit, enumeration). Writes a
+  dated report to audit/YYYY-MM-DD/live-audit.md. Complementary to
+  security-vulnerability-scan (static source review); if neither a live URL nor
+  a source tree is given, ask which and offer both.
+allowed-tools: Read, Grep, Bash, WebFetch, Write
 disallowed-tools: Edit, NotebookEdit
 ---
 
@@ -20,7 +34,7 @@ Trigger proactively — don't wait for the literal skill name. The frontmatter d
 - **Read** — the live target (URLs the user authorizes), plus its publicly fetchable JS bundles. Optionally read the local project tree if the user is running this skill from inside the deployed app's repo.
 - **Write** — exactly one location: `<project root>/audit/<YYYY-MM-DD>/live-audit.md` (or a timestamped variant if it already exists).
 - **Never modify** — the live application's data, the user's source tree, configs, `.env*`, `.gitignore`, or anything outside `audit/`.
-- **Never send** — payloads beyond the documented probes. Rate-limit and enumeration probes use clearly synthetic credentials (`live-audit-probe-<ts>@example.invalid`) against the documented endpoints only.
+- **Never send** — payloads beyond the documented probes. Rate-limit and enumeration probes use clearly synthetic credentials (`live-audit-probe-<ts>@example.invalid`) against the documented endpoints only, with one deliberate exception: Step 7's Email B probe uses a real, user-supplied account and WILL trigger a genuine password-reset email/token on it.
 - **Network required** — most steps need outbound HTTP(S). In strict sandboxes, mark affected steps "Skipped — sandbox" in the report and continue with what works.
 
 ## Step 0 — Target Authorization
@@ -34,7 +48,7 @@ Before Claude touches the target, confirm three things with the user. Be explici
    - "Do you own this target, or are you authorized to security-test it?"
    - If unsure: ask whether the target is hosted by the user (own infra / own Vercel/Netlify/Cloudflare account / own VPS), or whether they are a contracted/employed tester for the owning party.
    - If neither: **stop**. Do not run any step. Explain to the user that even passive header checks can violate terms of service against third-party targets, and that the standard remedy is to either (a) get written authorization or (b) point the skill at the user's own staging copy.
-3. **Active-probe authorization (Steps 6 & 7).** Steps 6 (rate-limit) and 7 (enumeration) send real traffic at login / password-reset endpoints. Ask the user explicitly: "May I send ~15 bogus-credential login attempts and 2–4 password-reset probes against this target?" Three outcomes:
+3. **Active-probe authorization (Steps 6 & 7).** Steps 6 (rate-limit) and 7 (enumeration) send real traffic at login / password-reset endpoints. Ask the user explicitly: "May I send ~15 bogus-credential login attempts and 2–4 password-reset probes against this target? One of the password-reset probes (Step 7's Email B) will target a real registered account you supply and WILL trigger a genuine password-reset email/token on it — everything else uses synthetic, non-existent credentials." Three outcomes:
    - **Yes** → record the consent verbatim in the report (`Authorization: granted by <user> at <timestamp>`) and run Steps 6 and 7.
    - **No** → run Steps 1–5 only; mark Steps 6 and 7 as `Skipped — user declined active probes` in the report.
    - **Unclear / hedged** ("I think so", "should be fine") → treat as **No**. Surface the hedge and re-ask. Do not infer consent.
@@ -58,6 +72,8 @@ curl -sI -L --max-time 15 "$URL/login"   # if a login route exists
 $resp = Invoke-WebRequest -Uri $URL -Method Head -MaximumRedirection 5 -UseBasicParsing
 $resp.Headers | Format-List
 ```
+
+**Early exit — unreachable target.** If the first curl returns a connection-level error (could not resolve host / connection refused / timeout — as opposed to a non-2xx HTTP status), stop immediately, report the target unreachable, and skip Steps 2–7.
 
 ### Cross-check via securityheaders.com
 
@@ -104,7 +120,7 @@ WebFetch  https://api.ssllabs.com/api/v3/analyze?host=<HOST>&publish=off&fromCac
 
 Parse the returned JSON. The interesting fields:
 
-- `status` — `READY` means usable result; `IN_PROGRESS` means re-fetch in 60s. Up to ~2 minutes for cold scans.
+- `status` — `READY` means usable result; `IN_PROGRESS` means re-fetch in 60s. Poll at most twice (120s total); if still `IN_PROGRESS` after that, mark Step 2 `Skipped — SSL Labs scan did not complete`.
 - `endpoints[*].grade` — `A+` / `A` / `A-` / `B` / `C` / `D` / `F` / `T` (trust issue) / `M` (mismatch).
 - `endpoints[*].details.cert.notAfter` — cert expiry; flag if within 14 days.
 - `endpoints[*].details.protocols[]` — flag presence of `TLS 1.0` / `TLS 1.1` / `SSL 3`.
@@ -264,7 +280,7 @@ A `200` returning rows confirms that RLS is **disabled** for `<table>` — a Cri
 
 ## Step 6 — Auth Rate Limiting (Active Probe — Gated)
 
-**Run only if Step 0 authorized active probes.** Otherwise: write `LIVE-NNN — Step 6 skipped (user declined active probes)` in the report and proceed to Step 7's gate.
+**Run only if Step 0 authorized active probes.** Otherwise: write `- Step 6 — skipped (user declined active probes)` in the report and proceed to Step 7's gate.
 
 What you're looking for: whether the login endpoint will accept unlimited credential-stuffing attempts. The most common failure on small / "vibe-coded" deploys is no protection at all — 1000 attempts per second is accepted.
 

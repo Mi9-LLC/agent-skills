@@ -38,7 +38,7 @@ The authority the skill relies on at runtime. Five package managers; **yarn is s
 Avoid `yarn upgrade-interactive` in an agent context — it is an interactive TUI and will hang.
 
 ### Overrides location
-- pnpm 11+: `overrides` key in `pnpm-workspace.yaml`. Pre-11 pnpm: `pnpm.overrides` in the root `package.json`. During the transition, check **both** locations.
+- pnpm 11+: `overrides` key in `pnpm-workspace.yaml` — reads overrides **only** from there; a `pnpm.overrides` left in the root `package.json` is silently ignored (no warning), so treat it as needing migration, not as still-active. Pre-11 pnpm: `pnpm.overrides` in the root `package.json`.
 - npm: `overrides` in the **root** `package.json` only — nested-package `overrides` are ignored.
 - yarn (both flavors): `resolutions` in the root `package.json`.
 - bun: `overrides` in `package.json` (bun reads npm-style `overrides`). Note the known migration gotcha: converting a `package-lock.json` that carries `overrides` to a bun lockfile may drop them — verify the resolved lockfile, not just the manifest.

@@ -1,6 +1,21 @@
 ---
 name: new-feature
-description: Investigative Q&A workflow that turns a fuzzy feature request into a fully-specified design before any code is written. Research the relevant code + current (as-of-today) best practices first, then surface every ambiguous design decision as categorized questions with [REC]-marked default options, one category per message, locking decisions as the user confirms. Leave zero ambiguous areas before transitioning to planning. Use this skill whenever the user proposes a new feature, capability, significant refactor, or any non-trivial change — even if they don't explicitly ask for design questions. Trigger phrases include "new feature", "design / scope / plan a feature", "add capability", "analyze options", "think hard about", "investigate", "before we implement", "what do you think about adding X", "is it possible to", or any request where the user wants to reason through a design before coding. Invoke aggressively for substantive requests — skipping it risks premature implementation and architectural dead-ends.
+description: >-
+  Investigative Q&A workflow that turns a fuzzy feature request into a
+  fully-specified design before any code is written. Research the relevant code
+  + current (as-of-today) best practices first, then surface every ambiguous
+  design decision as categorized questions with [REC]-marked default options,
+  locking decisions as the user confirms. Leave zero ambiguous areas before
+  transitioning to planning. Use this skill whenever the user proposes a new
+  feature, capability, significant refactor, or any non-trivial change — even if
+  they don't explicitly ask for design questions. Trigger phrases include "new
+  feature", "design / scope / plan a feature", "add capability", "analyze
+  options", "think hard about", "investigate", "before we implement", "what do
+  you think about adding X", or any request where the user wants to reason
+  through a design before coding. Do NOT trigger for tiny, obvious one-line
+  changes (a rename, a trivial fix) with no real design surface. Invoke
+  aggressively for substantive requests.
+disallowed-tools: Edit, Write, NotebookEdit
 ---
 
 # New Feature Investigation
@@ -125,22 +140,16 @@ Good recommendation:
 
 ## Examples from practice
 
-### Example — launch mechanism decision
+### Example — a single question with enumerated options
 
-After reading the relevant wrapper class and checking current Microsoft docs:
+Full worked example (Windows session-token launch flow): `references/examples.md`. Shorter version, same shape:
 
-> ## Question 10 — Category B, launch mechanics
+> ## Question 3 — Category B, retry policy
 >
-> **B1. Token flow.** Standard pattern:
-> ```
-> WTSQueryUserToken → DuplicateTokenEx(TokenPrimary) → CreateProcessAsUser
-> ```
-> **[REC]** This pattern. Alternative `CreateProcessWithTokenW` is simpler but needs SE_IMPERSONATE (LocalSystem has both; no practical difference). Sticking with CreateProcessAsUser matches the dominant pattern in Microsoft's session-isolation sample code.
->
-> **B2. Environment block.** `CreateEnvironmentBlock(hToken, FALSE)`:
->   - (i) Call `LoadUserProfile` first. Heavy but complete for profiles not already loaded.
->   - (ii) **[REC]** Skip `LoadUserProfile` — user has a live session, profile is already loaded in HKCU, block build succeeds. Lighter, no cleanup path.
->   - (iii) System env only (null token). Missing HKCU-derived PATH and user-specific vars.
+> **B1. Retry strategy for a transient write failure.**
+>   - (a) Fail fast — surface the error immediately. Simple, but pushes retry logic onto the caller.
+>   - (b) **[REC]** Exponential backoff, 3 attempts, capped at 2s. Matches the existing `HttpClient` policy elsewhere in this codebase; covers the transient-failure window without masking a real outage.
+>   - (c) Infinite retry with backoff. Risks masking a genuine outage as a hang.
 
 Every sub-item has enumerated options, one carries `[REC]` with a concrete reason. User can skim, agree, or redirect.
 

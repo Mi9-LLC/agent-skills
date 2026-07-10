@@ -108,11 +108,13 @@ lazy consumers), which is exactly where you want it.
 - } from './command';   // './command' pulls in cmdk
 ```
 
-Pre-flight: prove no consumer uses those symbols *via the barrel*:
+Pre-flight: prove no consumer uses those symbols *via the barrel* — check the
+import statement as a unit, since a real multi-line named-import block (specifiers
+and the `from` clause on different lines) would otherwise slip past a single-line grep:
 
 ```bash
-rg -n "Command(Input|List|Item|Group|Empty)?\b" src --type ts --type tsx \
-  | rg "from '@/components/ui'"        # expect: no matches
+rg -U -n "import \{[^}]*Command(Input|List|Item|Group|Empty)?\b[^}]*\}\s*from\s*['\"]@/components/ui['\"]" \
+  src --type ts --type tsx   # expect: no matches
 ```
 
 The component that genuinely uses the heavy module keeps importing it **directly**

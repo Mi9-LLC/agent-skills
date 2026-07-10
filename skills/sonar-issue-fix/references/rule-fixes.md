@@ -70,6 +70,13 @@ if (typeof value === 'object') return JSON.stringify(value);
 return String(value);                                               // STILL flagged here
 ```
 
+**Before applying, verify the callers.** Grep/trace the callers of the coerced
+value to confirm none can pass a plain object (or another type whose
+`JSON.stringify` output would diverge from `String()`'s for that value). If one
+might, this isn't a safe mechanical fix — treat it as **structural** instead:
+surface it to the user, or add a characterization test that locks current
+output before changing the coercion.
+
 **The fix is to remove the base-to-string operation entirely** — return the
 value when it's already a string, otherwise serialize explicitly with
 `JSON.stringify` (which is outside the rule's scope). Keep the positive guard

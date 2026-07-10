@@ -12,7 +12,7 @@ description: >-
   fixing the findings (that edits code — sonar-issue-fix), for running a
   single gate ("just run the tests" needs no dashboard), for setting up CI
   pipelines, or for hosted SonarCloud/SonarQube results (sonar-issue-check).
-allowed-tools: Bash, Read, Write
+allowed-tools: Bash, Write
 disallowed-tools: Edit, NotebookEdit
 ---
 
@@ -67,7 +67,7 @@ node ${CLAUDE_SKILL_DIR}/scripts/check-health.mjs
 | First run — see what would be checked | `--detect-only` (prints proposed config, runs nothing) |
 | Only some gates ("skip the tests") | `--only typecheck,lint` |
 | Keep a record / track the trend | `--save` (appends to `docs/health/history.jsonl`) |
-| History somewhere specific | `--save <dir>` |
+| History somewhere specific | `--save <dir>` (repeat the same `<dir>` on every future run, or the trend reverts to reading the default `docs/health/`) |
 
 Run with `-h` for every option. Per-category timeout is `timeoutSeconds`
 in the config (default 300 s). Trends need no flag: when
@@ -82,17 +82,21 @@ yet**:
 1. Run the script with `--detect-only`. stdout is the proposed config
    JSON; stderr has one note per category explaining what was (or was not)
    detected.
-2. Show the user the proposed categories — command, weight, and the
-   detection reason for each.
-3. Ask with AskUserQuestion: **(A)** looks right — save and run,
+2. If the proposed `categories` object is empty, stop here: report
+   directly that no quality-gate tools were detected, naming what was
+   looked for (from stderr's notes) — do not ask the user to confirm an
+   empty set.
+3. Otherwise, show the user the proposed categories — command, weight, and
+   the detection reason for each.
+4. Ask with AskUserQuestion: **(A)** looks right — save and run,
    **(B)** adjust commands/weights first, then save and run, **(C)** run
    once without saving config.
-4. On A: Write the `--detect-only` stdout **verbatim** as
+5. On A: Write the `--detect-only` stdout **verbatim** as
    `.claude/health.json` — byte-for-byte, no reformatting, no reordering —
    so what the user confirmed is exactly what future runs execute. On B:
    apply the user's adjustments to that JSON, show the final version, then
    Write it. On C: Write nothing.
-5. Run the script normally.
+6. Run the script normally.
 
 Once config exists, runs go straight through — no confirmation ceremony.
 
@@ -102,13 +106,15 @@ Once config exists, runs go straight through — no confirmation ceremony.
   (normalized over the gates that ran), `status` (`ran`/`skipped` +
   `skippedReason`), `exitCode`, `timedOut`, `durationS`, `parsed`/`parser`,
   `findings` (the canonical count the rubric scored), `counts` (per-tool
-  detail), `score` 0–10, `label`, `outputTail` (last lines of real output).
+  detail), `score` 0–10, `label`, `outputTail` (last lines of real output),
+  `outputTruncated` (true when the gate's output overflowed the 64MB
+  buffer).
 - `composite`/`compositeLabel` — weighted average over run categories,
   `null` when nothing ran. Labels: 10 CLEAN · 7–9 WARNING · 4–6 NEEDS
   WORK · 0–3 CRITICAL.
-- `recommendations[]` — script-ranked by `impact` (weight × shortfall)
-  with HIGH/MED/LOW priority. The ranking is the script's; the *prose* is
-  yours.
+- `recommendations[]` — script-ranked by `impact` (normalized weight share
+  × shortfall) with HIGH/MED/LOW priority. The ranking is the script's; the
+  *prose* is yours.
 - `history` — previous run, `delta`, `direction`, per-category
   `regressions`, `last10`. `saved` — what `--save` appended, if anything.
 - `guards` — honesty booleans (next section).
@@ -138,7 +144,8 @@ Carry any true guard into the dashboard as a plain-words caveat:
 3. **Composite** — `X.X/10 LABEL`, one sentence of interpretation.
 4. **Details** — for every category scoring below 7, a short block
    quoting the most relevant `outputTail` lines (real tool output, not a
-   paraphrase) and the parsed counts.
+   paraphrase) and the parsed counts. If that category's `outputTruncated`
+   is `true`, flag the score as computed from partial/cut-off output.
 5. **Recommendations** — the script's ranked entries, one actionable
    sentence each, priority-tagged. Anchor each to the actual findings; do
    not pad with generic advice.

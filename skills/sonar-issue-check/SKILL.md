@@ -5,15 +5,15 @@ description: >-
   analyzed for the current repo — list, pull, show, summarize, or dump the
   issues, without changing any code. By default report the NEW issues in the
   current branch's or PR's new code (the pre-commit / pre-PR "did I introduce a
-  bug, vulnerability, or code smell?" check); report the full project backlog on
-  request. Trigger for ANY read-only ask to see Sonar results, even when phrased
-  "just give me the list" or "just tell me what Sonar found, don't fix anything":
-  e.g. "what did sonarcloud flag on my branch", "pull the sonar bugs for PR
-  412", "did I introduce any new code smells", "check sonar before I push", or
-  the quality-gate status on a branch/PR. Do NOT trigger when the user wants to
-  FIX or clear the issues (that edits code — use sonar-issue-fix), run the Sonar
-  scan itself, set up SonarLint in the editor, or configure quality-gate
-  thresholds.
+  bug, vulnerability, or code smell?" check); report the full backlog on that
+  branch/PR on request. Trigger for ANY read-only ask to see Sonar results, even
+  when phrased "just give me the list" or "just tell me what Sonar found, don't
+  fix anything": e.g. "what did sonarcloud flag on my branch", "pull the sonar
+  bugs for PR 412", "did I introduce any new code smells", "check sonar before I
+  push", or the quality-gate status on a branch/PR. Do NOT trigger when the user
+  wants to FIX or clear the issues (that edits code — use sonar-issue-fix), run
+  the Sonar scan itself, set up SonarLint in the editor, or configure
+  quality-gate thresholds.
 allowed-tools: Bash, Read
 ---
 
@@ -105,6 +105,8 @@ Run with `-h` to see every option.
   counts by severity and type, and one line per issue as `file:line` + message +
   rule. The JSON dump (`--out`) also carries each issue's MQR `impacts` array
   (software quality + severity) when the server provides it.
+- If the user asks to see the full JSON after a run with `--out`, Read that
+  file directly rather than re-running the script.
 - After running, give the user a short verdict, not a raw dump: lead with
   whether the branch is clean, then call out the highest-severity new issues and
   where they are. If there are many, group by severity and summarize the rest.

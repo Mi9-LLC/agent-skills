@@ -22,8 +22,14 @@
 
 import { spawnSync } from 'node:child_process';
 import { readFileSync, appendFileSync, mkdirSync, existsSync, readdirSync, statSync } from 'node:fs';
-import { parseArgs } from 'node:util';
+import * as nodeUtil from 'node:util';
 import { resolve, join, delimiter, sep } from 'node:path';
+
+if (typeof nodeUtil.parseArgs !== 'function') {
+    console.error('Error: requires Node 18.3+ (util.parseArgs not found).');
+    process.exit(1);
+}
+const { parseArgs } = nodeUtil;
 
 // ---------------------------------------------------------------------------
 // Constants

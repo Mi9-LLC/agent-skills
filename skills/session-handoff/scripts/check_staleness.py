@@ -14,7 +14,8 @@ Usage:
     python check_staleness.py .claude/handoffs/2024-01-15-143022-auth.md
 """
 
-import os
+from __future__ import annotations
+
 import re
 import subprocess
 import sys

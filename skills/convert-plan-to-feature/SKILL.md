@@ -2,20 +2,20 @@
 name: convert-plan-to-feature
 description: >-
   Break an approved plan into separately-trackable, per-feature implementation
-  specs under a dedicated `docs/plans/<initiative>/` subfolder — a REQUIREMENTS.md
-  index plus one `features/NN - <name>.md` file per unit of work, each with
-  requirements, technical steps (real file paths), dependencies, and acceptance
-  criteria. Use this WHENEVER the user has a finished/approved plan (from plan
-  mode, or an existing plan file under docs/plans/) and wants it decomposed,
-  split, broken down, or "turned into features/tickets/specs" for separate
-  tracking. Trigger on phrases like "convert this plan into features", "split the
-  plan up", "break this into per-feature files", "turn the plan into
-  implementation specs", "make a feature breakdown", "/convert-plan-to-feature",
-  or any request to take a single big plan and produce one trackable file per
-  feature. Reach for this aggressively once a plan exists and the user signals
-  they want it decomposed — don't hand-roll an ad-hoc folder layout when this
-  skill encodes the conventions.
+  specs under a dedicated `docs/plans/{initiative}/` subfolder — a
+  REQUIREMENTS.md index plus one `features/NN - {name}.md` file per unit of
+  work, each with requirements, technical steps (real file paths), dependencies,
+  and acceptance criteria. Use this WHENEVER the user has a finished/approved
+  plan (from plan mode, or an existing plan file under docs/plans/) and wants it
+  decomposed, split, or broken down for separate tracking. Trigger on phrases
+  like "convert this plan into features", "split the plan up", "break this into
+  per-feature files", "turn the plan into implementation specs", "make a feature
+  breakdown of this approved plan", or any request to take a single big plan and
+  produce one trackable file per feature. Do NOT use to design a feature from
+  scratch with no plan yet (new-feature) or to review/critique a plan
+  (plan-eng-review).
 allowed-tools: Read, Write, Glob, Grep
+disallowed-tools: Edit, NotebookEdit
 ---
 
 # Convert Plan → Per-Feature Specs
@@ -146,7 +146,7 @@ Duplicating an enum table into five feature files guarantees they drift.
 ### 5. Write one file per feature
 
 File name: `features/NN - <Feature Name>.md` (zero-padded number, spaces around the
-dash, matching the prompt's `[feature number] - [feature name].md` shape). Use this
+dash). Use this
 template:
 
 ```markdown

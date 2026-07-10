@@ -61,9 +61,11 @@ git log --oneline -10
 
 # Check for any running processes mentioned
 ps aux | grep [process-name]
+# PowerShell: Get-Process | Where-Object ProcessName -match 'name'
 
 # Verify environment
 env | grep [relevant-var]
+# PowerShell: Get-ChildItem Env: | Where-Object Name -match 'VAR'
 ```
 
 ## Handoff Quality Assessment

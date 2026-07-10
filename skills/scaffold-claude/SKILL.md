@@ -1,7 +1,17 @@
 ---
 name: scaffold-claude
-description: Use when the user wants to create, draft, or scaffold a CLAUDE.md file for a project from scratch. Triggers on "scaffold CLAUDE.md", "write a CLAUDE.md", "set up CLAUDE.md", "create project instructions for Claude", "bootstrap CLAUDE.md", "/scaffold-claude", or any request to author project-level Claude Code instructions. Produces a reviewable scratchpad draft that captures edge cases and tribal knowledge — NOT facts Claude can already read off package.json, the directory tree, or the README. Do NOT trigger to edit an existing CLAUDE.md surgically (just edit it) or to add a nested per-subsystem file (the body explains that path).
-allowed-tools: Read, Glob, Grep, Write
+description: >-
+  Use when the user wants to create, draft, or scaffold a CLAUDE.md file for a
+  project from scratch. Triggers on "scaffold CLAUDE.md", "write a CLAUDE.md",
+  "set up CLAUDE.md", "create project instructions for Claude", "bootstrap
+  CLAUDE.md", "/scaffold-claude", or any request to author project-level Claude
+  Code instructions. Produces a reviewable scratchpad draft that captures edge
+  cases and tribal knowledge — NOT facts Claude can already read off
+  package.json, the directory tree, or the README. Do NOT trigger to edit an
+  existing CLAUDE.md surgically (just edit it), or to automatically chain into
+  every subsystem's nested CLAUDE.md unprompted (scaffold the root first; add a
+  nested file only when explicitly asked — the body explains that path).
+allowed-tools: Read, Glob, Write
 disallowed-tools: Bash, Edit, NotebookEdit
 ---
 
@@ -23,10 +33,11 @@ A stubbed section (a `<!-- TODO: ... -->` comment) is *strictly better* than a s
 - User has a project but no `CLAUDE.md` and wants one
 - User has a `CLAUDE.md` they want to redo from scratch
 
+**Large repos: root first, then nested.** Scaffold the root `CLAUDE.md` with this skill first. Only when explicitly asked, add a nested `CLAUDE.md` *inside each substantial subsystem* (its own service/app/DB) by running the same interview once per subsystem. Claude Code loads a nested file only when it touches a file in that folder, so it costs nothing until relevant. Don't add one per folder — only where there are real invariants to record.
+
 ## When NOT to Use
 
 - **Surgical edit of an existing `CLAUDE.md`** → just edit it; don't run the full interview.
-- **A nested, per-subsystem file for a large repo** → first scaffold the root `CLAUDE.md` with this skill, then add a nested `CLAUDE.md` *inside each substantial subsystem* (its own service/app/DB). Claude Code loads a nested file only when it touches a file in that folder, so it costs nothing until relevant. Run the same interview once per subsystem — don't add one per folder, only where there are real invariants to record.
 - **Updates triggered automatically when code changes** → that's a hook in `settings.json`, not this skill.
 
 ## CLAUDE.md vs AGENTS.md
@@ -77,6 +88,8 @@ For each section:
 **Do not** batch all questions into one big message. The user's attention is the bottleneck; one section per turn.
 
 ### 3. Write
+
+Before drafting, skim `references/postlane-example.md` once (see "The One-Shot Example" below).
 
 Use `templates/claude-md-stub.md` as the base. Fill in confirmed content. Leave every skipped section as the original `<!-- TODO: ... -->` stub from the template — do not delete the stubs, they help future-you know what was deliberately left blank.
 

@@ -34,7 +34,7 @@ Re-run either command anytime to update — it always pulls the current state of
 |---|---|
 | [`security-vulnerability-scan`](#security-vulnerability-scan) | [OWASP Top 10:2025](https://owasp.org/Top10/2025/) static scan of any codebase; writes `audit/<YYYY-MM-DD>/report.md`. Read-only on your source. |
 | [`live-app-security-audit`](#live-app-security-audit) | Runtime audit of a deployed live URL — headers, TLS, bundle secrets, localStorage tokens, open endpoints, login rate-limit, account enumeration; writes `audit/<YYYY-MM-DD>/live-audit.md`. Authorization-gated. |
-| [`anti-sycophancy`](#anti-sycophancy) | Behavioral mode for review/feedback/decision asks. Argues the opposing case first, names untested assumptions, refuses reflexive agreement. No file output. |
+| [`anti-sycophancy`](#anti-sycophancy) | Behavioral mode for review/feedback/decision asks. Argues the opposing case first, names untested assumptions, refuses reflexive agreement. Produces no files or reports. |
 | [`update-dependencies`](#update-dependencies) | Research-first dependency updates for any JS/TS project (npm/pnpm/yarn/bun, single-package or monorepo). Reads real release notes, migrates code, verifies with quality gates. **Manual-only** (`/update-dependencies`). |
 | [`convert-plan-to-feature`](#convert-plan-to-feature) | Decompose an approved plan into a folder of independently-trackable per-feature spec files — `REQUIREMENTS.md` index + one `features/NN - <name>.md` per unit of work, each with requirements, steps, interface contract, acceptance criteria, and dependencies. |
 | [`new-feature`](#new-feature) | Investigative Q&A workflow that turns a fuzzy feature request into a fully-specified design *before* any code is written: researches the code + current best practices, then surfaces every ambiguous decision as categorized questions with `[REC]`-marked defaults, one category per message, until zero ambiguity remains. Design-only. |
@@ -97,7 +97,7 @@ npx skills add https://github.com/Mi9-LLC/agent-skills --skill security-vulnerab
 
 **Requirements.** A deployed, reachable URL and outbound HTTPS. A mandatory **authorization gate (Step 0)**: you confirm the exact target and that you own or are authorized to test it — if you can't, the skill stops. The two *active* probes (rate-limit, enumeration) need your explicit consent, and the enumeration check works best if you supply a test-account email you control. It leans on `securityheaders.com` and the SSL Labs API when reachable and falls back to a local `curl` HTTPS check otherwise. No API token required.
 
-**How to run.** Auto-triggers on live-audit asks (it'll ask for the URL if you don't give one), or run `/live-app-security-audit`. `allowed-tools: Read, Grep, Glob, Bash, WebFetch, Write`.
+**How to run.** Auto-triggers on live-audit asks (it'll ask for the URL if you don't give one), or run `/live-app-security-audit`. `allowed-tools: Read, Grep, Bash, WebFetch, Write`.
 
 **Use it for.** Auditing a "vibe-coded" SPA you just shipped, checking that build-time env vars didn't leak into the bundle, sanity-checking production headers/TLS, and probing the most common runtime weaknesses on small / fast-shipped apps.
 
@@ -133,9 +133,9 @@ npx skills add https://github.com/Mi9-LLC/agent-skills --skill live-app-security
 
 **What it does.** Swaps Claude into critical-thinking-partner mode. Instead of agreeing reflexively or hedging, it argues the strongest opposing case first, names the load-bearing untested assumption, surfaces weaknesses before strengths, refuses to retreat without new evidence, and ends with a question worth sitting with. It also applies to *receiving code-review feedback* — verify a comment against the code before acting, no "great catch!", push back when a comment is wrong.
 
-**Requirements.** None. Purely behavioral — no tools, no network, no files.
+**Requirements.** None. Purely behavioral — changes only how Claude argues.
 
-**How to run.** Auto-triggers on review / decision / feedback asks, or run `/anti-sycophancy`. Declares no `allowed-tools` (unrestricted), but it only shapes the reply — it reads nothing and writes nothing.
+**How to run.** Auto-triggers on review / decision / feedback asks, or run `/anti-sycophancy`. Declares no `allowed-tools` (unrestricted), but it only shapes the reply.
 
 **Use it for.** Stress-testing your own judgment on a decision, plan, interpretation, or work you're about to commit to — the friction you'd want from a sharp colleague, not the validation from a friendly one.
 
@@ -143,7 +143,7 @@ npx skills add https://github.com/Mi9-LLC/agent-skills --skill live-app-security
 
 **What it does not do.** Activate on objective questions with one knowable answer — syntax, config values, debugging, conversions, proofreading — even when phrased "is this correct?" Those need execution, not opposition. It won't manufacture a flaw to look thorough; if the idea holds up, it says so. It also does not run the structured pre-implementation review of a written implementation plan — that is [`plan-eng-review`](#plan-eng-review)'s job.
 
-**What it produces.** Nothing on disk — a behavioral mode that shapes the conversation.
+**What it produces.** No files or reports — a behavioral mode that changes only how Claude argues.
 
 **Example.**
 
@@ -206,7 +206,7 @@ You: /update-dependencies
 npx skills add https://github.com/Mi9-LLC/agent-skills --skill update-dependencies
 ```
 
-**Full definition:** [`skills/update-dependencies/SKILL.md`](skills/update-dependencies/SKILL.md) (plus the per-PM command reference and lockstep-ecosystem table under `references/`).
+**Full definition:** [`skills/update-dependencies/SKILL.md`](skills/update-dependencies/SKILL.md) · **README:** [`skills/update-dependencies/README.md`](skills/update-dependencies/README.md) (plus the per-PM command reference and lockstep-ecosystem table under `references/`).
 
 ---
 
@@ -222,7 +222,7 @@ npx skills add https://github.com/Mi9-LLC/agent-skills --skill update-dependenci
 
 **Triggers on phrases like.** "convert this plan into features", "split the plan up", "break this into per-feature files", "turn the plan into implementation specs", "make a feature breakdown", "decompose the plan", "create feature tickets from this plan".
 
-**What it does not do.** Implement anything — it writes planning documents only and stops. It never writes at the `docs/plans/` root (everything goes inside the `<initiative>/` subfolder so concurrent efforts don't collide), and it leaves the source plan where it is.
+**What it does not do.** Implement anything — it writes planning documents only and stops. It declares `disallowed-tools: Edit, NotebookEdit`, which drops those tools while the skill is active (a per-turn guard — the restriction clears on your next message). It never writes at the `docs/plans/` root (everything goes inside the `<initiative>/` subfolder so concurrent efforts don't collide), and it leaves the source plan where it is.
 
 **What it produces.**
 - `docs/plans/<initiative>/REQUIREMENTS.md` — the index: context, blast radius, locked decisions, consolidated cross-cutting catalogs (wire-contract/enum tables, message types, error codes), deploy ordering, a feature table with suggested models, test strategy, and open questions.
@@ -240,6 +240,8 @@ You: break this approved rollback plan into feature files
    … one slice each, numbered in deploy order.
 ```
 
+**Pairs with.** [`plan-eng-review`](#plan-eng-review) — gate the plan before decomposing it.
+
 **Install.**
 
 ```
@@ -256,13 +258,13 @@ npx skills add https://github.com/Mi9-LLC/agent-skills --skill convert-plan-to-f
 
 **Requirements.** A codebase to investigate. Internet / Context7 access helps it ground recommendations in current best practices. Writes no files of its own.
 
-**How to run.** Auto-triggers aggressively on feature / design / "is it possible to" asks, or run `/new-feature`. Declares no `allowed-tools` (unrestricted).
+**How to run.** Auto-triggers aggressively on feature / design / "is it possible to" asks, or run `/new-feature`. Declares `disallowed-tools: Edit, Write, NotebookEdit` (drops those tools while active; a per-turn guard that clears on the next message) — Bash stays available for the git-history research step.
 
 **Use it for.** Any non-trivial change with real design surface — new modules, protocol / contract changes, cross-service behavior, security-sensitive code, significant refactors. The `[REC]` markers keep it fast: skim, say "agreed with all recommended", and spend attention only on the decisions you'd actually change.
 
-**Triggers on phrases like.** "new feature", "design / scope / plan a feature", "add capability", "analyze options", "think hard about", "before we implement", "what do you think about adding X", "is it possible to".
+**Triggers on phrases like.** "new feature", "design / scope / plan a feature", "add capability", "analyze options", "think hard about", "investigate", "before we implement", "what do you think about adding X", "is it possible to".
 
-**What it does not do.** Write code — it's design-only and hands off to plan mode once decisions are locked. Trigger on tiny, obvious tasks ("rename this variable"). Skip the research and make you fill in what it could have found itself. Dump every question at once.
+**What it does not do.** Write code — it's design-only (enforced by the `disallowed-tools` guard above) and hands off to plan mode once decisions are locked. Trigger on tiny, obvious tasks ("rename this variable"). Skip the research and make you fill in what it could have found itself. Dump every question at once.
 
 **What it produces.** No files — a locked set of design decisions carried into the planning phase.
 
@@ -276,7 +278,7 @@ You: I want to add SSO to the portal
   Confirm A1–A2.
 ```
 
-**Pairs with.** [`document-generate`](#document-generate) — this skill settles the design decisions before a line of code is written; that one documents the feature once it exists.
+**Pairs with.** [`document-generate`](#document-generate) — this skill settles the design decisions before a line of code is written; that one documents the feature once it exists. Also [`plan-eng-review`](#plan-eng-review) — settle the design here, draft the plan, then gate the resulting plan before building.
 
 **Install.**
 
@@ -284,7 +286,7 @@ You: I want to add SSO to the portal
 npx skills add https://github.com/Mi9-LLC/agent-skills --skill new-feature
 ```
 
-**Full definition:** [`skills/new-feature/SKILL.md`](skills/new-feature/SKILL.md).
+**Full definition:** [`skills/new-feature/SKILL.md`](skills/new-feature/SKILL.md) (plus longer worked examples under `references/`).
 
 ---
 
@@ -395,6 +397,8 @@ You: our Vite dashboard's first load is huge — why is recharts in the main chu
 → (after approval & rebuild) recharts now only in the lazy Reports chunk; initial JS 480→338 kB.
 ```
 
+**Pairs with.** [`verify-frontend-change`](#verify-frontend-change) — after trimming, verify the app still renders and behaves in a real browser.
+
 **Install.**
 
 ```
@@ -411,9 +415,9 @@ npx skills add https://github.com/Mi9-LLC/agent-skills --skill trim-initial-bund
 
 **Requirements.** A project to document (it reads the manifest, tree, and README only to know *what to ask about*). No tokens, no network, no shell.
 
-**How to run.** Auto-triggers on "scaffold/write/set up CLAUDE.md" asks, or run `/scaffold-claude`. `allowed-tools: Read, Glob, Grep, Write`.
+**How to run.** Auto-triggers on "scaffold/write/set up CLAUDE.md" asks, or run `/scaffold-claude`. `allowed-tools: Read, Glob, Write`.
 
-**Use it for.** Bootstrapping a `CLAUDE.md` for a project that has none, or redoing a weak one from scratch. For a large repo, scaffold the root file, then run the same interview once per substantial subsystem to add nested `CLAUDE.md` files — Claude Code loads a nested file only when it touches that folder.
+**Use it for.** Bootstrapping a `CLAUDE.md` for a project that has none, or redoing a weak one from scratch. For a large repo, scaffold the root file; then, when you explicitly ask, run the same interview once per substantial subsystem to add nested `CLAUDE.md` files — Claude Code loads a nested file only when it touches that folder.
 
 **Triggers on phrases like.** "scaffold CLAUDE.md", "write a CLAUDE.md", "set up CLAUDE.md", "create project instructions for Claude", "bootstrap CLAUDE.md".
 
@@ -555,7 +559,7 @@ npx skills add https://github.com/Mi9-LLC/agent-skills --skill session-handoff
 
 **What it does.** Engineering retrospective for the current git repository. A bundled, zero-dependency Node script (`scripts/git-retro.mjs`) computes every metric deterministically from git history — commits, contributors, LOC, test ratio, per-author work sessions (45-minute-gap detection), an hourly histogram, commit-type mix, churn hotspots, approximate PR count/size buckets, focus score, ship-of-the-window, streaks, and AI-assisted-commit share (via `Co-Authored-By` trailers) — and emits one JSON document; the model's only job is to turn that JSON into a narrative, never to compute or round a number itself.
 
-**Requirements.** **Node 18+** (built-in `fetch`; zero npm dependencies). A git repository with commit history. The script does one best-effort `git fetch` unless `--no-fetch` is passed. No token required.
+**Requirements.** **Node 18+** (uses `node:util` parseArgs; zero npm dependencies). A git repository with commit history. The script does one best-effort `git fetch` unless `--no-fetch` is passed. No token required.
 
 **How to run.** Auto-triggers on retro / velocity / "what did we ship" asks, or run `/retro`. `allowed-tools: Bash, Read, Write`. Useful flags: `--window 7d|24h|Nd|Nh|Nw` (default 7-day window), `--compare` (adds the prior same-length window, computed live from git, plus deltas), `--base <ref>` (default `origin/<default-branch>`, auto-detected), `--no-fetch`, `--save [dir]` (writes a JSON snapshot to `docs/retros/`, then the model writes the markdown narrative alongside it).
 
@@ -632,7 +636,7 @@ npx skills add https://github.com/Mi9-LLC/agent-skills --skill verify-frontend-c
 
 **Requirements.** **Node 18+** (zero npm dependencies). Whatever quality-gate tools the project already uses — a typechecker, linter, test runner, dead-code detector, shell linter. A category without an installed tool is skipped, not failed, and its weight redistributes across the rest. On first run there's no `.claude/health.json` yet — the skill detects a proposed config and has you confirm it before anything runs.
 
-**How to run.** Auto-triggers on whole-project quality-overview asks, or run `/health`. `allowed-tools: Bash, Read, Write`. First run: `--detect-only` prints the proposed config (command/weight/reason per category) for you to confirm via AskUserQuestion before it's saved to `.claude/health.json` and anything executes. After that: no flags for a normal check, `--only typecheck,lint` to run a subset, `--config <path>` for a specific config file, `--save [dir]` to append a line to `docs/health/history.jsonl` (trend is read from that file automatically whenever it exists).
+**How to run.** Auto-triggers on whole-project quality-overview asks, or run `/health`. `allowed-tools: Bash, Write`. First run: `--detect-only` prints the proposed config (command/weight/reason per category) for you to confirm via AskUserQuestion before it's saved to `.claude/health.json` and anything executes. After that: no flags for a normal check, `--only typecheck,lint` to run a subset, `--config <path>` for a specific config file, `--save [dir]` to append a line to `docs/health/history.jsonl` (trend is read from that file automatically whenever it exists).
 
 **Use it for.** A whole-project quality snapshot before a release or a big refactor, a "how healthy is this codebase" gut-check on an unfamiliar repo, or tracking whether quality is trending up or down over time via `--save` history.
 
@@ -669,7 +673,7 @@ npx skills add https://github.com/Mi9-LLC/agent-skills --skill health
 
 **Requirements.** A written implementation plan to review, and the codebase it targets — the review grounds itself in the repo's `CLAUDE.md` and the files the plan touches. No tokens, no network.
 
-**How to run.** Auto-triggers when a written plan exists and you ask for it to be reviewed, or run `/plan-eng-review`. `allowed-tools: Read, Grep, Glob, Bash, Write` (Bash is used read-only: git context, existence probes).
+**How to run.** Auto-triggers when a written plan exists and you ask for it to be reviewed, or run `/plan-eng-review`. `allowed-tools: Read, Grep, Glob, Bash, Write, Agent` (Bash is used read-only: git context, existence probes; Agent only for the optional outside-voice subagent).
 
 **Use it for.** Gating a plan before implementation — catching rebuilt-what-already-exists, untested behavior changes, silent failure paths, and bloated scope while they are still cheap to fix.
 
