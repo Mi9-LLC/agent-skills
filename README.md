@@ -50,6 +50,7 @@ Re-run either command anytime to update — it always pulls the current state of
 | [`health`](#health) | Local quality-gate dashboard for the current repo — runs the project's own typecheck/lint/test/dead-code/shell-lint gates, scores each 0–10 against a weighted rubric, and computes a composite; `--save` tracks the trend against repo history. Zero-dependency Node script; every number traces to its JSON output, never estimated. |
 | [`plan-eng-review`](#plan-eng-review) | Pre-implementation review gate for a *written* implementation plan — scope challenge, what-already-exists reuse check, four review dimensions (architecture / code quality / tests / performance), evidence-gated findings, then a verdict plus a `## ENG REVIEW REPORT` spliced into the plan file (terminal-only when the plan has no file on disk). Never implements the plan. |
 | [`document-generate`](#document-generate) | Writes Diataxis documentation files (tutorial / how-to / reference / explanation) for a named feature, module, or project — end-to-end codebase archaeology first, a partition plan approved before any file is written, every example executed, traced, or labeled illustrative. Never edits `CLAUDE.md`/`AGENTS.md`, never commits. |
+| [`stdlib-first`](#stdlib-first) | Reuse-before-build ladder for new TypeScript/Node and C#/.NET code — built-in/standard library first, then (C#) first-party `Microsoft.Extensions.*`, then a library the project already uses, custom code last; precise types, specific error classes, doc comments. Asks before adding any dependency. Behavioral only — produces no files. |
 
 ---
 
@@ -745,6 +746,42 @@ npx skills add https://github.com/Mi9-LLC/agent-skills --skill document-generate
 ```
 
 **Full definition:** [`skills/document-generate/SKILL.md`](skills/document-generate/SKILL.md) (plus the quadrant templates, anti-mixing table, and collision-policy detail under `references/`). Adapted from [`garrytan/gstack`](https://github.com/garrytan/gstack) (MIT) — rebuilt so the commit/push/PR-update tail is dropped (this skill never commits), the `gstack-redact` binary becomes a placeholder-credentials rule, the confirm-above-5-docs threshold becomes an always-on partition-plan approval gate, upstream's inline-summaries-plus-standalone-files default narrows to standalone files plus minimal link lines, and the gstack machinery is dropped.
+
+---
+
+## `stdlib-first`
+
+**What it does.** Enforces a reuse-before-build ladder when Claude writes new TypeScript/Node or C#/.NET code: reach for a built-in or standard-library API first, then (C#) a first-party `Microsoft.Extensions.*` package, then a widely-adopted library the project already uses — and only when every rung fails, write a custom implementation. On top of the ladder: precise types (no `any`, no `object`/`dynamic`), specific error classes instead of bare `Error`/`Exception`, C# async discipline (`CancellationToken`, no sync-over-async), and short doc comments on non-obvious members.
+
+**Requirements.** None. Purely behavioral — it changes what code Claude writes, not what tools it can use.
+
+**How to run.** Auto-triggers when Claude is about to write a new utility/helper/service or add/choose a dependency in TS or C#, or run `/stdlib-first`. Declares no `allowed-tools`/`disallowed-tools` — it guides code-writing and must not drop tools.
+
+**Use it for.** Keeping generated code on the platform: no hand-rolled retry loops, date parsers, deep clones, or HTTP wrappers when `fetch`, `structuredClone`, LINQ, or an already-installed library does the job — and no surprise dependencies, because a missing library is always a question to you first.
+
+**Triggers on phrases like.** "write a helper/utility/function to X", "implement retry / parsing / validation logic", "create a service for Y", "should we add lodash/Polly/date-fns", "which library for X".
+
+**What it does not do.** Fire on code review or critique asks, debugging of existing behavior, trivial edits (a typo, rename, one-line fix), or languages other than TypeScript/C#. It never adds a dependency on its own — a missing library is surfaced as a question, never a silent `npm install`.
+
+**What it produces.** No files or reports — a behavioral discipline that changes the code Claude writes. It is also the canonical copy of the `## Coding standards` block checked into Mi9 repos' `CLAUDE.md` files; the `<!-- source -->` comment in those blocks points here.
+
+**Example.**
+
+```
+You: write a helper that retries a fetch up to 3 times with backoff
+→ Ladder check: no retry library in package.json. Want p-retry added, or a
+  zero-dependency helper? [asks]
+→ "no new deps" → small helper on fetch + setTimeout from timers/promises,
+  throws RetryExhaustedError extends Error, one-line JSDoc.
+```
+
+**Install.**
+
+```
+npx skills add https://github.com/Mi9-LLC/agent-skills --skill stdlib-first
+```
+
+**Full definition:** [`skills/stdlib-first/SKILL.md`](skills/stdlib-first/SKILL.md).
 
 ---
 
