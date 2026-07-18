@@ -51,6 +51,7 @@ Re-run either command anytime to update — it always pulls the current state of
 | [`plan-eng-review`](#plan-eng-review) | Pre-implementation review gate for a *written* implementation plan — scope challenge, what-already-exists reuse check, four review dimensions (architecture / code quality / tests / performance), evidence-gated findings, then a verdict plus a `## ENG REVIEW REPORT` spliced into the plan file (terminal-only when the plan has no file on disk). Never implements the plan. |
 | [`document-generate`](#document-generate) | Writes Diataxis documentation files (tutorial / how-to / reference / explanation) for a named feature, module, or project — end-to-end codebase archaeology first, a partition plan approved before any file is written, every example executed, traced, or labeled illustrative. Never edits `CLAUDE.md`/`AGENTS.md`, never commits. |
 | [`stdlib-first`](#stdlib-first) | Reuse-before-build ladder for new TypeScript/Node and C#/.NET code — built-in/standard library first, then (C#) first-party `Microsoft.Extensions.*`, then a library the project already uses, custom code last; precise types, specific error classes, doc comments. Asks before adding any dependency. Behavioral only — produces no files. |
+| [`repo-change-summary`](#repo-change-summary) | Deterministic per-month change totals for a git repo across **all** branches — lines added/deleted, total churn, distinct files, file-touches, commits, PRs merged, authors — as a Markdown table plus a styled HTML report. Bundled POSIX-shell script; each commit counted once, merges excluded. |
 
 ---
 
@@ -782,6 +783,42 @@ npx skills add https://github.com/Mi9-LLC/agent-skills --skill stdlib-first
 ```
 
 **Full definition:** [`skills/stdlib-first/SKILL.md`](skills/stdlib-first/SKILL.md).
+
+---
+
+## `repo-change-summary`
+
+**What it does.** Answers "how much did this repo change in month X?" with one deterministic table. A bundled POSIX-shell script (`scripts/summary.sh`) runs a validated `git log` pipeline across **all branches** — each commit counted once, merge commits excluded from the line/file/commit counts — and reports lines added, lines deleted, total lines changed (added + deleted — churn, not net), files modified two ways (distinct, and summed across commits), commits, pull requests merged, and distinct authors. The script prints a finished Markdown table and writes a styled, self-contained HTML report; the model relays the table verbatim and never re-derives a number by hand.
+
+**Requirements.** `git` and a POSIX shell (Git Bash on Windows works) — no other dependencies. By default the script runs `git fetch` first so remote-only branches are included; a fetch failure is non-fatal (falls back to local branches with a warning), or skip the fetch with `--no-fetch`.
+
+**How to run.** Auto-triggers on monthly change-volume asks, or run `/repo-change-summary`. `allowed-tools: Bash`. Flags: `--month YYYY-MM` (default: current month), `--repo PATH` (default: current directory), `--out DIR` (where the HTML report lands; default: current directory), `--no-fetch`, `--no-open` (don't open the report in a browser).
+
+**Use it for.** Monthly reporting numbers — "how many lines changed in June", "how many PRs did we merge last month", a churn snapshot for a status update. For a narrative retrospective with work sessions, hotspots, and trends over an arbitrary window, use `retro` instead — this skill is the raw monthly totals.
+
+**Triggers on phrases like.** "how many lines changed this month", "how many files did we modify in June", "how many pull requests were merged last month", "repo churn for 2026-06", "diff volume in May", "monthly change summary", "generate the monthly change report / HTML summary".
+
+**What it does not do.** Count a commit twice because it sits on several branches, or count merge commits' diffs (merged work is never double-counted). Count stash entries, tag-only commits, reverts that quote a merge subject, commit bodies that merely discuss a PR, or the same PR number twice — PRs are counted as distinct numbers from platform merge markers (GitHub / Bitbucket incl. its squash merges / GitLab), so markerless squash- or rebase-merges are not counted. Split one person into two authors over a name spelling — `.mailmap` is respected. Report the net line delta — "total lines changed" is churn (added + deleted). Modify the repo — it only reads git history and writes the one HTML report to `--out`. Never commits or pushes.
+
+**What it produces.** A Markdown summary table in the conversation, plus a self-contained styled HTML report named `YYYY-MM-DD-HHMM-repo-change-summary-<month>.html` in the output directory, opened in the default browser (suppress with `--no-open`).
+
+**Example.**
+
+```
+You: how many lines of code changed in this repo in June?
+→ Repository change summary — 2026-06 (all branches · each commit counted once ·
+  merges excluded): 12,480 added · 7,912 deleted · 20,392 total changed ·
+  214 distinct files · 532 file-touches · 187 commits · 23 PRs merged · 6 authors.
+  HTML report: ./2026-07-17-1512-repo-change-summary-2026-06.html
+```
+
+**Install.**
+
+```
+npx skills add https://github.com/Mi9-LLC/agent-skills --skill repo-change-summary
+```
+
+**Full definition:** [`skills/repo-change-summary/SKILL.md`](skills/repo-change-summary/SKILL.md) (plus the `summary.sh` script under `scripts/`).
 
 ---
 
