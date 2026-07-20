@@ -62,6 +62,10 @@ if [ "$mon" -eq 12 ]; then next_year=$((year + 1)); next_mon=1
 else                        next_year=$year;       next_mon=$((mon + 1)); fi
 since="${month}-01 00:00"
 until_date="$(printf '%04d-%02d-01 00:00' "$next_year" "$next_mon")"
+# Human-facing month ("June, 2026") for titles; filenames keep the sortable YYYY-MM.
+month_display="$(awk -v m="$mon" -v y="$year" 'BEGIN {
+    split("January February March April May June July August September October November December", n, " ")
+    printf "%s, %s", n[m], y }')"
 
 # Pull remote branches so branches that live only on the remote are included. A failure
 # here (offline / no auth) is non-fatal — fall back to whatever refs exist locally.
@@ -143,7 +147,7 @@ scope="all branches · each commit counted once · merges excluded from line/fil
 
 # Markdown table on stdout — the caller relays this verbatim.
 cat <<EOF
-**Repository change summary — ${month}**
+**Repository change summary — ${month_display}**
 _Repo: ${repo} · ${scope}._
 
 | Metric | Count |
@@ -171,7 +175,8 @@ cat > "$html_file" <<HTML
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Repository change summary &#8212; ${month}</title>
+<title>Repository change summary &#8212; ${month_display}</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2032%2032'%3E%3Crect%20width='32'%20height='32'%20rx='7'%20fill='%232a78d6'/%3E%3Crect%20x='6'%20y='16'%20width='5'%20height='10'%20rx='1.5'%20fill='%23fff'/%3E%3Crect%20x='13.5'%20y='11'%20width='5'%20height='15'%20rx='1.5'%20fill='%23fff'/%3E%3Crect%20x='21'%20y='6'%20width='5'%20height='20'%20rx='1.5'%20fill='%23fff'/%3E%3C/svg%3E">
 <style>
   body { font-family: "Segoe UI", Arial, sans-serif; color: #0f172a; margin: 0; background: #ffffff; }
   .page { max-width: 980px; margin: 0 auto; padding: 40px 28px 64px; }
@@ -191,7 +196,7 @@ cat > "$html_file" <<HTML
 </head>
 <body>
 <div class="page">
-<h1>Repository change summary &#8212; ${month}</h1>
+<h1>Repository change summary &#8212; ${month_display}</h1>
 <p class="meta"><b>Repository</b>: ${repo_html}</p>
 <p class="meta"><b>Scope</b>: ${scope}</p>
 <p class="meta"><b>Generated</b>: ${generated}</p>

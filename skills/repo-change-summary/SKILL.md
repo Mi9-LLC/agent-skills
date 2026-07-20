@@ -1,6 +1,6 @@
 ---
 name: repo-change-summary
-description: Summarize how much a git repository changed in a given month across ALL branches: lines added, lines deleted, total lines changed (added + deleted), distinct files modified, total file-touches, commits, pull requests merged, and authors — each commit counted once, merges excluded from the line/file/commit counts. Prints a Markdown summary table and writes a styled HTML report. Defaults to the current month and current repo; can target any local repo path or a specific month. Use whenever the user asks how many lines or files changed this month or in a named month (June, 2026-05), how many pull requests were merged, repo churn / change volume / diff volume, monthly commit/PR/author activity, a monthly change report or HTML change summary, or a per-month change summary for a repo — even if they don't say 'skill'.
+description: Summarize how much a git repository changed in a given month across ALL branches: lines added, lines deleted, total lines changed (added + deleted), distinct files modified, total file-touches, commits, pull requests merged, and authors — each commit counted once, merges excluded from the line/file/commit counts. Prints a Markdown summary table and writes a styled HTML report. Defaults to the current month and current repo; can target any local repo path, a specific month, or a named repo group (defined under ~/.claude/repo-change-summary-groups) for one combined rollup + per-repo report. Use whenever the user asks how many lines or files changed this month or in a named month (June, 2026-05), how many pull requests were merged, repo churn / change volume / diff volume, monthly commit/PR/author activity, a monthly change report or HTML change summary, a per-month change summary for a repo, or a summary report for a repo group ('summary report for STF') — even if they don't say 'skill'.
 allowed-tools: Bash
 ---
 
@@ -39,6 +39,53 @@ Flags:
 
 By default the script fetches remote refs first so remote-only branches are included; a
 fetch failure is non-fatal and it falls back to local branches with a warning.
+
+## Multi-repo groups
+
+For a combined month summary across several repos ("summary report for STF"), run:
+
+```bash
+bash "${CLAUDE_SKILL_DIR}/scripts/multi-summary.sh" --group NAME [--month YYYY-MM] [--out DIR] [--no-fetch] [--no-open]
+```
+
+A group is a plain-text file `~/.claude/repo-change-summary-groups/<NAME>.list` — one
+local repo path per line, `#` comments allowed. Groups are machine-local config (each
+person's clone paths differ), so the file lives outside the skill. If the named group
+has no file yet, offer to create it from the repos the user lists, then run.
+
+The combined output is one Markdown summary (a rollup table with a totals row, then
+each repo's full table) and one self-contained HTML report; flags and counting rules
+are identical to the single-repo mode. The HTML embeds inline-SVG bar charts (no
+JS, no CDN — the file stays offline-portable): lines changed by repo, and with
+`--per-author` lines changed and PRs authored by developer. Two rollup rules to
+keep intact when relaying:
+
+- The authors total is distinct people across the whole group, never the column sum.
+- A repo whose fetch failed is marked `*` ("local branches only") — report that, never
+  hide it.
+
+### Per-developer activity (`--per-author`)
+
+Add `--per-author` when the user wants a per-developer breakdown. It appends a
+per-developer table (lines added/deleted/changed, distinct files, commits, PRs
+authored-and-merged) to both outputs. Bot identities are excluded from this table
+(not from the rollup — group totals stay complete) and named in a footnote with
+their commit count; built-in: Bitbucket Pipelines (`commits-noreply@bitbucket.org`),
+extend with one email per line in `<groups-dir>/bot-emails.list`. Framing is deliberate: this is **activity
+volume, not performance** — line counts measure file type and task (lockfiles,
+generated code, vendored docs), not effort. The table is alphabetical (no ranking),
+the report says the stats-not-performance caveat itself, and any developer whose
+added lines are dominated by one file gets that file named in a footnote. Relay those
+notes with the table; refuse to turn the output into a performance appraisal or
+ranking of people.
+
+The PRs-authored column comes from the Bitbucket API (git merge commits credit
+whoever clicked merge, not the author): `scripts/pr-authors.py` (Python 3.9+, stdlib)
+reuses git's stored credentials via `git credential fill` — Atlassian API tokens are
+sent as `<git user.email>:<token>`; set `BITBUCKET_EMAIL` if the git email differs
+from the Atlassian account email. When the API or python is unavailable the column is
+omitted and a note says why; non-Bitbucket repos are excluded from PR counts and
+listed. Git-side numbers never depend on the API.
 
 Every run also writes a self-contained HTML report named
 `YYYY-MM-DD-HHMM-repo-change-summary-<month>.html` (the leading date and time are the
