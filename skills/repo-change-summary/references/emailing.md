@@ -41,7 +41,7 @@ On both `summary.sh` and `multi-summary.sh`:
 - `--email` — turn emailing on.
 - `--to LIST` — recipient(s); implies `--email`. See "Recipient syntax" below.
 - `--subject STR` — email subject. Defaults to the generated report title
-  (`Repository change summary — <repo|group> — <month>`).
+  (`<repo|group> — <month> — Repository change summary`).
 - `--email-dry-run` — build everything but send nothing; implies `--email`.
 - `--env-file PATH` — explicit path to the credentials file (default name `repo-change-summary.env`).
 - `--mailmap PATH` — explicit path to the `.mailmap` address book.

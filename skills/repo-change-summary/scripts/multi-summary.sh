@@ -9,7 +9,7 @@
 #   <groups-dir>/<group>.list        (default groups-dir: ~/.claude/repo-change-summary-groups)
 # with one local repo path per line; blank lines and # comments are ignored.
 #
-# Usage: multi-summary.sh --group NAME [--month YYYY-MM] [--out DIR] [--groups-dir DIR] [--per-author] [--no-fetch] [--no-open]
+# Usage: multi-summary.sh --group NAME [--month YYYY-MM] [--out DIR] [--groups-dir DIR] [--per-author] [--no-fetch] [--no-open] [--exclude PATTERN]...
 
 set -euo pipefail
 
@@ -30,6 +30,13 @@ email_dry_run=0
 env_file=""
 mailmap=""
 
+# Matched by exact basename, not a glob — a nested frontend/package-lock.json still
+# matches. Kept in sync by hand with summary.sh's copy of this same list (no shared
+# library between the two scripts today).
+default_excludes=(package-lock.json yarn.lock pnpm-lock.yaml composer.lock Gemfile.lock \
+    Cargo.lock poetry.lock Pipfile.lock go.sum pubspec.lock bitbucket-pipelines.yml)
+exclude_patterns=()
+
 while [ $# -gt 0 ]; do
     case "$1" in
         --group)      group="${2:-}";      shift 2 ;;
@@ -39,13 +46,14 @@ while [ $# -gt 0 ]; do
         --per-author) per_author=1;        shift ;;
         --no-fetch)   fetch_flag="--no-fetch"; shift ;;
         --no-open)    do_open=0;           shift ;;
+        --exclude)    exclude_patterns+=("${2:-}"); shift 2 ;;
         --email)         do_email=1;                shift ;;
         --to)            email_to="${2:-}"; do_email=1; shift 2 ;;
         --subject)       email_subject="${2:-}";    shift 2 ;;
         --email-dry-run) do_email=1; email_dry_run=1; shift ;;
         --env-file)      env_file="${2:-}";         shift 2 ;;
         --mailmap)       mailmap="${2:-}";          shift 2 ;;
-        -h|--help)    echo "Usage: multi-summary.sh --group NAME [--month YYYY-MM] [--out DIR] [--groups-dir DIR] [--per-author] [--no-fetch] [--no-open] [--email] [--to LIST] [--subject STR] [--email-dry-run] [--env-file PATH] [--mailmap PATH]"; exit 0 ;;
+        -h|--help)    echo "Usage: multi-summary.sh --group NAME [--month YYYY-MM] [--out DIR] [--groups-dir DIR] [--per-author] [--no-fetch] [--no-open] [--exclude PATTERN]... [--email] [--to LIST] [--subject STR] [--email-dry-run] [--env-file PATH] [--mailmap PATH]"; exit 0 ;;
         *)            echo "unknown argument: $1" >&2; exit 2 ;;
     esac
 done
@@ -189,6 +197,19 @@ labels=("Lines added" "Lines deleted" "**Total lines changed (added + deleted)**
         "Files modified — distinct (each file once)" "Files modified — summed across commits" \
         "Commits" "Pull requests merged" "Authors")
 
+# Comma-joined so the per-author awk below can rebuild the set with split(). Exact
+# basename match, not a glob. Defaults apply on every run; --exclude PATTERN adds ad
+# hoc names on top. Kept in sync by hand with summary.sh's own copy (no shared
+# library between the two scripts today).
+exclude_all=("${default_excludes[@]}" "${exclude_patterns[@]}")
+exclude_csv=""
+for e in "${exclude_all[@]}"; do exclude_csv="${exclude_csv:+$exclude_csv,}$e"; done
+exclude_display="${exclude_csv//,/, }"
+# Only user-supplied patterns are forwarded to summary.sh below — it applies its own
+# copy of default_excludes unconditionally, so the defaults don't need repeating here.
+exclude_args=()
+for e in "${exclude_patterns[@]}"; do exclude_args+=(--exclude "$e"); done
+
 repo_count=0
 fetch_failed_names=""
 repo_paths=()
@@ -206,7 +227,7 @@ while IFS= read -r path || [ -n "$path" ]; do
 
     # Per-repo HTML side-files go to $tmp and are discarded — the combined report
     # is the product here; the single-repo mode exists for individual reports.
-    if ! table="$(bash "$SUMMARY" --month "$month" --repo "$path" --out "$tmp" --no-open $fetch_flag 2>"$tmp/err.txt")"; then
+    if ! table="$(bash "$SUMMARY" --month "$month" --repo "$path" --out "$tmp" --no-open $fetch_flag "${exclude_args[@]}" 2>"$tmp/err.txt")"; then
         echo "summary.sh failed for group entry: $path" >&2
         cat "$tmp/err.txt" >&2
         echo "fix or remove that line in $list" >&2
@@ -302,8 +323,11 @@ if [ "$per_author" -eq 1 ]; then
             printf '#REPO\t%s\n' "$(basename "$p")"
             git -C "$p" log --branches --remotes --no-merges --since="$since" --until="$until_date" --format='@%aN%x09%aE' --numstat 2>/dev/null || true
         done
-    } | awk -F'\t' -v bots="$bot_emails" -v botfile="$tmp/pa-bots.tsv" '
-        BEGIN { nb = split(bots, bl, ","); for (i = 1; i <= nb; i++) botset[bl[i]] = 1 }
+    } | awk -F'\t' -v bots="$bot_emails" -v excl="$exclude_csv" -v botfile="$tmp/pa-bots.tsv" '
+        BEGIN {
+            nb = split(bots, bl, ","); for (i = 1; i <= nb; i++) botset[bl[i]] = 1
+            ne = split(excl, el, ","); for (i = 1; i <= ne; i++) exset[el[i]] = 1
+        }
         /^#REPO\t/ { repo = $2; next }
         /^@/ {
             a = substr($1, 2)
@@ -312,6 +336,8 @@ if [ "$per_author" -eq 1 ]; then
             next
         }
         a != "" && NF >= 3 {
+            nsep = split($3, parts, "/")
+            if (parts[nsep] in exset) next
             if ($1 ~ /^[0-9]+$/) { add[a] += $1; afa[a SUBSEP repo "/" $3] += $1 }
             if ($2 ~ /^[0-9]+$/) del[a] += $2
             fk = a SUBSEP repo "/" $3
@@ -454,8 +480,9 @@ scope="all branches · each commit counted once · merges excluded from line/fil
 md_tmp="$tmp/combined.md"
 {
 cat <<EOF
-**Repository change summary — ${group} — ${month_display}**
+**${group} — ${month_display} — Repository change summary**
 _${repo_count} repos · ${scope}._
+_Excludes from all counts: ${exclude_display} — add more with --exclude PATTERN._
 
 | Repo | Lines added | Lines deleted | Total changed | Files (distinct) | File-touches | Commits | PRs merged | Authors |
 |---|---|---|---|---|---|---|---|---|
@@ -476,6 +503,7 @@ svg_bars "$tmp/chart-repos.tsv" "Lines added" "Lines deleted" "Lines changed by 
 stamp="$(date '+%Y-%m-%d-%H%M')"
 generated="$(date '+%Y-%m-%d %H:%M')"
 html_file="${out_dir%/}/${stamp}-repo-change-summary-${group}-${month}.html"
+exclude_display_html="$(html_escape "$exclude_display")"
 
 foot=""
 [ -n "$fetch_failed_names" ] && foot="<p class=\"note\">* could not fetch — local branches only: ${fetch_failed_names}</p>"
@@ -486,7 +514,7 @@ cat > "$html_file" <<HTML
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Repository change summary &#8212; ${group} &#8212; ${month_display}</title>
+<title>${group} &#8212; ${month_display} &#8212; Repository change summary</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2032%2032'%3E%3Crect%20width='32'%20height='32'%20rx='7'%20fill='%232a78d6'/%3E%3Crect%20x='6'%20y='16'%20width='5'%20height='10'%20rx='1.5'%20fill='%23fff'/%3E%3Crect%20x='13.5'%20y='11'%20width='5'%20height='15'%20rx='1.5'%20fill='%23fff'/%3E%3Crect%20x='21'%20y='6'%20width='5'%20height='20'%20rx='1.5'%20fill='%23fff'/%3E%3C/svg%3E">
 <style>
   body { font-family: "Segoe UI", Arial, sans-serif; color: #0f172a; margin: 0; background: #ffffff; }
@@ -510,9 +538,10 @@ cat > "$html_file" <<HTML
 </head>
 <body>
 <div class="page">
-<h1>Repository change summary &#8212; ${group} &#8212; ${month_display}</h1>
+<h1>${group} &#8212; ${month_display} &#8212; Repository change summary</h1>
 <p class="meta"><b>Group</b>: ${group} (${repo_count} repos)</p>
 <p class="meta"><b>Scope</b>: ${scope}</p>
+<p class="meta"><b>Excludes</b>: ${exclude_display_html} — add more with --exclude PATTERN.</p>
 <p class="meta"><b>Generated</b>: ${generated}</p>
 <hr class="rule">
 <table>
@@ -552,7 +581,7 @@ fi
 # rollup table and "HTML report:" line have printed. send-report.py is the sibling file
 # the emailer agent owns; the inner per-repo summary.sh calls never receive email flags.
 if [ "$do_email" -eq 1 ]; then
-    title="Repository change summary — ${group} — ${month_display}"
+    title="${group} — ${month_display} — Repository change summary"
     subject="${email_subject:-$title}"
 
     py="$(command -v python3 || command -v python || true)"

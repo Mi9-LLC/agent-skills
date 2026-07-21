@@ -4,7 +4,7 @@
 # git repo for one calendar month. Each commit is counted once; merge commits are
 # excluded so merged work is not double-counted.
 #
-# Usage: summary.sh [--month YYYY-MM] [--repo PATH] [--out DIR] [--no-fetch] [--no-open]
+# Usage: summary.sh [--month YYYY-MM] [--repo PATH] [--out DIR] [--no-fetch] [--no-open] [--exclude PATTERN]...
 
 set -euo pipefail
 
@@ -20,6 +20,13 @@ email_dry_run=0
 env_file=""
 mailmap=""
 
+# Matched by exact basename, not a glob — a nested frontend/package-lock.json still
+# matches. Kept in sync by hand with multi-summary.sh's copy of this same list (no
+# shared library between the two scripts today).
+default_excludes=(package-lock.json yarn.lock pnpm-lock.yaml composer.lock Gemfile.lock \
+    Cargo.lock poetry.lock Pipfile.lock go.sum pubspec.lock bitbucket-pipelines.yml)
+exclude_patterns=()
+
 while [ $# -gt 0 ]; do
     case "$1" in
         --month)    month="${2:-}";    shift 2 ;;
@@ -27,13 +34,14 @@ while [ $# -gt 0 ]; do
         --out)      out_dir="${2:-}";  shift 2 ;;
         --no-fetch) do_fetch=0;        shift ;;
         --no-open)  do_open=0;         shift ;;
+        --exclude)  exclude_patterns+=("${2:-}"); shift 2 ;;
         --email)         do_email=1;                shift ;;
         --to)            email_to="${2:-}"; do_email=1; shift 2 ;;
         --subject)       email_subject="${2:-}";    shift 2 ;;
         --email-dry-run) do_email=1; email_dry_run=1; shift ;;
         --env-file)      env_file="${2:-}";         shift 2 ;;
         --mailmap)       mailmap="${2:-}";          shift 2 ;;
-        -h|--help)  echo "Usage: summary.sh [--month YYYY-MM] [--repo PATH] [--out DIR] [--no-fetch] [--no-open] [--email] [--to LIST] [--subject STR] [--email-dry-run] [--env-file PATH] [--mailmap PATH]"; exit 0 ;;
+        -h|--help)  echo "Usage: summary.sh [--month YYYY-MM] [--repo PATH] [--out DIR] [--no-fetch] [--no-open] [--exclude PATTERN]... [--email] [--to LIST] [--subject STR] [--email-dry-run] [--env-file PATH] [--mailmap PATH]"; exit 0 ;;
         *)          echo "unknown argument: $1" >&2; exit 2 ;;
     esac
 done
@@ -111,16 +119,44 @@ fi
 # branch work.
 gitlog() { git -C "$repo" log --branches --remotes --no-merges --since="$since" --until="$until_date" "$@"; }
 
+# Comma-joined so the awk filters below can rebuild the set with split(). Exact
+# basename match, not a glob. Defaults apply on every run; --exclude PATTERN adds ad
+# hoc names on top. Kept in sync by hand with multi-summary.sh's own copy (no shared
+# library between the two scripts today).
+exclude_all=("${default_excludes[@]}" "${exclude_patterns[@]}")
+exclude_csv=""
+for e in "${exclude_all[@]}"; do exclude_csv="${exclude_csv:+$exclude_csv,}$e"; done
+exclude_display="${exclude_csv//,/, }"
+
+# Drops a --name-only line whose basename is excluded, without altering survivors —
+# shared by the distinct/touch counts below.
+filter_excludes() {
+    awk -F/ -v excl="$exclude_csv" '
+        BEGIN { n = split(excl, e, ","); for (i = 1; i <= n; i++) exset[e[i]] = 1 }
+        { if (!($NF in exset)) print }
+    '
+}
+
 # Insertions/deletions. Binary files show "-" in numstat and are skipped by the guard.
+# -F'\t' so a filename containing spaces still lands whole in $3 (matches the other
+# numstat site in multi-summary.sh's per-author pass).
 counts="$(gitlog --numstat --pretty=tformat: \
-    | awk '{ if ($1 ~ /^[0-9]+$/) a += $1; if ($2 ~ /^[0-9]+$/) d += $2 } END { print a + 0, d + 0 }')"
+    | awk -F'\t' -v excl="$exclude_csv" '
+        BEGIN { n = split(excl, e, ","); for (i = 1; i <= n; i++) exset[e[i]] = 1 }
+        {
+            nsep = split($3, parts, "/")
+            if (parts[nsep] in exset) next
+            if ($1 ~ /^[0-9]+$/) a += $1
+            if ($2 ~ /^[0-9]+$/) d += $2
+        }
+        END { print a + 0, d + 0 }')"
 added="${counts%% *}"
 deleted="${counts##* }"
 total=$((added + deleted))
 
 # awk 'END{print NR+0}' yields a clean integer (0 on empty input, no stray whitespace).
-distinct_files="$(gitlog --name-only --pretty=format: | sed '/^$/d' | sort -u | awk 'END{print NR+0}')"
-file_touches="$(gitlog --name-only --pretty=format:  | sed '/^$/d'           | awk 'END{print NR+0}')"
+distinct_files="$(gitlog --name-only --pretty=format: | sed '/^$/d' | filter_excludes | sort -u | awk 'END{print NR+0}')"
+file_touches="$(gitlog --name-only --pretty=format:  | sed '/^$/d'  | filter_excludes | awk 'END{print NR+0}')"
 commits="$(gitlog --oneline | awk 'END{print NR+0}')"
 # %aN (not %an) applies .mailmap when the repo has one, so one person committing under
 # two name spellings is counted once.
@@ -178,8 +214,9 @@ scope="all branches · each commit counted once · merges excluded from line/fil
 # same bytes can be handed to the emailer; $(...) strips the one trailing newline and
 # printf '%s\n' restores exactly one, leaving stdout byte-identical to a bare heredoc.
 summary_md=$(cat <<EOF
-**Repository change summary — ${month_display}**
+**${month_display} — Repository change summary**
 _Repo: ${repo} · ${scope}._
+_Excludes from all counts: ${exclude_display} — add more with --exclude PATTERN._
 
 | Metric | Count |
 |---|---|
@@ -201,6 +238,7 @@ stamp="$(date '+%Y-%m-%d-%H%M')"
 generated="$(date '+%Y-%m-%d %H:%M')"
 html_file="${out_dir%/}/${stamp}-repo-change-summary-${month}.html"
 repo_html="$(html_escape "$repo")"
+exclude_display_html="$(html_escape "$exclude_display")"
 
 cat > "$html_file" <<HTML
 <!doctype html>
@@ -208,7 +246,7 @@ cat > "$html_file" <<HTML
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Repository change summary &#8212; ${month_display}</title>
+<title>${month_display} &#8212; Repository change summary</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2032%2032'%3E%3Crect%20width='32'%20height='32'%20rx='7'%20fill='%232a78d6'/%3E%3Crect%20x='6'%20y='16'%20width='5'%20height='10'%20rx='1.5'%20fill='%23fff'/%3E%3Crect%20x='13.5'%20y='11'%20width='5'%20height='15'%20rx='1.5'%20fill='%23fff'/%3E%3Crect%20x='21'%20y='6'%20width='5'%20height='20'%20rx='1.5'%20fill='%23fff'/%3E%3C/svg%3E">
 <style>
   body { font-family: "Segoe UI", Arial, sans-serif; color: #0f172a; margin: 0; background: #ffffff; }
@@ -230,9 +268,10 @@ cat > "$html_file" <<HTML
 </head>
 <body>
 <div class="page">
-<h1>Repository change summary &#8212; ${month_display}</h1>
+<h1>${month_display} &#8212; Repository change summary</h1>
 <p class="meta"><b>Repository</b>: ${repo_html}</p>
 <p class="meta"><b>Scope</b>: ${scope}</p>
+<p class="meta"><b>Excludes</b>: ${exclude_display_html} — add more with --exclude PATTERN.</p>
 <p class="meta"><b>Generated</b>: ${generated}</p>
 <hr class="rule">
 <table>
@@ -277,7 +316,7 @@ if [ "$do_email" -eq 1 ]; then
     printf '%s\n' "$summary_md" > "$tmp/summary.md"
     repo_abs="$(cd "$repo" && pwd)"
     name="$(basename "$repo_abs")"
-    title="Repository change summary — ${name} — ${month_display}"
+    title="${name} — ${month_display} — Repository change summary"
     subject="${email_subject:-$title}"
 
     py="$(command -v python3 || command -v python || true)"
