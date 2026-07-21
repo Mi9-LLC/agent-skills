@@ -13,6 +13,12 @@ repo="."
 out_dir="."
 do_fetch=1
 do_open=1
+do_email=0
+email_to=""
+email_subject=""
+email_dry_run=0
+env_file=""
+mailmap=""
 
 while [ $# -gt 0 ]; do
     case "$1" in
@@ -21,7 +27,13 @@ while [ $# -gt 0 ]; do
         --out)      out_dir="${2:-}";  shift 2 ;;
         --no-fetch) do_fetch=0;        shift ;;
         --no-open)  do_open=0;         shift ;;
-        -h|--help)  echo "Usage: summary.sh [--month YYYY-MM] [--repo PATH] [--out DIR] [--no-fetch] [--no-open]"; exit 0 ;;
+        --email)         do_email=1;                shift ;;
+        --to)            email_to="${2:-}"; do_email=1; shift 2 ;;
+        --subject)       email_subject="${2:-}";    shift 2 ;;
+        --email-dry-run) do_email=1; email_dry_run=1; shift ;;
+        --env-file)      env_file="${2:-}";         shift 2 ;;
+        --mailmap)       mailmap="${2:-}";          shift 2 ;;
+        -h|--help)  echo "Usage: summary.sh [--month YYYY-MM] [--repo PATH] [--out DIR] [--no-fetch] [--no-open] [--email] [--to LIST] [--subject STR] [--email-dry-run] [--env-file PATH] [--mailmap PATH]"; exit 0 ;;
         *)          echo "unknown argument: $1" >&2; exit 2 ;;
     esac
 done
@@ -53,6 +65,23 @@ if [ ! -d "$out_dir" ]; then
     echo "output directory does not exist: $out_dir" >&2
     exit 2
 fi
+
+# Email is opt-in (--email/--to/--email-dry-run) and --to is mandatory when it's on.
+# Checked here — before the expensive git work — so a misuse fails instantly.
+if [ "$do_email" -eq 1 ]; then
+    if [ -z "$email_to" ]; then
+        echo "--email requires --to LIST" >&2
+        exit 2
+    fi
+    # A dry run is a non-interactive test path; never pop a browser window for it.
+    if [ "$email_dry_run" -eq 1 ]; then
+        do_open=0
+    fi
+fi
+
+# Scratch space for the Markdown handed to the emailer; always cleaned up on exit.
+tmp="$(mktemp -d)"
+trap 'rm -rf "$tmp"' EXIT
 
 # Month window: [first day of month, first day of next month). Computed by hand so we
 # don't depend on `date -d` (GNU) vs `date -v` (BSD), which differ across platforms.
@@ -145,8 +174,10 @@ authors_c="$(commafy "$authors")"
 
 scope="all branches · each commit counted once · merges excluded from line/file/commit counts"
 
-# Markdown table on stdout — the caller relays this verbatim.
-cat <<EOF
+# Markdown table on stdout — the caller relays this verbatim. Captured first so the
+# same bytes can be handed to the emailer; $(...) strips the one trailing newline and
+# printf '%s\n' restores exactly one, leaving stdout byte-identical to a bare heredoc.
+summary_md=$(cat <<EOF
 **Repository change summary — ${month_display}**
 _Repo: ${repo} · ${scope}._
 
@@ -161,6 +192,8 @@ _Repo: ${repo} · ${scope}._
 | Pull requests merged | ${pull_requests_c} |
 | Authors | ${authors_c} |
 EOF
+)
+printf '%s\n' "$summary_md"
 
 # HTML report. The filename leads with the generation date and time (YYYY-MM-DD-HHMM) so
 # each run is uniquely named and the files sort chronologically.
@@ -191,6 +224,7 @@ cat > "$html_file" <<HTML
   td.count { text-align: right; font-family: Consolas, monospace; font-variant-numeric: tabular-nums; }
   tr.total td { background: #eff6ff; color: #0f172a; font-weight: 700; }
   .note { font-size: 12.5px; font-style: italic; color: #64748b; margin-top: 20px; }
+  @page { margin: 12mm; }
   @media print { .page { padding: 0; } }
 </style>
 </head>
@@ -234,4 +268,42 @@ if [ "$do_open" -eq 1 ]; then
             else echo "no browser opener found; open ${html_file} manually" >&2; fi ;;
         *)                    echo "unrecognized platform; open ${html_file} manually" >&2 ;;
     esac
+fi
+
+# Email the report — the LAST step, after the git table and "HTML report:" line have
+# already printed, so an emailer failure never hides the results this run produced.
+# send-report.py is the sibling file the emailer agent owns; it is only ever called here.
+if [ "$do_email" -eq 1 ]; then
+    printf '%s\n' "$summary_md" > "$tmp/summary.md"
+    repo_abs="$(cd "$repo" && pwd)"
+    name="$(basename "$repo_abs")"
+    title="Repository change summary — ${name} — ${month_display}"
+    subject="${email_subject:-$title}"
+
+    py="$(command -v python3 || command -v python || true)"
+    if [ -z "$py" ]; then
+        echo "email requested but python not found" >&2
+        exit 3
+    fi
+
+    # Git Bash hands POSIX paths to native python.exe, which needs Windows paths; convert
+    # every PATH argument (mirrors the browser-open above). Non-path args pass through.
+    winpath() { case "$(uname -s)" in MINGW*|MSYS*|CYGWIN*) cygpath -w "$1" ;; *) printf '%s' "$1" ;; esac; }
+    send_py="$(cd "$(dirname "$0")" && pwd)/send-report.py"
+
+    email_args=(
+        "$(winpath "$send_py")"
+        --to "$email_to"
+        --subject "$subject"
+        --title "$title"
+        --summary-md "$(winpath "$tmp/summary.md")"
+        --attach "$(winpath "$html_file")"
+        --search-dir "$(winpath "$repo_abs")"
+        --search-dir "$(winpath "$PWD")"
+    )
+    [ -n "$env_file" ] && email_args+=(--env-file "$(winpath "$env_file")")
+    [ -n "$mailmap" ]  && email_args+=(--mailmap "$(winpath "$mailmap")")
+    [ "$email_dry_run" -eq 1 ] && email_args+=(--dry-run)
+
+    "$py" "${email_args[@]}" || { rc=$?; echo "send-report.py failed (exit $rc)" >&2; exit "$rc"; }
 fi

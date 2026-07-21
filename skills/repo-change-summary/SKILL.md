@@ -2,6 +2,7 @@
 name: repo-change-summary
 description: Summarize how much a git repository changed in a given month across ALL branches: lines added, lines deleted, total lines changed (added + deleted), distinct files modified, total file-touches, commits, pull requests merged, and authors — each commit counted once, merges excluded from the line/file/commit counts. Prints a Markdown summary table and writes a styled HTML report. Defaults to the current month and current repo; can target any local repo path, a specific month, or a named repo group (defined under ~/.claude/repo-change-summary-groups) for one combined rollup + per-repo report. Use whenever the user asks how many lines or files changed this month or in a named month (June, 2026-05), how many pull requests were merged, repo churn / change volume / diff volume, monthly commit/PR/author activity, a monthly change report or HTML change summary, a per-month change summary for a repo, or a summary report for a repo group ('summary report for STF') — even if they don't say 'skill'.
 allowed-tools: Bash
+model: claude-sonnet-5
 ---
 
 # repo-change-summary
@@ -55,10 +56,14 @@ has no file yet, offer to create it from the repos the user lists, then run.
 
 The combined output is one Markdown summary (a rollup table with a totals row, then
 each repo's full table) and one self-contained HTML report; flags and counting rules
-are identical to the single-repo mode. The HTML embeds inline-SVG bar charts (no
-JS, no CDN — the file stays offline-portable): lines changed by repo, and with
-`--per-author` lines changed and PRs authored by developer. Two rollup rules to
-keep intact when relaying:
+are identical to the single-repo mode. Repos are ordered by **Total changed, ascending**
+(smallest first; the TOTAL row always stays last) — the rollup table, its bar chart, and
+the per-repo detail sections all share this order. The HTML embeds inline-SVG bar charts
+(no JS, no CDN — the file stays offline-portable): lines changed by repo, and with
+`--per-author` lines changed and PRs authored by developer. That table is ordered the
+same way — **Total changed, ascending** — and keeps its **activity-not-performance**
+caption: ordering by volume is a presentation choice the user asked for, not a
+performance ranking. Two rollup rules to keep intact when relaying:
 
 - The authors total is distinct people across the whole group, never the column sum.
 - A repo whose fetch failed is marked `*` ("local branches only") — report that, never
@@ -73,11 +78,13 @@ authored-and-merged) to both outputs. Bot identities are excluded from this tabl
 their commit count; built-in: Bitbucket Pipelines (`commits-noreply@bitbucket.org`),
 extend with one email per line in `<groups-dir>/bot-emails.list`. Framing is deliberate: this is **activity
 volume, not performance** — line counts measure file type and task (lockfiles,
-generated code, vendored docs), not effort. The table is alphabetical (no ranking),
+generated code, vendored docs), not effort. The table is sorted by Total changed
+ascending (smallest first, matching the rollup — the user asked for this ordering);
 the report says the stats-not-performance caveat itself, and any developer whose
 added lines are dominated by one file gets that file named in a footnote. Relay those
-notes with the table; refuse to turn the output into a performance appraisal or
-ranking of people.
+notes with the table. The volume ordering is a presentation choice, not a verdict —
+still refuse to editorialize it into a performance appraisal (no "top performer"
+framing, no praise or criticism of individuals).
 
 The PRs-authored column comes from the Bitbucket API (git merge commits credit
 whoever clicked merge, not the author): `scripts/pr-authors.py` (Python 3.9+, stdlib)
@@ -92,6 +99,46 @@ Every run also writes a self-contained HTML report named
 generation timestamp) into the output directory, prints its path as the last line of
 output, and opens it in the default browser (suppress with `--no-open`). Opening is
 best-effort — on a headless machine it is skipped without failing the run.
+
+## Emailing the report (PDF)
+
+Both scripts can email the finished report instead of (or as well as) opening it in a
+browser. New flags on `summary.sh` and `multi-summary.sh`:
+
+- `--email` — turn emailing on.
+- `--to LIST` — recipient(s), separated by `,` `;` or newlines; each is a literal email
+  or a name resolved against a `.mailmap` address book. Implies `--email`.
+- `--subject STR` — email subject (defaults to the report title).
+- `--email-dry-run` — build the PDF and compose the message but send nothing; implies
+  `--email` and never opens a browser.
+- `--env-file PATH` / `--mailmap PATH` — explicit config paths (default search order
+  is repo/current directory, then `~/.claude/`).
+
+`--email`/`--email-dry-run` given without `--to` fails immediately (exit 2).
+
+**Default workflow — dry-run, then confirm, then send:**
+
+1. Run with `--email-dry-run` first. It resolves every recipient, renders the HTML
+   report to PDF via the locally-installed headless browser (Chrome preferred, Edge
+   fallback), and previews the full message — nothing is sent.
+2. Show the user the resolved `To:` list, subject, and attachment from that preview.
+3. Only after explicit confirmation, re-run without `--email-dry-run` to actually send
+   (add `--no-fetch` so the confirm run doesn't refetch and shift the numbers). If a
+   while passed since the preview, re-run the dry-run first — `--no-fetch` freezes only
+   the remote pull, not local commits, so the numbers can still drift otherwise.
+
+**Direct send (explicit opt-out).** If the user asks to skip the preview — "send it
+directly", "send right away", "no dry-run", "skip the preview" — send in one step with
+`--email` (not `--email-dry-run`) and report only a brief confirmation (recipient + that
+it sent), not the full table (they read it in the email). This stays safe:
+`send-report.py` resolves and validates every recipient before sending, so an unknown
+name or malformed address still fails (exit 3, nothing sent) — only the human eyeball on
+valid addresses is skipped. If a recipient is a new address not yet in the `.mailmap`,
+still echo the resolved `To:` before sending, even when asked to skip.
+
+Full detail — `repo-change-summary.env`/`.mailmap` formats, config search order, recipient-matching
+tiers, the PDF engine, SES/TLS notes, exit codes, troubleshooting — is in
+`references/emailing.md`.
 
 ## Presenting the result
 

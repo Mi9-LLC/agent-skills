@@ -23,6 +23,12 @@ groups_dir="$HOME/.claude/repo-change-summary-groups"
 fetch_flag=""
 do_open=1
 per_author=0
+do_email=0
+email_to=""
+email_subject=""
+email_dry_run=0
+env_file=""
+mailmap=""
 
 while [ $# -gt 0 ]; do
     case "$1" in
@@ -33,7 +39,13 @@ while [ $# -gt 0 ]; do
         --per-author) per_author=1;        shift ;;
         --no-fetch)   fetch_flag="--no-fetch"; shift ;;
         --no-open)    do_open=0;           shift ;;
-        -h|--help)    echo "Usage: multi-summary.sh --group NAME [--month YYYY-MM] [--out DIR] [--groups-dir DIR] [--per-author] [--no-fetch] [--no-open]"; exit 0 ;;
+        --email)         do_email=1;                shift ;;
+        --to)            email_to="${2:-}"; do_email=1; shift 2 ;;
+        --subject)       email_subject="${2:-}";    shift 2 ;;
+        --email-dry-run) do_email=1; email_dry_run=1; shift ;;
+        --env-file)      env_file="${2:-}";         shift 2 ;;
+        --mailmap)       mailmap="${2:-}";          shift 2 ;;
+        -h|--help)    echo "Usage: multi-summary.sh --group NAME [--month YYYY-MM] [--out DIR] [--groups-dir DIR] [--per-author] [--no-fetch] [--no-open] [--email] [--to LIST] [--subject STR] [--email-dry-run] [--env-file PATH] [--mailmap PATH]"; exit 0 ;;
         *)            echo "unknown argument: $1" >&2; exit 2 ;;
     esac
 done
@@ -62,6 +74,19 @@ mon_check=$((10#${month#*-}))
 if [ "$mon_check" -lt 1 ] || [ "$mon_check" -gt 12 ]; then
     echo "invalid --month '$month' (month must be 01-12)" >&2
     exit 2
+fi
+
+# Email is opt-in and --to is mandatory when it's on; checked before the per-repo loop
+# so a misuse fails instantly rather than after a multi-repo batch.
+if [ "$do_email" -eq 1 ]; then
+    if [ -z "$email_to" ]; then
+        echo "--email requires --to LIST" >&2
+        exit 2
+    fi
+    # A dry run is a non-interactive test path; never pop a browser window for it.
+    if [ "$email_dry_run" -eq 1 ]; then
+        do_open=0
+    fi
 fi
 
 tmp="$(mktemp -d)"
@@ -169,6 +194,7 @@ fetch_failed_names=""
 repo_paths=()
 : > "$tmp/rows.md"; : > "$tmp/rows.html"; : > "$tmp/sections.html"; : > "$tmp/authors.txt"
 : > "$tmp/chart-repos.tsv"
+mkdir -p "$tmp/r"; : > "$tmp/order.idx"
 sum_added=0; sum_deleted=0; sum_total=0; sum_files=0; sum_touch=0; sum_commits=0; sum_prs=0
 
 while IFS= read -r path || [ -n "$path" ]; do
@@ -205,14 +231,18 @@ while IFS= read -r path || [ -n "$path" ]; do
     # repo. Collect names (mailmap-aware) and dedupe across the whole group.
     git -C "$path" log --branches --remotes --no-merges --since="$since" --until="$until_date" --format='%aN' 2>/dev/null >> "$tmp/authors.txt" || true
 
-    printf '%s\t%s\t%s\n' "$(html_escape "$name")" "${raw[0]}" "${raw[1]}" >> "$tmp/chart-repos.tsv"
-
-    echo "| ${name}${mark} | ${vals[0]} | ${vals[1]} | ${vals[2]} | ${vals[3]} | ${vals[4]} | ${vals[5]} | ${vals[6]} | ${vals[7]} |" >> "$tmp/rows.md"
+    # Buffer each repo's outputs in per-repo side-files plus a (total-changed, index)
+    # line, so the loop stays order-agnostic; after the loop they are concatenated in
+    # ascending total-changed order (smallest on top). raw[2] is "Total changed".
+    rk="$tmp/r/$repo_count"
+    printf '%s\t%s\n' "${raw[2]}" "$repo_count" >> "$tmp/order.idx"
+    printf '%s\t%s\t%s\n' "$(html_escape "$name")" "${raw[0]}" "${raw[1]}" > "$rk.chart"
+    echo "| ${name}${mark} | ${vals[0]} | ${vals[1]} | ${vals[2]} | ${vals[3]} | ${vals[4]} | ${vals[5]} | ${vals[6]} | ${vals[7]} |" > "$rk.rowmd"
     {
         printf '  <tr><td class="metric">%s%s</td>' "$name" "${mark:+*}"
         for v in "${vals[@]}"; do printf '<td class="count">%s</td>' "$v"; done
         printf '</tr>\n'
-    } >> "$tmp/rows.html"
+    } > "$rk.rowhtml"
 
     {
         printf '<h2>%s</h2>\n<table>\n  <tr><th>Metric</th><th style="text-align:right">Count</th></tr>\n' "$name"
@@ -223,8 +253,20 @@ while IFS= read -r path || [ -n "$path" ]; do
             i=$((i + 1))
         done
         printf '</table>\n'
-    } >> "$tmp/sections.html"
+    } > "$rk.section"
 done < "$list"
+
+# Concatenate the per-repo side-files in ascending total-changed order (smallest on top)
+# so the rollup table, its bar chart, and the per-repo sections share one order. Numeric
+# sort on the buffered total; the index is a stable tie-break keeping discovery order.
+: > "$tmp/rows.md"; : > "$tmp/rows.html"; : > "$tmp/chart-repos.tsv"; : > "$tmp/sections.html"
+while IFS=$'\t' read -r _total ri; do
+    [ -n "$ri" ] || continue
+    cat "$tmp/r/$ri.rowmd"   >> "$tmp/rows.md"
+    cat "$tmp/r/$ri.rowhtml" >> "$tmp/rows.html"
+    cat "$tmp/r/$ri.chart"   >> "$tmp/chart-repos.tsv"
+    cat "$tmp/r/$ri.section" >> "$tmp/sections.html"
+done < <(sort -t"$(printf '\t')" -k1,1n -k2,2n "$tmp/order.idx")
 
 if [ "$repo_count" -eq 0 ]; then
     echo "group '$group' has no repo entries ($list)" >&2
@@ -320,11 +362,15 @@ if [ "$per_author" -eq 1 ]; then
     # their own zero row with a __PRONLY__ marker so the mismatch is visible.
     # (FILENAME guard, not NR==FNR — the PR file is legitimately empty when the
     # group has no Bitbucket repos, and NR==FNR would then swallow the git file.)
+    # Ordered by Total changed ascending (field 4, smallest on top) to match the repo
+    # rollup; author name is a stable tie-break. This orders developers by volume, which
+    # is why the "activity, not performance" caption stays on the table — the ordering is
+    # a presentation choice, not a performance ranking.
     awk -F'\t' -v OFS='\t' -v prsfile="$tmp/pa-prs.tsv" '
         FILENAME == prsfile { pr[$1] = $2; next }
         { print $0, ($1 in pr ? pr[$1] : 0); delete pr[$1] }
         END { for (a in pr) print a, 0, 0, 0, 0, 0, 0, "__PRONLY__", pr[a] }
-    ' "$tmp/pa-prs.tsv" "$tmp/pa-git.tsv" | sort -t"$(printf '\t')" -k1,1 > "$tmp/pa-joined.tsv"
+    ' "$tmp/pa-prs.tsv" "$tmp/pa-git.tsv" | sort -t"$(printf '\t')" -k4,4n -k1,1 > "$tmp/pa-joined.tsv"
 
     stats_note="Activity volume, not performance: line counts are dominated by file type and task (lockfiles, generated code, vendored docs), not effort."
     {
@@ -403,6 +449,10 @@ t_files="$(commafy $sum_files)"; t_touch="$(commafy $sum_touch)"; t_commits="$(c
 scope="all branches · each commit counted once · merges excluded from line/file/commit counts"
 
 # ---- combined Markdown on stdout — the caller relays this verbatim ----
+# The whole block is teed to a temp file so the identical bytes can be handed to the
+# emailer; stdout is unchanged because tee passes its input through byte-for-byte.
+md_tmp="$tmp/combined.md"
+{
 cat <<EOF
 **Repository change summary — ${group} — ${month_display}**
 _${repo_count} repos · ${scope}._
@@ -418,6 +468,7 @@ if [ "$per_author" -eq 1 ]; then
     echo ""
     cat "$tmp/pa.md"
 fi
+} | tee "$md_tmp"
 
 # ---- combined HTML report ----
 svg_bars "$tmp/chart-repos.tsv" "Lines added" "Lines deleted" "Lines changed by repo — ${group} — ${month_display}" "$tmp/chart-repos.html"
@@ -453,6 +504,7 @@ cat > "$html_file" <<HTML
   tr.total td { background: #eff6ff; color: #0f172a; font-weight: 700; }
   .note { font-size: 12.5px; font-style: italic; color: #64748b; margin-top: 20px; }
   .charttitle { font-size: 13px; font-weight: 600; color: #0b0b0b; margin: 20px 0 4px; }
+  @page { size: A4 landscape; margin: 12mm; }
   @media print { .page { padding: 0; } }
 </style>
 </head>
@@ -494,4 +546,38 @@ if [ "$do_open" -eq 1 ]; then
             else echo "no browser opener found; open ${html_file} manually" >&2; fi ;;
         *)                    echo "unrecognized platform; open ${html_file} manually" >&2 ;;
     esac
+fi
+
+# Email the combined report — the LAST step, exactly once for the whole group, after the
+# rollup table and "HTML report:" line have printed. send-report.py is the sibling file
+# the emailer agent owns; the inner per-repo summary.sh calls never receive email flags.
+if [ "$do_email" -eq 1 ]; then
+    title="Repository change summary — ${group} — ${month_display}"
+    subject="${email_subject:-$title}"
+
+    py="$(command -v python3 || command -v python || true)"
+    if [ -z "$py" ]; then
+        echo "email requested but python not found" >&2
+        exit 3
+    fi
+
+    # Git Bash hands POSIX paths to native python.exe, which needs Windows paths; convert
+    # every PATH argument (mirrors the browser-open above). Non-path args pass through.
+    winpath() { case "$(uname -s)" in MINGW*|MSYS*|CYGWIN*) cygpath -w "$1" ;; *) printf '%s' "$1" ;; esac; }
+    send_py="$script_dir/send-report.py"
+
+    email_args=(
+        "$(winpath "$send_py")"
+        --to "$email_to"
+        --subject "$subject"
+        --title "$title"
+        --summary-md "$(winpath "$md_tmp")"
+        --attach "$(winpath "$html_file")"
+        --search-dir "$(winpath "$PWD")"
+    )
+    [ -n "$env_file" ] && email_args+=(--env-file "$(winpath "$env_file")")
+    [ -n "$mailmap" ]  && email_args+=(--mailmap "$(winpath "$mailmap")")
+    [ "$email_dry_run" -eq 1 ] && email_args+=(--dry-run)
+
+    "$py" "${email_args[@]}" || { rc=$?; echo "send-report.py failed (exit $rc)" >&2; exit "$rc"; }
 fi
