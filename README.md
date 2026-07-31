@@ -56,7 +56,7 @@ Re-run either command anytime to update — it always pulls the current state of
 
 ## Recommended workflow — from idea to verified code
 
-For a substantial feature or initiative, the catalog's planning and verification skills chain end to end. Every step is independently useful — use the whole chain for large work, a single step for small:
+This is one workflow, not a mandate: a way the catalog's planning and verification skills chain end to end for a substantial feature or initiative, shared because it works well in practice. Every step is independently useful — run the whole chain for large work, a single step for a small task, or just the pieces that fit how you already work. Each skill fires implicitly (describe the work and the matching skill launches on its own) or explicitly (start the message with `/<skill-name>`) — see "How these skills work" above.
 
 ```
 new-feature → plan mode → plan-eng-review → convert-plan-to-feature → implement → verify-implementation → /simplify
