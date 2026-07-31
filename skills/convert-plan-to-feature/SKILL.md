@@ -41,6 +41,37 @@ is a separate, later step driven from the feature files this skill produces.
   isolation and knows the file paths, the order of operations, what it depends on,
   and how to tell it's done.
 
+## Model assignment — quality first
+
+Every feature gets a *Suggested model* (in the REQUIREMENTS.md table and the
+feature file header). Assign it by this rubric. The bias is deliberate:
+underestimating a feature costs a bad implementation plus the rework to fix
+it; using a model one tier stronger than needed costs only tokens. Quality
+outranks price.
+
+- **Opus is the default.** A feature earns a cheaper model by meeting every
+  condition of a cheaper tier below; it is never given one to save money.
+- **Sonnet** only when ALL of these hold: single component; no design
+  decisions left (every step names exact files and mirrors an existing
+  pattern in the codebase); no shared contract, schema, or wire format
+  touched; and a wrong implementation would be caught immediately by the
+  existing tests or gates.
+- **Haiku** only for purely mechanical work with zero judgment — file
+  moves/renames, copying existing boilerplate, changing config values —
+  where a wrong result is obvious on sight.
+- **Any underestimation signal forces Opus**, however simple the feature
+  reads: it touches a shared contract, schema, or wire format; crosses
+  component boundaries; involves concurrency, caching, retries,
+  transactions, migrations, or auth/security; modifies existing behavior;
+  requires designing (not copying) an error path; or the plan leaves an open
+  question inside it. The plan calling the work "just", "simple", or "quick"
+  is itself a signal — that wording is how underestimated work is usually
+  described, not evidence the work is easy.
+
+The plan's own per-phase model recommendations are input, not authority:
+re-derive each feature's model from this rubric, so an underestimate in the
+plan does not survive into the feature files.
+
 ## Workflow
 
 ### 1. Locate the source plan
@@ -192,12 +223,30 @@ and any risk/rollback note specific to this slice.>
 ```
 
 Carry the plan's fidelity into the right feature: per-phase model recommendations
-become the feature's *Suggested model*; PR-boundary notes become *Dependencies*;
+feed the feature's *Suggested model* (re-derived against the model rubric above,
+never copied blindly); PR-boundary notes become *Dependencies*;
 test items become *Acceptance criteria*. Don't invent detail the plan didn't have —
 if the plan was vague on a point, the feature file inherits that gap as an open
 question rather than a fabricated spec.
 
-### 6. Verify and report
+### 6. Re-review every model assignment
+
+A dedicated second pass, after all feature files are written and with the
+whole decomposition in view — model assignments made feature-by-feature
+during writing are the ones that miss underestimation:
+
+- Walk the feature table top to bottom and re-check each *Suggested model*
+  against the rubric, looking specifically for underestimation signals the
+  first pass missed. The error that matters is Sonnet on a feature that
+  needed Opus; it is far more expensive than the reverse.
+- **When in doubt between two tiers, pick the higher.**
+- A downgrade in this pass is allowed only when the feature meets every
+  condition of the cheaper tier.
+- Apply each change to the REQUIREMENTS.md table and the feature file header
+  together, and list every assignment this pass changed (with the reason) in
+  the final report.
+
+### 7. Verify and report
 
 - Re-read your output cold: every feature has file paths, dependencies, and
   checkable acceptance criteria; cross-cutting catalogs are consolidated in

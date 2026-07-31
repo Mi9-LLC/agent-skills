@@ -30,7 +30,8 @@ The skill reads the plan from the conversation (plan-mode output or approved des
 2. Creates `docs/plans/<initiative>/` and `docs/plans/<initiative>/features/`.
 3. Writes `REQUIREMENTS.md` — the shared index: context, blast radius, locked decisions, cross-cutting catalogs, deploy/build ordering, feature table with suggested models, test strategy, and open questions.
 4. Writes one `features/NN - <Feature Name>.md` per unit of work — requirement, a Consumes/Produces interface contract, ordered implementation steps with real file paths (no placeholders), objectively checkable acceptance criteria, and dependency/risk notes.
-5. Verifies consistency (every feature in the table has a file; numbering reflects dependency order) and reports the created tree with a one-line summary per feature.
+5. Re-reviews every suggested model in a dedicated second pass against the quality-first rubric — Opus is the default; Sonnet only for fully-specified single-component work; Haiku only for purely mechanical edits; any underestimation signal (shared contracts, cross-component work, concurrency/caching/migrations/auth, modified existing behavior, open questions) forces Opus; when in doubt between two tiers, the higher one wins. The plan's own per-phase recommendations are input, not authority.
+6. Verifies consistency (every feature in the table has a file; numbering reflects dependency order) and reports the created tree with a one-line summary per feature, including any model assignment the second pass changed.
 
 **Produces planning documents only — does not implement anything.**
 
@@ -67,7 +68,7 @@ The initiative index. Sections:
 | Locked decisions | The plan's confirmed design decisions; the "why" behind the feature breakdown |
 | Cross-cutting catalogs | Consolidated shared data — enums, contract tables, message types, error codes |
 | Deploy / build ordering | The order features must land in, and why |
-| Features table | Number, title (linked to the feature file), dependencies, suggested model |
+| Features table | Number, title (linked to the feature file), dependencies, suggested model (quality-first: Opus by default, cheaper tiers only for work that fully qualifies, re-reviewed in a second pass) |
 | Test strategy | Unit vs integration, real vs mocked, CI vs local |
 | Open questions / risks | Anything the plan left unresolved, carried forward explicitly |
 

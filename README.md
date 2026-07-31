@@ -66,8 +66,8 @@ new-feature → plan mode → plan-eng-review → convert-plan-to-feature → im
 1. [`new-feature`](#new-feature) turns a fuzzy request into locked design decisions, then hands off to plan mode.
 2. **Plan mode** (built into Claude Code) drafts the implementation plan from those decisions.
 3. [`plan-eng-review`](#plan-eng-review) reviews the written plan before any code is written and ends in a verdict.
-4. [`convert-plan-to-feature`](#convert-plan-to-feature) decomposes the approved plan into per-feature spec files, each with its own checkbox acceptance criteria.
-5. **Implement** — a developer, or one agent per feature file.
+4. [`convert-plan-to-feature`](#convert-plan-to-feature) decomposes the approved plan into per-feature spec files, each with its own checkbox acceptance criteria and a quality-first suggested model (Opus by default, a cheaper tier only for clearly mechanical work, every assignment re-reviewed in a second pass for underestimation).
+5. **Implement** — a developer, or one agent per feature file, on the model its feature file suggests.
 6. [`verify-implementation`](#verify-implementation) adversarially verifies each claim of doneness against the code and fixes what it finds. The feature files from step 4 are its highest-preference input — their acceptance criteria are exactly what it verifies against.
 7. **`/simplify`** (built into Claude Code, not part of this catalog) cleans up the verified code — reuse, simplification, efficiency; re-run your quality gates after it edits.
 
@@ -247,7 +247,7 @@ npx skills add https://github.com/Mi9-LLC/agent-skills --skill update-dependenci
 **What it does not do.** Implement anything — it writes planning documents only and stops. It declares `disallowed-tools: Edit, NotebookEdit`, which drops those tools while the skill is active (a per-turn guard — the restriction clears on your next message). It never writes at the `docs/plans/` root (everything goes inside the `<initiative>/` subfolder so concurrent efforts don't collide), and it leaves the source plan where it is.
 
 **What it produces.**
-- `docs/plans/<initiative>/REQUIREMENTS.md` — the index: context, blast radius, locked decisions, consolidated cross-cutting catalogs (wire-contract/enum tables, message types, error codes), deploy ordering, a feature table with suggested models, test strategy, and open questions.
+- `docs/plans/<initiative>/REQUIREMENTS.md` — the index: context, blast radius, locked decisions, consolidated cross-cutting catalogs (wire-contract/enum tables, message types, error codes), deploy ordering, a feature table with suggested models — assigned quality-first (Opus is the default; Sonnet/Haiku only for work meeting every condition of the cheaper tier; any underestimation signal forces Opus) and re-reviewed in a mandatory second pass, since a feature underestimated onto a cheaper model costs a bad implementation plus rework — test strategy, and open questions.
 - `docs/plans/<initiative>/features/NN - <Feature Name>.md` — one file per feature: requirement, a **Consumes/Produces interface contract**, ordered technical steps with real file paths (no placeholders), objectively checkable acceptance criteria, and dependency/risk notes.
 
 **Example.**
