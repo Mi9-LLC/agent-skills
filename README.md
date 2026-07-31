@@ -691,13 +691,13 @@ npx skills add https://github.com/Mi9-LLC/agent-skills --skill health
 
 ## `plan-eng-review`
 
-**What it does.** The gate between "a plan exists" and "code gets written". Reviews a written implementation plan (the plan-mode draft, a file under `docs/plans/`, or a pasted plan) before any code is written: scope challenge → what-already-exists reuse check → four dimensions (architecture; code quality of the planned code; tests — the heaviest; performance) → verdict. Iron law: no finding without evidence — a presence finding quotes the plan or a `file:line` verified with Read/Grep; an absence finding quotes the plan text that creates the obligation plus the negative search that verified the absence. REGRESSION RULE: if the plan modifies existing behavior and no existing test covers the changed path, a regression test goes into Required plan changes — never asked, never waived.
+**What it does.** The gate between "a plan exists" and "code gets written". Reviews a written implementation plan (the plan-mode draft, a file under `docs/plans/`, or a pasted plan) before any code is written: scope challenge (which also challenges any per-phase model recommendations the plan carries — quality outranks price, so an underestimation signal in a phase forces an Opus recommendation) → what-already-exists reuse check → four dimensions (architecture; code quality of the planned code; tests — the heaviest; performance) → verdict. Iron law: no finding without evidence — a presence finding quotes the plan or a `file:line` verified with Read/Grep; an absence finding quotes the plan text that creates the obligation plus the negative search that verified the absence. REGRESSION RULE: if the plan modifies existing behavior and no existing test covers the changed path, a regression test goes into Required plan changes — never asked, never waived.
 
 **Requirements.** A written implementation plan to review, and the codebase it targets — the review grounds itself in the repo's `CLAUDE.md` and the files the plan touches. No tokens, no network.
 
 **How to run.** Auto-triggers when a written plan exists and you ask for it to be reviewed, or run `/plan-eng-review`. `allowed-tools: Read, Grep, Glob, Bash, Write, Agent` (Bash is used read-only: git context, existence probes; Agent only for the optional outside-voice subagent).
 
-**Use it for.** Gating a plan before implementation — catching rebuilt-what-already-exists, untested behavior changes, silent failure paths, and bloated scope while they are still cheap to fix.
+**Use it for.** Gating a plan before implementation — catching rebuilt-what-already-exists, untested behavior changes, silent failure paths, bloated scope, and underestimated model recommendations while they are still cheap to fix.
 
 **Triggers on phrases like.** "review this plan", "eng review the plan", "is this plan sound", "architecture review before we build", "check the implementation plan before I start".
 

@@ -105,6 +105,20 @@ Before judging how the plan builds, judge what it builds:
 - **Complexity hotspots** — anything touching 8+ files, or introducing 2+
   new classes/services/abstractions; does the plan justify that weight?
 - **Deferral candidates** — bundled work the goal doesn't need now.
+- **Model recommendations** — when the plan assigns a model (Opus / Sonnet /
+  Haiku) per phase or task, challenge each assignment against the work that
+  phase actually contains. Quality outranks price: a cheaper tier is
+  justified only for fully-specified single-component work (Sonnet) or
+  purely mechanical edits (Haiku), and any underestimation signal in the
+  phase — a shared contract, schema, or wire format; cross-component work;
+  concurrency, caching, retries, transactions, migrations, or auth; modified
+  existing behavior; an error path designed rather than copied; an open
+  question — means the recommendation must be Opus. An underestimated
+  recommendation is a finding (evidence: quote the phase text carrying the
+  signal alongside the model it recommends), and the corrected
+  recommendation goes into Required plan changes. A plan with no model
+  recommendations is not penalized — this check runs only when they are
+  present.
 
 Scope-reduction opportunities get their own report block, separate from
 quality findings — "you could build less" and "this part is wrong" are
