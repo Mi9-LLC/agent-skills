@@ -28,10 +28,10 @@ The skill reads the plan from the conversation (plan-mode output or approved des
 
 1. Derives a kebab-case initiative name from the plan title (ticket prefix included when present).
 2. Creates `docs/plans/<initiative>/` and `docs/plans/<initiative>/features/`.
-3. Writes `REQUIREMENTS.md` — the shared index: context, blast radius, locked decisions, cross-cutting catalogs, deploy/build ordering, feature table with suggested models, test strategy, and open questions.
-4. Writes one `features/NN - <Feature Name>.md` per unit of work — requirement, a Consumes/Produces interface contract, ordered implementation steps with real file paths (no placeholders), objectively checkable acceptance criteria, dependency/risk notes, and a fixed *Standing instructions for the implementer* block (verbatim in every file: ask rather than resolve open questions by assumption; verify external library/API behavior against current documentation, not internal knowledge).
+3. Writes `REQUIREMENTS.md` — the shared index: context, blast radius, locked decisions, cross-cutting catalogs, deploy/build ordering, feature table with suggested models and parallel groups (same group = no dependencies between them = safe to implement concurrently), test strategy, and open questions.
+4. Writes one `features/NN - <Feature Name>.md` per unit of work — requirement, a Consumes/Produces interface contract, ordered implementation steps with real file paths (no placeholders), objectively checkable acceptance criteria, dependency/risk notes, its parallel group in the header, and a fixed *Standing instructions for the implementer* block (verbatim in every file: ask rather than resolve open questions by assumption; verify external library/API behavior against current documentation, not internal knowledge).
 5. Re-reviews every suggested model in a dedicated second pass against the quality-first rubric — Opus is the default; Sonnet only for fully-specified single-component work; Haiku only for purely mechanical edits; any underestimation signal (shared contracts, cross-component work, concurrency/caching/migrations/auth, modified existing behavior, open questions) forces Opus; when in doubt between two tiers, the higher one wins. The plan's own per-phase recommendations are input, not authority.
-6. Verifies consistency (every feature in the table has a file; numbering reflects dependency order) and reports the created tree with a one-line summary per feature, including any model assignment the second pass changed.
+6. Verifies consistency (every feature in the table has a file; numbering reflects dependency order; parallel groups match the dependency data) and reports the created tree with a one-line summary per feature, including any model assignment the second pass changed.
 
 **Produces planning documents only — does not implement anything.**
 
@@ -51,6 +51,8 @@ Good seams: deployable component boundaries, schema/contract changes before the 
 
 Features are numbered in build/deploy order — contracts before the agents that consume them, shared libraries before dependent projects, migrations before app code. The numeric prefix is the build order, not a cosmetic label.
 
+Concurrency is marked separately: the *Parallel group* column groups features with no dependencies between one another, so an implementation fleet can run a whole group concurrently without re-deriving the dependency graph.
+
 ### Consolidated catalogs
 
 Cross-cutting shared data — wire-contract/enum tables, JSON settings keys, named-pipe message kinds, SignalR hub methods, error codes — lives in `REQUIREMENTS.md`, not scattered across feature files. Feature files reference shared catalogs by name, so they can't drift.
@@ -68,7 +70,7 @@ The initiative index. Sections:
 | Locked decisions | The plan's confirmed design decisions; the "why" behind the feature breakdown |
 | Cross-cutting catalogs | Consolidated shared data — enums, contract tables, message types, error codes |
 | Deploy / build ordering | The order features must land in, and why |
-| Features table | Number, title (linked to the feature file), dependencies, suggested model (quality-first: Opus by default, cheaper tiers only for work that fully qualifies, re-reviewed in a second pass) |
+| Features table | Number, title (linked to the feature file), dependencies, parallel group (assigned mechanically: 1 + highest dependency group; same group = may run concurrently), suggested model (quality-first: Opus by default, cheaper tiers only for work that fully qualifies, re-reviewed in a second pass) |
 | Test strategy | Unit vs integration, real vs mocked, CI vs local |
 | Open questions / risks | Anything the plan left unresolved, carried forward explicitly |
 
@@ -78,7 +80,7 @@ One file per unit of work. Sections:
 
 | Section | Content |
 |---------|---------|
-| Header | Initiative, dependencies, suggested model with rationale |
+| Header | Initiative, dependencies, parallel group, suggested model with rationale |
 | Requirement | What the feature delivers and why, in behavioral terms |
 | Interface contract | **Consumes** (upstream types/endpoints/state, and which feature produces each) and **Produces** (the public surface downstream features cite by name) |
 | Technical implementation | Ordered steps — real file paths, new types/methods, sequence within the feature; complete steps, no `// TODO`/placeholder |

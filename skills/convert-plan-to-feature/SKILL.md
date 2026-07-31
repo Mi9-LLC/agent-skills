@@ -155,14 +155,15 @@ settings keys, MSI property IDs, named-pipe message kinds, SignalR hub methods,
 machine-role tokens, error/log codes. Feature files reference these by name.>
 
 ## Deploy / build ordering
-<The order features must land in, and why. Mirror the feature numbering.>
+<The order features must land in, and why. Mirror the feature numbering, and
+state the parallel groups: which features may be implemented concurrently.>
 
 ## Features
-| # | Feature | Depends on | Suggested model |
-|---|---------|-----------|-----------------|
-| 01 | [Contracts: protocol v3 bump](features/01%20-%20Contracts%20protocol%20v3%20bump.md) | — | Sonnet |
-| 02 | [Store Agent: backup engine](features/02%20-%20Store%20Agent%20backup%20engine.md) | 01 | Opus |
-| … | | | |
+| # | Feature | Depends on | Parallel group | Suggested model |
+|---|---------|-----------|----------------|-----------------|
+| 01 | [Contracts: protocol v3 bump](features/01%20-%20Contracts%20protocol%20v3%20bump.md) | — | 1 | Sonnet |
+| 02 | [Store Agent: backup engine](features/02%20-%20Store%20Agent%20backup%20engine.md) | 01 | 2 | Opus |
+| … | | | | |
 
 ## Test strategy
 <Unit vs integration, real vs mocked, CI vs local — from the plan.>
@@ -174,6 +175,14 @@ machine-role tokens, error/log codes. Feature files reference these by name.>
 Keep the cross-cutting catalogs *here* and reference them from features by name.
 Duplicating an enum table into five feature files guarantees they drift.
 
+Assign **Parallel group** mechanically from the *Depends on* column: a feature
+with no dependencies is group 1; otherwise its group is 1 + the highest group
+among its dependencies. Features in the same group have no dependencies between
+one another and may be implemented concurrently; groups execute in ascending
+order. The numbering stays linear — the *Parallel group* column is what marks
+concurrency, so whoever implements the features (a person or a fleet
+coordinator) never re-derives it from the dependency graph.
+
 ### 5. Write one file per feature
 
 File name: `features/NN - <Feature Name>.md` (zero-padded number, spaces around the
@@ -184,6 +193,7 @@ template:
 # Feature NN — <Feature Name>
 
 **Initiative:** <initiative name> · **Depends on:** <feature #s or "none"> ·
+**Parallel group:** <N> ·
 **Suggested model:** <Opus/Sonnet/Haiku — with a one-line rationale>
 
 ## Requirement
@@ -272,6 +282,9 @@ during writing are the ones that miss underestimation:
   producer is a gap — fix the cut or flag it.
 - Confirm every feature in the REQUIREMENTS.md table has a matching file and vice
   versa, and that the numbering reflects dependency order.
+- Parallel groups are consistent with the dependency data: every feature's group
+  is strictly greater than each of its dependencies' groups, and no two features
+  in the same group depend on each other. The table and each file's header agree.
 - Every feature file ends with the *Standing instructions for the implementer*
   block, verbatim.
 - Report the created tree and a one-line summary per feature. Flag anything the

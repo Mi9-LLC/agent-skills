@@ -66,16 +66,17 @@ new-feature → plan mode → plan-eng-review → convert-plan-to-feature → im
 1. [`new-feature`](#new-feature) turns a fuzzy request into locked design decisions, then hands off to plan mode.
 2. **Plan mode** (built into Claude Code) drafts the implementation plan from those decisions.
 3. [`plan-eng-review`](#plan-eng-review) reviews the written plan before any code is written and ends in a verdict.
-4. [`convert-plan-to-feature`](#convert-plan-to-feature) decomposes the approved plan into per-feature spec files, each with its own checkbox acceptance criteria and a quality-first suggested model (Opus by default, a cheaper tier only for clearly mechanical work, every assignment re-reviewed in a second pass for underestimation).
+4. [`convert-plan-to-feature`](#convert-plan-to-feature) decomposes the approved plan into per-feature spec files, each with its own checkbox acceptance criteria, a quality-first suggested model (Opus by default, a cheaper tier only for clearly mechanical work, every assignment re-reviewed in a second pass for underestimation), and a parallel group marking which features can be implemented concurrently.
 5. **Implement** — a developer, or one subagent per feature file, each on the model its feature file suggests. Steps 6 and 7 still run — but you don't have to prompt them separately: one prompt at this point can launch the implementation, the per-feature reviews (step 6), and the final cleanup (step 7) as a single run:
 
    ```
    Implement every feature in docs/plans/csv-import/ — do not skip any.
-   One subagent per feature, each on the model its feature file suggests,
-   in dependency order: parallelize only features with no dependency between
-   them. As each feature completes, launch a background review of it with
-   verify-implementation and let it fix what it finds. When every feature
-   is verified, run /simplify over the combined changes.
+   One subagent per feature, each on the model its feature file suggests.
+   Proceed parallel group by parallel group, as marked in REQUIREMENTS.md,
+   running the features within a group concurrently. As each feature
+   completes, launch a background review of it with verify-implementation
+   and let it fix what it finds. When every feature is verified, run
+   /simplify over the combined changes.
    ```
 
    (No need to specify a review model — `verify-implementation` pins Opus 5 itself.)
@@ -258,8 +259,8 @@ npx skills add https://github.com/Mi9-LLC/agent-skills --skill update-dependenci
 **What it does not do.** Implement anything — it writes planning documents only and stops. It declares `disallowed-tools: Edit, NotebookEdit`, which drops those tools while the skill is active (a per-turn guard — the restriction clears on your next message). It never writes at the `docs/plans/` root (everything goes inside the `<initiative>/` subfolder so concurrent efforts don't collide), and it leaves the source plan where it is.
 
 **What it produces.**
-- `docs/plans/<initiative>/REQUIREMENTS.md` — the index: context, blast radius, locked decisions, consolidated cross-cutting catalogs (wire-contract/enum tables, message types, error codes), deploy ordering, a feature table with suggested models — assigned quality-first (Opus is the default; Sonnet/Haiku only for work meeting every condition of the cheaper tier; any underestimation signal forces Opus) and re-reviewed in a mandatory second pass, since a feature underestimated onto a cheaper model costs a bad implementation plus rework — test strategy, and open questions.
-- `docs/plans/<initiative>/features/NN - <Feature Name>.md` — one file per feature: requirement, a **Consumes/Produces interface contract**, ordered technical steps with real file paths (no placeholders), objectively checkable acceptance criteria, dependency/risk notes, and a fixed *Standing instructions for the implementer* block (verbatim in every file: ask rather than resolve open questions by assumption; verify external library/API behavior against current documentation, not internal knowledge).
+- `docs/plans/<initiative>/REQUIREMENTS.md` — the index: context, blast radius, locked decisions, consolidated cross-cutting catalogs (wire-contract/enum tables, message types, error codes), deploy ordering, parallel groups (assigned mechanically from the dependency data — same group means no dependencies between them, safe to implement concurrently), a feature table with suggested models — assigned quality-first (Opus is the default; Sonnet/Haiku only for work meeting every condition of the cheaper tier; any underestimation signal forces Opus) and re-reviewed in a mandatory second pass, since a feature underestimated onto a cheaper model costs a bad implementation plus rework — test strategy, and open questions.
+- `docs/plans/<initiative>/features/NN - <Feature Name>.md` — one file per feature: requirement, a **Consumes/Produces interface contract**, ordered technical steps with real file paths (no placeholders), objectively checkable acceptance criteria, dependency/risk notes, its parallel group in the header, and a fixed *Standing instructions for the implementer* block (verbatim in every file: ask rather than resolve open questions by assumption; verify external library/API behavior against current documentation, not internal knowledge).
 
 **Example.**
 
