@@ -68,9 +68,15 @@ not a proof.
 - For optimizations, check the **benefit** as well as the risk: measure or
   trace what the change actually saves. An overstated payoff changes the
   trade-off even when the risk is uncertain.
+- When a premise hinges on external library, framework, or API behavior
+  rather than this project's code, verify it against that dependency's
+  current documentation — internal knowledge is outdated and does not count.
+  A premise verified against neither current docs nor the code leaves its
+  criterion `UNVERIFIED`.
 
 Evidence bar: per premise — the premise, the `path:line` that confirms or
-refutes it.
+refutes it (or, for external behavior, the current documentation checked
+this session).
 
 ## 5. House style and reuse
 

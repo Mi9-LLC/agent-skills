@@ -220,7 +220,21 @@ specific tests pass, a named scenario produces a named outcome. Not "works".>
 ## Dependencies & notes
 <Upstream features that must land first, downstream features that consume this,
 and any risk/rollback note specific to this slice.>
+
+## Standing instructions for the implementer
+- Do not resolve ambiguity by assumption: if a step is unclear, contradicts the
+  codebase, or an open question surfaces mid-implementation, stop and ask the
+  requester — or return the feature with the question logged — rather than
+  guessing forward.
+- Do not rely on internal knowledge for anything external: verify the current
+  behavior and documentation, as of the implementation date, of every external
+  library, framework, or API this feature touches.
 ```
+
+The *Standing instructions for the implementer* section is fixed text — copy it
+verbatim into every feature file. It is the only part of the spec that reaches
+the implementing agent or developer at implementation time, so the
+don't-assume and current-knowledge disciplines ride with it.
 
 Carry the plan's fidelity into the right feature: per-phase model recommendations
 feed the feature's *Suggested model* (re-derived against the model rubric above,
@@ -258,6 +272,8 @@ during writing are the ones that miss underestimation:
   producer is a gap — fix the cut or flag it.
 - Confirm every feature in the REQUIREMENTS.md table has a matching file and vice
   versa, and that the numbering reflects dependency order.
+- Every feature file ends with the *Standing instructions for the implementer*
+  block, verbatim.
 - Report the created tree and a one-line summary per feature. Flag anything the
   source plan left ambiguous instead of papering over it.
 

@@ -15,7 +15,7 @@ description: >-
   (convert-plan-to-feature), devil's-advocate pushback on a decision or idea
   that is not a written implementation plan (anti-sycophancy), or reviewing
   written code/diffs (code review / sonar-issue-check).
-allowed-tools: Read, Grep, Glob, Bash, Write, Agent
+allowed-tools: Read, Grep, Glob, Bash, Write, Agent, WebSearch, WebFetch
 disallowed-tools: Edit, NotebookEdit
 ---
 
@@ -62,6 +62,14 @@ Every headline finding carries evidence in exactly one of two forms:
   the obligation (the behavior change or new codepath), **and** cite the
   negative search that verified the absence — what you Grepped, where, and
   that it returned nothing.
+
+**External-behavior claims need current evidence.** When a finding depends
+on how an external library, framework, or API behaves — a deprecated method,
+a changed default, a version constraint, a "best practice" — verify that
+behavior against its current documentation in this session (WebSearch /
+WebFetch). Internal knowledge is outdated and does not count as evidence for
+these claims, in either direction: neither to raise the finding nor to wave
+the plan's choice through.
 
 A claim you can support with neither form is at most a low-confidence
 appendix note or an open question — never a headline finding. `GAP` rows in

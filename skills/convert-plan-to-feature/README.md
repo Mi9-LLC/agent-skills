@@ -29,7 +29,7 @@ The skill reads the plan from the conversation (plan-mode output or approved des
 1. Derives a kebab-case initiative name from the plan title (ticket prefix included when present).
 2. Creates `docs/plans/<initiative>/` and `docs/plans/<initiative>/features/`.
 3. Writes `REQUIREMENTS.md` — the shared index: context, blast radius, locked decisions, cross-cutting catalogs, deploy/build ordering, feature table with suggested models, test strategy, and open questions.
-4. Writes one `features/NN - <Feature Name>.md` per unit of work — requirement, a Consumes/Produces interface contract, ordered implementation steps with real file paths (no placeholders), objectively checkable acceptance criteria, and dependency/risk notes.
+4. Writes one `features/NN - <Feature Name>.md` per unit of work — requirement, a Consumes/Produces interface contract, ordered implementation steps with real file paths (no placeholders), objectively checkable acceptance criteria, dependency/risk notes, and a fixed *Standing instructions for the implementer* block (verbatim in every file: ask rather than resolve open questions by assumption; verify external library/API behavior against current documentation, not internal knowledge).
 5. Re-reviews every suggested model in a dedicated second pass against the quality-first rubric — Opus is the default; Sonnet only for fully-specified single-component work; Haiku only for purely mechanical edits; any underestimation signal (shared contracts, cross-component work, concurrency/caching/migrations/auth, modified existing behavior, open questions) forces Opus; when in doubt between two tiers, the higher one wins. The plan's own per-phase recommendations are input, not authority.
 6. Verifies consistency (every feature in the table has a file; numbering reflects dependency order) and reports the created tree with a one-line summary per feature, including any model assignment the second pass changed.
 
@@ -84,6 +84,7 @@ One file per unit of work. Sections:
 | Technical implementation | Ordered steps — real file paths, new types/methods, sequence within the feature; complete steps, no `// TODO`/placeholder |
 | Acceptance criteria | Objectively checkable "done when…" bullets |
 | Dependencies & notes | Upstream/downstream features, risk, rollback notes |
+| Standing instructions for the implementer | Fixed text, verbatim in every file: don't resolve open questions by assumption — ask or return the feature; verify external library/API behavior against current docs, not internal knowledge |
 
 ## Usage Examples
 
