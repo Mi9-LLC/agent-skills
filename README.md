@@ -67,7 +67,18 @@ new-feature → plan mode → plan-eng-review → convert-plan-to-feature → im
 2. **Plan mode** (built into Claude Code) drafts the implementation plan from those decisions.
 3. [`plan-eng-review`](#plan-eng-review) reviews the written plan before any code is written and ends in a verdict.
 4. [`convert-plan-to-feature`](#convert-plan-to-feature) decomposes the approved plan into per-feature spec files, each with its own checkbox acceptance criteria and a quality-first suggested model (Opus by default, a cheaper tier only for clearly mechanical work, every assignment re-reviewed in a second pass for underestimation).
-5. **Implement** — a developer, or one agent per feature file, on the model its feature file suggests.
+5. **Implement** — a developer, or one subagent per feature file, each on the model its feature file suggests. In practice, a single prompt can drive steps 5–7:
+
+   ```
+   Implement every feature in docs/plans/csv-import/ — do not skip any.
+   One subagent per feature, each on the model its feature file suggests,
+   in dependency order: parallelize only features with no dependency between
+   them. As each feature completes, launch a background review of it with
+   verify-implementation and let it fix what it finds. When every feature
+   is verified, run /simplify over the combined changes.
+   ```
+
+   (No need to specify a review model — `verify-implementation` pins Opus 5 itself.)
 6. [`verify-implementation`](#verify-implementation) adversarially verifies each claim of doneness against the code and fixes what it finds. The feature files from step 4 are its highest-preference input — their acceptance criteria are exactly what it verifies against.
 7. **`/simplify`** (built into Claude Code, not part of this catalog) cleans up the verified code — reuse, simplification, efficiency; re-run your quality gates after it edits.
 
