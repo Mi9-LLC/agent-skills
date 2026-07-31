@@ -67,7 +67,7 @@ new-feature → plan mode → plan-eng-review → convert-plan-to-feature → im
 2. **Plan mode** (built into Claude Code) drafts the implementation plan from those decisions.
 3. [`plan-eng-review`](#plan-eng-review) reviews the written plan before any code is written and ends in a verdict.
 4. [`convert-plan-to-feature`](#convert-plan-to-feature) decomposes the approved plan into per-feature spec files, each with its own checkbox acceptance criteria and a quality-first suggested model (Opus by default, a cheaper tier only for clearly mechanical work, every assignment re-reviewed in a second pass for underestimation).
-5. **Implement** — a developer, or one subagent per feature file, each on the model its feature file suggests. In practice, a single prompt can drive steps 5–7:
+5. **Implement** — a developer, or one subagent per feature file, each on the model its feature file suggests. Steps 6 and 7 still run — but you don't have to prompt them separately: one prompt at this point can launch the implementation, the per-feature reviews (step 6), and the final cleanup (step 7) as a single run:
 
    ```
    Implement every feature in docs/plans/csv-import/ — do not skip any.
