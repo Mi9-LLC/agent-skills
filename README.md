@@ -52,6 +52,26 @@ Re-run either command anytime to update — it always pulls the current state of
 | [`document-generate`](#document-generate) | Writes Diataxis documentation files (tutorial / how-to / reference / explanation) for a named feature, module, or project — end-to-end codebase archaeology first, a partition plan approved before any file is written, every example executed, traced, or labeled illustrative. Never edits `CLAUDE.md`/`AGENTS.md`, never commits. |
 | [`stdlib-first`](#stdlib-first) | Reuse-before-build ladder for new TypeScript/Node and C#/.NET code — built-in/standard library first, then (C#) first-party `Microsoft.Extensions.*`, then a library the project already uses, custom code last; precise types, specific error classes, doc comments. Asks before adding any dependency. Behavioral only — produces no files. |
 | [`repo-change-summary`](#repo-change-summary) | Deterministic per-month change totals for a git repo across **all** branches — lines added/deleted, total churn, distinct files, file-touches, commits, PRs merged, authors — as a Markdown table plus a styled HTML report; a companion multi-repo mode rolls up a named group of repos into one combined report. Bundled POSIX-shell scripts; each commit counted once, merges excluded. Optionally emails the report as a PDF attachment, preview-first. |
+| [`verify-implementation`](#verify-implementation) | Post-implementation gate: adversarially verifies finished work against whatever claims it is done — audits the report against the actual diff, re-derives every acceptance criterion, reads every new test body and re-runs mutation proofs to catch tautological guards, re-runs the project's own gates — then **fixes what it finds** on the branch in dedicated commits. Pins `claude-opus-5`. |
+
+## Recommended workflow — from idea to verified code
+
+For a substantial feature or initiative, the catalog's planning and verification skills chain end to end. Every step is independently useful — use the whole chain for large work, a single step for small:
+
+```
+new-feature → plan mode → plan-eng-review → convert-plan-to-feature → implement → verify-implementation → /simplify
+  (design)     (the plan)   (pre-code gate)     (decomposition)                     (post-code gate)       (cleanup)
+```
+
+1. [`new-feature`](#new-feature) turns a fuzzy request into locked design decisions, then hands off to plan mode.
+2. **Plan mode** (built into Claude Code) drafts the implementation plan from those decisions.
+3. [`plan-eng-review`](#plan-eng-review) reviews the written plan before any code is written and ends in a verdict.
+4. [`convert-plan-to-feature`](#convert-plan-to-feature) decomposes the approved plan into per-feature spec files, each with its own checkbox acceptance criteria.
+5. **Implement** — a developer, or one agent per feature file.
+6. [`verify-implementation`](#verify-implementation) adversarially verifies each claim of doneness against the code and fixes what it finds. The feature files from step 4 are its highest-preference input — their acceptance criteria are exactly what it verifies against.
+7. **`/simplify`** (built into Claude Code, not part of this catalog) cleans up the verified code — reuse, simplification, efficiency; re-run your quality gates after it edits.
+
+The two gates are deliberate counterparts: `plan-eng-review` catches problems while they are still words; `verify-implementation` catches them once they are code.
 
 ---
 
@@ -242,7 +262,7 @@ You: break this approved rollback plan into feature files
    … one slice each, numbered in deploy order.
 ```
 
-**Pairs with.** [`plan-eng-review`](#plan-eng-review) — gate the plan before decomposing it.
+**Pairs with.** [`plan-eng-review`](#plan-eng-review) — gate the plan before decomposing it. [`verify-implementation`](#verify-implementation) — each feature file's acceptance-criteria checklist is that skill's highest-preference input: decompose here, implement, then verify each feature against its own criteria.
 
 **Install.**
 
@@ -697,7 +717,7 @@ You: review docs/plans/csv-import.md before I start building
   What already exists: parseCsv() at src/lib/csv.ts — plan rebuilds it; reuse instead.
 ```
 
-**Pairs with.** [`new-feature`](#new-feature) → plan mode → **this gate** → [`convert-plan-to-feature`](#convert-plan-to-feature) — design the feature, plan it, gate the plan, then decompose it. Also [`anti-sycophancy`](#anti-sycophancy) — that skill is the skepticism *stance* for any decision or idea; this one is the structured, evidence-gated *workflow* for a written plan. They complement, not compete. Also [`document-generate`](#document-generate) — this gate reviews the plan before implementation; that skill writes the user-facing docs once the code exists.
+**Pairs with.** [`new-feature`](#new-feature) → plan mode → **this gate** → [`convert-plan-to-feature`](#convert-plan-to-feature) → implement → [`verify-implementation`](#verify-implementation) — design the feature, plan it, gate the plan, decompose it, build it, then gate the built code (the full chain is the [recommended workflow](#recommended-workflow--from-idea-to-verified-code)). Also [`anti-sycophancy`](#anti-sycophancy) — that skill is the skepticism *stance* for any decision or idea; this one is the structured, evidence-gated *workflow* for a written plan. They complement, not compete. Also [`document-generate`](#document-generate) — this gate reviews the plan before implementation; that skill writes the user-facing docs once the code exists.
 
 **Install.**
 
@@ -819,6 +839,46 @@ npx skills add https://github.com/Mi9-LLC/agent-skills --skill repo-change-summa
 ```
 
 **Full definition:** [`skills/repo-change-summary/SKILL.md`](skills/repo-change-summary/SKILL.md) (plus the `summary.sh` script under `scripts/`).
+
+---
+
+## `verify-implementation`
+
+**What it does.** The post-implementation gate — `plan-eng-review`'s counterpart on the other side of the code. Takes a finished implementation plus whatever asserts it is complete (a feature file's acceptance criteria, a plan, a ticket, a PR description, or a subagent's completion report) and adversarially verifies the claim: audits the report against the actual diff (a claimed change absent from the diff is the most serious finding it can produce), re-derives every acceptance criterion from its own evidence, reads every new test body and re-runs mutation proofs to catch tautological guards — *a test that cannot be made to fail is not a guard* — re-runs the project's own quality gates reading output rather than exit codes, then **fixes what it finds** on the same branch in dedicated commits and re-runs the gates.
+
+**Requirements.** A completed implementation in a git repo (the diff is the review object), and **a claim of doneness**. Written acceptance criteria are the preferred input — the `features/NN - <name>.md` files from [`convert-plan-to-feature`](#convert-plan-to-feature) are the ideal shape — but a plan, ticket, PR description, or an agent's own report works; an informal claim gets a derived acceptance table, labeled as derived. With no claim at all it refuses: there is nothing to verify against. The project's own quality gates as its `CLAUDE.md` defines them.
+
+**How to run.** Auto-triggers when an implementation is finished and something asserts it is correct, or run `/verify-implementation`. `allowed-tools: Read, Edit, Write, Bash, Grep, Glob`. Pins `model: claude-opus-5` — a weaker review returns `CLEAN` on broken work, and `CLEAN` is acted on; the failure mode of this skill is false assurance.
+
+**Use it for.** Verifying a subagent's (or teammate's) "done" report before acting on it, gating a feature branch against its acceptance criteria before merge, checking whether new tests actually guard anything, and closing the loop on an initiative implemented from `convert-plan-to-feature` specs.
+
+**Triggers on phrases like.** "verify the implementation", "the agent says it's done — check it", "audit this against the acceptance criteria", "is this actually done", "double-check the work before I merge", "the tests pass but I don't trust them".
+
+**What it does not do.** Review a written plan before code exists ([`plan-eng-review`](#plan-eng-review)). Open-ended critique of an idea ([`anti-sycophancy`](#anti-sycophancy)), static-analyser cleanups ([`sonar-issue-fix`](#sonar-issue-fix)), or debugging a known failure ([`systematic-debugging`](#systematic-debugging) — this skill starts from a claim of success, not a known failure). Manufacture findings — if the implementation is correct it says so plainly; a short review that confirms real evidence is a good review. Change a decision the plan or feature file locked, or widen scope — both go in the report, not into edits. Commit to a shared branch, push, or open a PR — fixes land on the working branch in dedicated commits, and if the work sits directly on `main` it proposes the fixes instead of committing.
+
+**What it produces.** Fix commits on the working branch (when findings are fixable in scope), plus a six-section report: a verdict — `CLEAN` / `FIXED` / `NEEDS ATTENTION`, bound by a decision table (any unfixed finding, locked-decision conflict, or not-run gate ⇒ `NEEDS ATTENTION`) — a claim-vs-diff audit, findings most serious first each with `path:line` and fixed-or-not status, mutation proofs with verbatim failure output, gate results including not-run-with-reason, and an acceptance table backed by the reviewer's own evidence. When run as a subagent, the report is the run's return value — findings never get lost as chat text. Ships `references/` (the seven-pass checklist, the tautology catalog, the report skeleton).
+
+**Example.**
+
+```
+You: the subagent says feature 07 (list caching) is done and tested — verify before I merge
+→ Claim audit: the "pages can never change" argument has 3 premises; 2 hold, 1 is false —
+  the ordering column is a caller-supplied business timestamp, and two shipped paths
+  backdate it, so a backdated record lands mid-list on a page the cache marked fresh.
+  Fixed: removed the line, rewrote the comment to name both backdating paths, added a
+  regression guard, mutation-proved it (re-adding the line fails: expected 2, received 1).
+  Gates re-run green. VERDICT: FIXED — 1 finding, fixed in 2 commits on the branch.
+```
+
+**Pairs with.** [`convert-plan-to-feature`](#convert-plan-to-feature) — its feature files' acceptance criteria are this skill's highest-preference input; decompose the plan there, verify the implementation here. [`plan-eng-review`](#plan-eng-review) — the same gate discipline on the other side of implementation (see the [recommended workflow](#recommended-workflow--from-idea-to-verified-code)). [`verify-frontend-change`](#verify-frontend-change) — browser-level evidence for frontend work; this skill verifies at the code-and-criteria level.
+
+**Install.**
+
+```
+npx skills add https://github.com/Mi9-LLC/agent-skills --skill verify-implementation
+```
+
+**Full definition:** [`skills/verify-implementation/SKILL.md`](skills/verify-implementation/SKILL.md) (plus the verification checklist, tautology catalog, and report skeleton under `references/`). Distilled from the review brief used in a 20-feature internal Mi9 initiative (July 2026), where each feature was implemented by one subagent and independently reviewed by another — and the reviews repeatedly beat their implementers. Not adapted from an external project.
 
 ---
 
