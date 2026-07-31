@@ -67,7 +67,7 @@ new-feature → plan mode → plan-eng-review → convert-plan-to-feature → im
 2. **Plan mode** (built into Claude Code) drafts the implementation plan from those decisions.
 3. [`plan-eng-review`](#plan-eng-review) reviews the written plan before any code is written and ends in a verdict.
 4. [`convert-plan-to-feature`](#convert-plan-to-feature) decomposes the approved plan into per-feature spec files, each with its own checkbox acceptance criteria, a quality-first suggested model (Opus by default, a cheaper tier only for clearly mechanical work, every assignment re-reviewed in a second pass for underestimation), and a parallel group marking which features can be implemented concurrently.
-5. **Implement** — a developer, or one subagent per feature file, each on the model its feature file suggests. Steps 6 and 7 still run — but you don't have to prompt them separately: one prompt at this point can launch the implementation, the per-feature reviews (step 6), and the final cleanup (step 7) as a single run:
+5. **Implement** — one subagent per feature file (or a developer working by hand from the spec), each on the model its feature file suggests. When agents implement, this is the **last prompt you type** in the chain: steps 6 and 7 are not separate prompts — the prompt below launches them automatically. They keep their own step numbers because each is also a standalone skill, usable outside this chain:
 
    ```
    Implement every feature in docs/plans/csv-import/ — do not skip any.
@@ -80,8 +80,8 @@ new-feature → plan mode → plan-eng-review → convert-plan-to-feature → im
    ```
 
    (No need to specify a review model — `verify-implementation` pins Opus 5 itself.)
-6. [`verify-implementation`](#verify-implementation) adversarially verifies each claim of doneness against the code and fixes what it finds. The feature files from step 4 are its highest-preference input — their acceptance criteria are exactly what it verifies against.
-7. **`/simplify`** (built into Claude Code, not part of this catalog) cleans up the verified code — reuse, simplification, efficiency; re-run your quality gates after it edits.
+6. [`verify-implementation`](#verify-implementation) adversarially verifies each claim of doneness against the code and fixes what it finds. In the chain, the step-5 prompt launches it per feature; standalone, point it at any claim of doneness — a PR, a ticket marked complete, an agent's report. The feature files from step 4 are its highest-preference input — their acceptance criteria are exactly what it verifies against.
+7. **`/simplify`** (built into Claude Code, not part of this catalog) cleans up the verified code — reuse, simplification, efficiency. In the chain, the step-5 prompt runs it at the end; it also works anytime on its own. Re-run your quality gates after it edits.
 
 The two gates are deliberate counterparts: `plan-eng-review` catches problems while they are still words; `verify-implementation` catches them once they are code.
 
