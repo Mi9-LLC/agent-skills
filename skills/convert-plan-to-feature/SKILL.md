@@ -12,8 +12,12 @@ description: >-
   per-feature files", "turn the plan into implementation specs", "make a feature
   breakdown of this approved plan", or any request to take a single big plan and
   produce one trackable file per feature. Do NOT use to design a feature from
-  scratch with no plan yet (new-feature) or to review/critique a plan
-  (plan-eng-review).
+  scratch with no plan yet (new-feature), to review/critique a plan
+  (plan-eng-review), or in a repository that mandates its own spec workflow
+  (e.g. OpenSpec repos, where the change's tasks.md owns the breakdown — there,
+  port this skill's execution rigor (model rubric, parallel groups, acceptance
+  criteria, standing implementer instructions) into that artifact instead of
+  creating a parallel breakdown).
 allowed-tools: Read, Write, Glob, Grep
 disallowed-tools: Edit, NotebookEdit
 ---
@@ -93,8 +97,10 @@ of truth.
   prefix included when present (e.g. "Store Release Backup & Rollback (STF-555)" →
   `stf-555-store-release-rollback`). Keep it short and recognizable.
 - Create `docs/plans/<initiative>/` and `docs/plans/<initiative>/features/`.
-  (Convention: put plans under `docs/plans/` when the directory exists, or a
-  top-level `plans/` as a fallback.)
+  (Convention: **check the repository's own plan location first** — its
+  CLAUDE.md and existing folders; some repos keep plans elsewhere, e.g.
+  `docs/up next/`. Use the repo's location when one exists; otherwise
+  `docs/plans/`, or a top-level `plans/` as a fallback.)
 - **Everything goes inside the `<initiative>/` subfolder.** Never write
   `REQUIREMENTS.md` or `features/` directly at the `docs/plans/` root — that's what
   keeps concurrent initiatives from colliding and is the whole point of the layout.
@@ -159,11 +165,11 @@ machine-role tokens, error/log codes. Feature files reference these by name.>
 state the parallel groups: which features may be implemented concurrently.>
 
 ## Features
-| # | Feature | Depends on | Parallel group | Suggested model |
-|---|---------|-----------|----------------|-----------------|
-| 01 | [Contracts: protocol v3 bump](features/01%20-%20Contracts%20protocol%20v3%20bump.md) | — | 1 | Sonnet |
-| 02 | [Store Agent: backup engine](features/02%20-%20Store%20Agent%20backup%20engine.md) | 01 | 2 | Opus |
-| … | | | | |
+| # | Feature | Depends on | Parallel group | Suggested model | Status |
+|---|---------|-----------|----------------|-----------------|--------|
+| 01 | [Contracts: protocol v3 bump](features/01%20-%20Contracts%20protocol%20v3%20bump.md) | — | 1 | Sonnet | todo |
+| 02 | [Store Agent: backup engine](features/02%20-%20Store%20Agent%20backup%20engine.md) | 01 | 2 | Opus | todo |
+| … | | | | | |
 
 ## Test strategy
 <Unit vs integration, real vs mocked, CI vs local — from the plan.>
@@ -174,6 +180,13 @@ state the parallel groups: which features may be implemented concurrently.>
 
 Keep the cross-cutting catalogs *here* and reference them from features by name.
 Duplicating an enum table into five feature files guarantees they drift.
+
+The *Status* column (`todo` / `in progress` / `done` / `blocked`) is the
+initiative's status board — whoever closes a feature updates it here, so
+REQUIREMENTS.md stays the single place that answers "where are we".
+**Lifecycle:** when every feature is done, follow the repository's own docs
+contract for the folder — many repos prune implemented plans (git history is
+the record) rather than keeping them.
 
 Assign **Parallel group** mechanically from the *Depends on* column: a feature
 with no dependencies is group 1; otherwise its group is 1 + the highest group
