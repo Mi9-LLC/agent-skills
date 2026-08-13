@@ -76,12 +76,13 @@ Newly installed skills carry the same session-restart warning as an
 OpenSpec update: they are scanned at session start, so recommend a restart
 before executing.
 
-The pipeline also invokes the repo's own OpenSpec flows —
-`openspec-propose-change` at step 1 and `openspec-update-change` at
-step 4. Confirm they exist (`.claude/commands/opsx/` or
-`.claude/skills/openspec-*` files); if they are missing, `openspec update`
-regenerates them — not `npx skills add` — with the same session-restart
-warning as above.
+The pipeline also invokes the repo's own OpenSpec flows — the propose
+flow at step 1 and the update flow at step 4. Their generated skill names
+vary by CLI version (e.g. `openspec-propose` vs `openspec-propose-change`)
+— confirm a propose and an update skill exist among the
+`.claude/skills/openspec-*` files (or `.claude/commands/opsx/`); if
+missing, `openspec update` regenerates them — not `npx skills add` — with
+the same session-restart warning as above.
 
 ## Worktree notes
 

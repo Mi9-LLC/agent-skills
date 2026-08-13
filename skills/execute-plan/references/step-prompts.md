@@ -59,9 +59,11 @@ You are authoring an OpenSpec change. Work exclusively inside {{WORKTREE}}
 — the repo checkout for this run; treat it as the repository root for
 every file you read or write and every command you run. One exception:
 the plan brief at {{PLAN_PATH}} lives outside the worktree and is the one
-outside file you read. Invoke the repo's own openspec-propose-change
-skill (the /opsx:propose flow) to create the change from that brief —
-read it fully first.
+outside file you read. Invoke the repo's own OpenSpec propose skill — the
+/opsx:propose flow; its installed name varies by CLI version (e.g.
+openspec-propose or openspec-propose-change, whichever exists in this
+repo's .claude/skills/) — to create the change from that brief — read it
+fully first.
 
 The change must include: proposal.md, design.md, the spec deltas, and
 tasks.md. tasks.md must carry, for every task group: a model column
@@ -100,8 +102,10 @@ UNRESOLVED DECISIONS list verbatim.
 ```
 Work exclusively inside {{WORKTREE}} — the repo checkout for this run;
 treat it as the repository root. The OpenSpec change in {{CHANGE_DIR}} was
-reviewed. Invoke the repo's openspec-update-change skill (the /opsx:update
-flow) to apply these required changes to the change artifacts:
+reviewed. Invoke the repo's own OpenSpec update skill — the /opsx:update
+flow; its installed name varies by CLI version (e.g. openspec-update-change,
+whichever exists in this repo's .claude/skills/) — to apply these required
+changes to the change artifacts:
 
 {{REQUIRED_CHANGES}}
 

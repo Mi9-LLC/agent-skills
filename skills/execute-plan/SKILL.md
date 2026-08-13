@@ -220,7 +220,9 @@ Opus, never a more expensive tier (catalog constraint: never pin Fable).
 ## Step 1 — Author the OpenSpec change
 
 Subagent (Opus) authors the change from the plan brief via the repo's own
-`openspec-propose-change` skill (the `/opsx:propose` flow): `proposal.md`,
+OpenSpec propose skill — the `/opsx:propose` flow; its generated skill
+name varies by CLI version (e.g. `openspec-propose` or
+`openspec-propose-change`): `proposal.md`,
 `design.md`, spec deltas, and `tasks.md` with a model column, parallel
 groups, verify clauses, and the standing implementer instructions. When it
 returns, record the change ID in the ledger, then run the acceptance check.
@@ -244,9 +246,10 @@ section. No unresolved decisions → skip to step 4.
 
 ## Step 4 — Apply the review's required changes
 
-Subagent (Opus) applies the review's Required plan changes via the
-`openspec-update-change` skill (the `/opsx:update` flow) AND folds the
-user's answered decisions into the report's Decisions block.
+Subagent (Opus) applies the review's Required plan changes via the repo's
+OpenSpec update skill (the `/opsx:update` flow; generated name varies by
+CLI version, e.g. `openspec-update-change`) AND folds the user's answered
+decisions into the report's Decisions block.
 
 ## Step 5 — Confirm the changes landed
 
