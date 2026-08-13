@@ -53,6 +53,7 @@ Re-run either command anytime to update — it always pulls the current state of
 | [`stdlib-first`](#stdlib-first) | Reuse-before-build ladder for new TypeScript/Node and C#/.NET code — built-in/standard library first, then (C#) first-party `Microsoft.Extensions.*`, then a library the project already uses, custom code last; precise types, specific error classes, doc comments. Asks before adding any dependency. Behavioral only — produces no files. |
 | [`repo-change-summary`](#repo-change-summary) | Deterministic per-month change totals for a git repo across **all** branches — lines added/deleted, total churn, distinct files, file-touches, commits, PRs merged, authors — as a Markdown table plus a styled HTML report; a companion multi-repo mode rolls up a named group of repos into one combined report. Bundled POSIX-shell scripts; each commit counted once, merges excluded. Optionally emails the report as a PDF attachment, preview-first. |
 | [`verify-implementation`](#verify-implementation) | Post-implementation gate: adversarially verifies finished work against whatever claims it is done — audits the report against the actual diff, re-derives every acceptance criterion, reads every new test body and re-runs mutation proofs to catch tautological guards, re-runs the project's own gates — then **fixes what it finds** on the branch in dedicated commits. Pins `claude-opus-5`. |
+| [`execute-plan`](#execute-plan) | Autonomous end-to-end execution of a plan brief in an OpenSpec-managed repo: one lead session drives author-change → review gate → apply changes → implement → audit → simplify via fresh per-step subagents, pauses with a phone push only when it needs the user (a decision, or a failure it may not resolve alone), commits per checkpoint on a dedicated branch in the run's own git worktree (several plans can run concurrently on one repo), and stops after the local commits — never deploys, never opens a PR. **Manual-only** (`/execute-plan`). |
 
 ## Recommended workflow — from idea to verified code
 
@@ -80,6 +81,8 @@ new-feature → plan mode → plan-eng-review → convert-plan-to-feature → im
    ```
 
    (No need to specify a review model — `verify-implementation` pins Opus 5 itself.)
+
+   In an OpenSpec-managed repo there is a hands-off alternative for this whole chain: [`/execute-plan`](#execute-plan) takes a plan brief and runs authoring, review gate, implementation, audit, and simplification unattended, pausing only when it needs the user.
 6. [`verify-implementation`](#verify-implementation) adversarially verifies each claim of doneness against the code and fixes what it finds. In the chain, the step-5 prompt launches it per feature; standalone, point it at any claim of doneness — a PR, a ticket marked complete, an agent's report. The feature files from step 4 are its highest-preference input — their acceptance criteria are exactly what it verifies against.
 7. **`/simplify`** (built into Claude Code, not part of this catalog) cleans up the verified code — reuse, simplification, efficiency. In the chain, the step-5 prompt runs it at the end; it also works anytime on its own. Re-run your quality gates after it edits.
 
@@ -891,6 +894,59 @@ npx skills add https://github.com/Mi9-LLC/agent-skills --skill verify-implementa
 ```
 
 **Full definition:** [`skills/verify-implementation/SKILL.md`](skills/verify-implementation/SKILL.md) (plus the verification checklist, tautology catalog, and report skeleton under `references/`). Distilled from the review brief used in a 20-feature internal Mi9 initiative (July 2026), where each feature was implemented by one subagent and independently reviewed by another — and the reviews repeatedly beat their implementers. Not adapted from an external project.
+
+---
+
+## `execute-plan`
+
+**What it does.** Executes a plan brief end to end in an OpenSpec-managed repository, unattended. One lead session coordinates the whole feature routine — author the OpenSpec change from the brief (`/opsx:propose` flow) → [`plan-eng-review`](#plan-eng-review) gate → resolve the review's open decisions with the user → apply the required changes (`/opsx:update` flow) → an independent did-the-changes-land check → implement task group by task group → [`verify-implementation`](#verify-implementation) audit with a bounded fix loop → behavior-preserving simplification pass → reconcile `tasks.md` and stop. Every authoring, review, implementation, audit, and simplification step runs in a fresh subagent with an empty context (putting the review's open decisions to you is the lead's own step); the lead never edits source itself, checks every "done" claim against evidence on disk, and commits per checkpoint by explicit pathspec on a dedicated `agent/execute-plan/<timestamp>-<plan name>` branch. Each run works in its **own git worktree**, created at preflight — your main working tree is never touched (keep working in it), and several runs with different plans can execute on the same repo concurrently; git itself refuses to check one branch out twice. Human decisions pause the run in one batched question per step — with Remote Control on, the question pushes to your phone, waits indefinitely, and survives machine sleep. A crash or interruption resumes from the run's ledger file at the last committed checkpoint, recreating the worktree if it's gone.
+
+**Requirements.** An OpenSpec-managed repo (`openspec/config.yaml`, or a store the CLI recognizes) — the preflight verifies the OpenSpec CLI is installed and current and offers to install/update it (`npm install -g @fission-ai/openspec@latest`) if not. The [`plan-eng-review`](#plan-eng-review) and [`verify-implementation`](#verify-implementation) skills installed (the preflight offers to install those too). Git with worktree support (any modern git); each run installs the project's dependencies in its fresh worktree before the gates run — a per-run setup cost. Your main working tree may stay dirty; the run never touches it. For the phone-push pauses: Remote Control plus "Push when actions required" enabled (one-time setup documented in `references/preflight.md`; without it the run still works, it just waits in the terminal). The machine must be on and awake while steps execute.
+
+**How to run.** **Manual-only** (`disable-model-invocation: true`) — an hours-long autonomous run that commits must never start off a description match. Invoke it explicitly:
+
+```
+/execute-plan "docs/up next/csv-import-plan.md"
+/execute-plan                                    # no argument → lists docs/up next/*-plan.md and asks
+```
+
+No tool restriction and no model pin — the lead needs its full tool set, and you launch it on the model of your choice (subagent steps default to Opus; implementation groups run on the model their `tasks.md` row names).
+
+**Use it for.** Running the whole recommended workflow unattended in repos where OpenSpec owns the spec artifacts — start it, walk away, answer the occasional decision from your phone, come back to an audited, simplified, checkpoint-committed feature branch.
+
+**What it does not do.** Deploy, push, open a PR, or archive the OpenSpec change — it stops after the local commits and hands you the remaining manual steps. Commit the plan brief or its ledger, or use `git add -A` (every commit stages explicit paths). Resolve design forks by assumption — open questions always pause the run. Run outside an OpenSpec-managed repo. Touch your main working tree — all work happens in the run's own worktree. Demand `bypassPermissions` — an unexpected permission prompt pausing and notifying is part of the design.
+
+**What it produces.** A feature branch with checkpoint commits (OpenSpec artifacts, one commit per implemented task group, audit fix commits, the simplification pass, the `tasks.md` reconciliation), checked out in the run's own worktree under `../<repo>.worktrees/` (you remove it after the PR), a `<plan path>.ledger.md` next to the brief recording branch, worktree, change ID, per-step outcomes, and decisions (you delete it at close-out), and a final report: verdicts per step, decisions taken, the commit list, and the remaining manual steps.
+
+**Example.**
+
+```
+You: /execute-plan "docs/up next/tenant-export-plan.md"
+→ Preflight: OpenSpec 1.9.0 current, companions installed, worktree
+  ../myapp.worktrees/20260813-1054-tenant-export-plan on branch
+  agent/execute-plan/20260813-1054-tenant-export-plan, deps installed,
+  Remote Control confirmed.
+  Step 1: change tenant-export authored (proposal, design, deltas, tasks.md).
+  Step 2: plan-eng-review — NEEDS REVISION, 2 unresolved decisions.
+  Step 3: [push to phone] 2 questions answered from the phone.
+  Steps 4–5: changes applied, landing check 9/9 LANDED, re-review APPROVED. Commit 1.
+  Step 6: groups 1–4 implemented (Opus ×3, Sonnet ×1), commits 2–5.
+  Step 7: verify-implementation — FIXED (1 finding, fix commit).
+  Step 8: simplify — 2 cleanups, gates green. Commit 7.
+  Close-out: tasks.md reconciled (commit 8), validate --strict green. STOPPED.
+  Manual next steps: deploy dev + smoke test, CLAUDE.md updates, delete brief
+  + ledger, opsx:archive, PR, then git worktree remove.
+```
+
+**Pairs with.** [`plan-eng-review`](#plan-eng-review) and [`verify-implementation`](#verify-implementation) — the run invokes both as its gates. The [recommended workflow](#recommended-workflow--from-idea-to-verified-code) — this skill is that chain's unattended form for OpenSpec repos; [`convert-plan-to-feature`](#convert-plan-to-feature) is the equivalent decomposition step for repos *without* a mandated spec workflow.
+
+**Install.**
+
+```
+npx skills add https://github.com/Mi9-LLC/agent-skills --skill execute-plan
+```
+
+**Full definition:** [`skills/execute-plan/SKILL.md`](skills/execute-plan/SKILL.md) (plus the preflight/one-time-setup guide and the verbatim step-prompt templates under `references/`).
 
 ---
 
