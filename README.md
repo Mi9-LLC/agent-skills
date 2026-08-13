@@ -60,12 +60,29 @@ Re-run either command anytime to update — it always pulls the current state of
 This is one workflow, not a mandate: a way the catalog's planning and verification skills chain end to end for a substantial feature or initiative, shared because it works well in practice. Every step is independently useful — run the whole chain for large work, a single step for a small task, or just the pieces that fit how you already work. Each skill fires implicitly (describe the work and the matching skill launches on its own) or explicitly (start the message with `/<skill-name>`) — see "How these skills work" above.
 
 ```
-new-feature → plan mode → plan-eng-review → convert-plan-to-feature → implement → verify-implementation → /simplify
-  (design)     (the plan)   (pre-code gate)     (decomposition)                     (post-code gate)       (cleanup)
+new-feature → plan mode ─┬─ Path A ─ plan-eng-review → convert-plan-to-feature → implement → verify-implementation → /simplify
+  (design)    (the plan)  │           (pre-code gate)      (decomposition)                     (post-code gate)       (cleanup)
+                          └─ Path B (OpenSpec repos) ─ /execute-plan — the whole rest of the chain, unattended
 ```
 
-1. [`new-feature`](#new-feature) turns a fuzzy request into locked design decisions, then hands off to plan mode.
-2. **Plan mode** (built into Claude Code) drafts the implementation plan from those decisions.
+Both paths start the same way:
+
+1. [`new-feature`](#new-feature) — design before code. Turns a fuzzy request into locked design decisions: it researches the code and current best practices first, then asks categorized questions with a recommended default on each — nothing is assumed.
+
+   ```
+   You: I want to add CSV import to the orders page
+   Claude: (after reading the auth + orders code) Category A — processing model:
+     A1. (a) sync in the request   (b) [REC] async job — files can be large
+     A2. Duplicate rows: (a) [REC] reject the file with a row report   (b) skip silently
+   Confirm A1–A2 — or say "agreed with all recommended".
+   ```
+
+2. **Plan mode** (built into Claude Code) drafts the implementation plan from the locked decisions. Each phase gets a model recommendation — quality first: Opus is the default; a cheaper model only for clearly mechanical work.
+
+The plan exists. How the rest runs depends on the repo — this fork is already built into the catalog (`convert-plan-to-feature` itself says "not in OpenSpec repos"):
+
+### Path A — repos without a mandated spec workflow
+
 3. [`plan-eng-review`](#plan-eng-review) reviews the written plan before any code is written and ends in a verdict.
 4. [`convert-plan-to-feature`](#convert-plan-to-feature) decomposes the approved plan into per-feature spec files, each with its own checkbox acceptance criteria, a quality-first suggested model (Opus by default, a cheaper tier only for clearly mechanical work, every assignment re-reviewed in a second pass for underestimation), and a parallel group marking which features can be implemented concurrently.
 5. **Implement** — one subagent per feature file (or a developer working by hand from the spec), each on the model its feature file suggests. When agents implement, this is the **last prompt you type** in the chain: steps 6 and 7 are not separate prompts — the prompt below launches them automatically. They keep their own step numbers because each is also a standalone skill, usable outside this chain:
@@ -81,12 +98,14 @@ new-feature → plan mode → plan-eng-review → convert-plan-to-feature → im
    ```
 
    (No need to specify a review model — `verify-implementation` pins Opus 5 itself.)
-
-   In an OpenSpec-managed repo there is a hands-off alternative for this whole chain: [`/execute-plan`](#execute-plan) takes a plan brief and runs authoring, review gate, implementation, audit, and simplification unattended, pausing only when it needs the user.
 6. [`verify-implementation`](#verify-implementation) adversarially verifies each claim of doneness against the code and fixes what it finds. In the chain, the step-5 prompt launches it per feature; standalone, point it at any claim of doneness — a PR, a ticket marked complete, an agent's report. The feature files from step 4 are its highest-preference input — their acceptance criteria are exactly what it verifies against.
 7. **`/simplify`** (built into Claude Code, not part of this catalog) cleans up the verified code — reuse, simplification, efficiency. In the chain, the step-5 prompt runs it at the end; it also works anytime on its own. Re-run your quality gates after it edits.
 
-The two gates are deliberate counterparts: `plan-eng-review` catches problems while they are still words; `verify-implementation` catches them once they are code.
+### Path B — OpenSpec-managed repos
+
+3. Save the plan as a brief file (e.g. `docs/up next/<name>-plan.md`), then run [`/execute-plan "<brief path>"`](#execute-plan). It executes steps 3–7 of Path A in their OpenSpec form, unattended: authors the OpenSpec change from the brief (the change's `tasks.md` is the decomposition — the OpenSpec counterpart of `convert-plan-to-feature`), runs `plan-eng-review` inside itself against the change artifacts (the gate is not skipped — it moves inside the automation), puts open decisions to you as batched questions (phone push via Remote Control), implements task group by task group, audits with `verify-implementation`, runs a simplification pass, and commits per checkpoint in the run's own git worktree. It stops after the local commits — deploy, archive, and PR remain yours.
+
+The two gates are deliberate counterparts: `plan-eng-review` catches problems while they are still words; `verify-implementation` catches them once they are code — on Path A you run each yourself; on Path B `execute-plan` runs both for you.
 
 ---
 
