@@ -72,9 +72,9 @@ Key rules:
 - **Group tightly-coupled sub-items in the same category.** If answering X1 changes how X2 is worded, ask them together.
 - **End every category message with `Confirm X1–Xn`** so acknowledgements are unambiguous.
 
-### Phase 3 — Full punch list on demand
+### Phase 3 — Full punch list, emitted proactively
 
-After the first few categories, the user typically asks for the full scope of remaining decisions. Produce a **punch list** — every outstanding design decision, grouped by category, one terse line each:
+Don't wait to be asked. After the first one or two categories, emit the **punch list** on your own — every outstanding design decision, grouped by category, one terse line each. Say when you post it that it is a living list: later answers can add decisions to it (and close others), and you'll re-post it whenever it changes materially.
 
 ```
 ### F. Contract changes
@@ -109,9 +109,12 @@ If the user revised a recommendation, call out the revision explicitly in the su
 When the punch list is empty:
 
 1. Announce it explicitly: "All questions closed."
-2. Collect any info needed to write the plan file — often the user's local wall-clock time for filename conventions like `YYYY-MM-DD-HHMM-slug.md`. Check the project's CLAUDE.md for conventions.
-3. Enter plan mode per project conventions. Many repos require switching to Opus and producing a plan with a recommended Claude model per phase (Opus / Sonnet / Haiku) and a brief rationale.
-4. Do not start writing code until the plan is approved.
+2. **Post the full decision register — every locked decision across every category, in one message, before entering plan mode.** Not a highlights list: every item, in category order, one line each (`A1: atomic write via tmp-then-rename.`), with any user amendment stated as the user made it. This message is the plan's direct input — the plan is written from this register, not from a re-read of the conversation — and it is the user's last chance to catch a mis-captured decision before it becomes a plan step. If the user corrects an item, fix the register and re-post it before continuing.
+3. Collect any info needed to write the plan file — often the user's local wall-clock time for filename conventions like `YYYY-MM-DD-HHMM-slug.md`. Check the project's CLAUDE.md for conventions.
+4. Enter plan mode per project conventions. Many repos require switching to Opus and producing a plan with a recommended Claude model per phase (Opus / Sonnet / Haiku) and a brief rationale.
+5. Do not start writing code until the plan is approved.
+
+Once the plan is approved, the catalog chain continues: `plan-eng-review` reviews the plan (the gate before code), then `convert-plan-to-feature` decomposes it into per-feature specs.
 
 ## Recommendation hygiene
 
