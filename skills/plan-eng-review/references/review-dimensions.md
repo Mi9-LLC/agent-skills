@@ -1,6 +1,8 @@
 # Review dimensions — checklists, calibration, and the report contract
 
-Read this when you reach Steps 3–6 of `plan-eng-review`. The iron law from
+Read this when you reach Steps 3–6 of `plan-eng-review`, and again — the
+*Write-splice procedure* section — before writing the report into a plan
+file. The iron law from
 SKILL.md governs everything here: a checklist item becomes a headline
 finding only with presence evidence (a quote of the plan, or a verified
 `file:line`) or absence evidence (the obligation-creating plan text plus
@@ -201,6 +203,34 @@ the table.
 | Else: Required plan changes non-empty | APPROVED WITH CHANGES |
 | Else | APPROVED |
 
+### Write-splice procedure (read this before writing the report)
+
+When the plan lives in a file, the report goes in with a **single
+whole-file Write, never an Edit**, following these steps exactly:
+
+1. Read the entire plan file.
+2. Find H2 boundaries: lines starting with `## ` at column zero — exactly
+   two `#` (a third makes it an H3, not a boundary) — **outside fenced code
+   blocks** (track ``` and ~~~ fences — 3+ of the same character, matched
+   open/close — while scanning), tolerating a trailing `\r`.
+3. Delete **every** existing `## ENG REVIEW REPORT` section, wherever it
+   sits: each runs from its heading line through the line before the next
+   H2 boundary, or EOF.
+4. Strip trailing blank lines, then append exactly one blank line and the
+   fresh report. The report is the last thing in the file — nothing
+   follows it.
+5. Write the whole file once. Every non-report byte is preserved exactly,
+   line endings included (a CRLF file stays CRLF).
+
+Inside the report: headings are `###` and lower — **never an H2** — and
+evidence quotes render as `>` blockquotes or inline code, never a column-0
+`## ` line. That is what keeps a quoted heading from becoming a false
+boundary on the next re-run.
+
+If the file is too large to rewrite safely in one Write call, fall back to a
+terminal-only report and say so. No plan file on disk → terminal-only
+report, no writes at all.
+
 ### Report skeleton
 
 Interior headings are `###` and lower — never `##` — and evidence quotes
@@ -237,6 +267,8 @@ VERDICT: <APPROVED | APPROVED WITH CHANGES | NEEDS REVISION> — <one sentence>.
 - …
 
 ### Required plan changes
+- [x] <run N-1 required change> — **addressed** by: "<plan quote that satisfies it>"
+- [ ] <run N-1 required change> — **not addressed**; still required.
 - [ ] <change the plan must make before implementation> (from: <finding>)
 
 ### Failure modes

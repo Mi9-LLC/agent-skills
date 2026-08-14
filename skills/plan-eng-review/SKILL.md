@@ -15,7 +15,7 @@ description: >-
   (convert-plan-to-feature), devil's-advocate pushback on a decision or idea
   that is not a written implementation plan (anti-sycophancy), or reviewing
   written code/diffs (code review / sonar-issue-check).
-allowed-tools: Read, Grep, Glob, Bash, Write, Agent, WebSearch, WebFetch
+allowed-tools: Read, Grep, Glob, Bash, Write, Agent, AskUserQuestion, WebSearch, WebFetch
 disallowed-tools: Edit, NotebookEdit
 ---
 
@@ -99,6 +99,15 @@ one). Carry every still-applicable resolved decision from its Decisions
 block forward into the new report — resolved decisions are never re-asked.
 Drop a carried decision only if the plan text it applied to is gone.
 
+**Then verify the prior report's Required plan changes, one by one, against
+the amended plan** — each is an obligation the last run created, and the
+8-findings-per-dimension cap must never be what silently drops one. For each
+prior required change, quote the plan text that now satisfies it and mark it
+*addressed*, or mark it *not addressed* and carry it into this run's Required
+plan changes unchanged. Every prior required change appears in the new report
+with one of those two marks; none is dropped for being old news, and a
+still-open one counts toward the verdict exactly as a fresh one would.
+
 Then ground the review, read-only: read the repo's `CLAUDE.md`, and
 Read / Grep / Glob every file and area the plan proposes to touch. Bash is
 for read-only context only — `git log`, `git status`, existence probes —
@@ -141,6 +150,15 @@ standard library already provides it. Every hit is a finding — "the plan
 rebuilds X that exists at `path:line`" — filed in the report's **What
 already exists** block with the reuse recommendation. Do this before the
 dimension passes, so reuse findings inform them.
+
+When the plan proposes many new helpers, these searches may be fanned out
+across parallel `Agent` subagents with `subagent_type: Explore` — one per
+helper or small group, each asked only to locate candidate equivalents and
+report `file:line`. **Mandatory: a subagent's report is a lead, not
+evidence.** Before any of it becomes a finding, *you* Read every `file:line`
+you are about to cite and confirm it says what the subagent claimed — the
+iron law's "verified in this session" means verified by the reviewer, and a
+citation you never opened does not clear it.
 
 ### Steps 3–6 — the four review dimensions
 
@@ -198,32 +216,19 @@ call. For those:
 
 #### Write mechanics — Write-splice, never Edit
 
-When the plan lives in a file, splice the report in with a single
-whole-file Write (full skeleton in the references file):
+**The invariant:** the report goes in via a **single whole-file Write, never
+an Edit**, and **every byte of the plan outside the report section is
+preserved exactly** — line endings included.
 
-1. Read the entire plan file.
-2. Find H2 boundaries: lines starting with `## ` at column zero — exactly
-   two `#` (a third makes it an H3, not a boundary) — **outside fenced code
-   blocks** (track ``` and ~~~ fences — 3+ of the same character, matched
-   open/close — while scanning), tolerating a trailing `\r`.
-3. Delete **every** existing `## ENG REVIEW REPORT` section, wherever it
-   sits: each runs from its heading line through the line before the next
-   H2 boundary, or EOF.
-4. Strip trailing blank lines, then append exactly one blank line and the
-   fresh report. The report is the last thing in the file — nothing
-   follows it.
-5. Write the whole file once. Every non-report byte is preserved exactly,
-   line endings included (a CRLF file stays CRLF).
-
-Inside the report: headings are `###` and lower — **never an H2** — and
-evidence quotes render as `>` blockquotes or inline code, never a column-0
-`## ` line. That is what keeps a quoted heading from becoming a false
-boundary on the next re-run.
+**HARD: before writing the report, read the splice spec in
+[`references/review-dimensions.md`](references/review-dimensions.md)** (§
+*Write-splice procedure*, next to the report skeleton) and follow it
+step by step. Doing this from memory is how a plan file gets corrupted.
 
 If the file is too large to rewrite safely in one Write call, fall back to
 a terminal-only report and say so. No plan file on disk → terminal-only
 report, no writes at all. (The `disallowed-tools` line drops Edit while the
-skill is active, but the write discipline is this splice spec — not the
+skill is active, but the write discipline is the splice spec — not the
 tool list.)
 
 #### Contents, in order
@@ -250,7 +255,10 @@ and the verdict; then:
 4. **Findings per dimension** — `[SEVERITY] (confidence: N/10) evidence —
    description`, each followed by a `[REC]`.
 5. **Required plan changes** — a checklist of what the plan must change
-   before implementation; regression tests always land here.
+   before implementation; regression tests always land here. On a re-run,
+   this block opens with the prior run's required changes, each marked
+   *addressed* (with the plan quote that satisfies it) or *not addressed*
+   (and still required).
 6. **Failure modes** — table: failure / test? / handled? / user-visible?.
    A row with no test AND no handling AND a silent failure is a
    **CRITICAL GAP**. Handling that silently swallows the failure (skip,
