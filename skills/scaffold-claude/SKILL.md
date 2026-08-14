@@ -40,6 +40,16 @@ A stubbed section (a `<!-- TODO: ... -->` comment) is *strictly better* than a s
 - **Surgical edit of an existing `CLAUDE.md`** → just edit it; don't run the full interview.
 - **Updates triggered automatically when code changes** → that's a hook in `settings.json`, not this skill.
 
+## When a `CLAUDE.md` Already Exists
+
+The user may already have a `CLAUDE.md` and still want a scaffold (to redo it, or to fill the gaps). Merge it — never rewrite it:
+
+- **Read the existing `CLAUDE.md` in full before the interview starts** (step 1 of the workflow), and map its content to the 8 interview sections.
+- **In each interview section, show that section's existing content back as a pre-filled answer** and ask the user to confirm it, amend it, or drop it. Ask the section's normal question for whatever the existing file doesn't cover.
+- **Content the user doesn't explicitly change carries over into the draft verbatim** — do not re-word, re-order, tighten, or "improve" it. It is already the user's own writing; rewriting it is the same inference failure the Iron Rule forbids.
+- **The Iron Rule still holds:** a section with no existing content and no answer gets its `<!-- TODO: ... -->` stub, not inferred prose.
+- **The result is still a draft at `docs/scratchpad/CLAUDE.md`** that the user moves themselves. The existing file is never edited in place — this skill produces a new draft that *contains* the old content, it does not modify the original.
+
 ## CLAUDE.md vs AGENTS.md
 
 Claude Code reads **`CLAUDE.md`** — author that. If the project also keeps an **`AGENTS.md`** for another tool (Cursor, Codex), do **not** maintain two drifting copies: generate the `CLAUDE.md`, then keep `AGENTS.md` in sync with it via an `@AGENTS.md` import from the `CLAUDE.md`, or a symlink. A standalone `AGENTS.md` is invisible to Claude Code. If the user only uses Claude Code, ignore `AGENTS.md` entirely.
@@ -62,7 +72,7 @@ Read these if they exist, **only to identify what to ask about** — not to fill
 - A package manifest if present (`package.json`, `*.csproj` / `*.sln`, `pyproject.toml`, `go.mod`, `Cargo.toml`, `Gemfile`)
 - Top-level directory listing (just names, not contents)
 - `README.md` (skim, do not summarize into the `CLAUDE.md`)
-- Existing `CLAUDE.md`, `AGENTS.md`, `.cursorrules`, `.github/copilot-instructions.md` — if any exist, mention them and ask whether to merge or start fresh
+- Existing `CLAUDE.md`, `AGENTS.md`, `.cursorrules`, `.github/copilot-instructions.md` — if any exist, mention them and ask whether to merge or start fresh (on merge, follow "When a `CLAUDE.md` Already Exists" above — read the existing file in full here, before the interview)
 
 State what you found in one or two sentences. Example: *".NET solution with a `DMS Gateway` and `DMS Shared` project, no existing CLAUDE.md. I won't assume anything about your conventions — I'll ask."*
 
