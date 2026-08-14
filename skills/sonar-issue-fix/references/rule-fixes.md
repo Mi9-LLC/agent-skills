@@ -49,11 +49,19 @@ Give every member its current implicit value explicitly — **do not change any
 number**, and **do not remove the explicit values to "simplify"** (that just
 re-introduces this rule):
 ```ts
+// before
 enum DeploymentResult {
     Empty = 0,
-    NoReleaseFound,        // before: implicit 1
-    NoReleaseFound = 1,    // after:  explicit, same value
-    // …continue for every member…
+    NoReleaseFound,        // implicit 1
+    DeploymentFailed,      // implicit 2
+}
+```
+```ts
+// after — every member explicit, no value changed
+enum DeploymentResult {
+    Empty = 0,
+    NoReleaseFound = 1,
+    DeploymentFailed = 2,
 }
 ```
 

@@ -81,6 +81,10 @@ Group the findings into two buckets — they have very different risk:
 Order the work mechanical-first: it's quick, low-risk, and shrinks the diff
 before you touch anything structural.
 
+**One exception.** A mechanical finding inside a function already slated for an
+S3776 structural refactor is folded into that refactor, not fixed separately
+first — the refactor rewrites those lines anyway.
+
 ### 3. Apply the fixes
 
 **Mechanical fixes** — apply the recipe from `references/rule-fixes.md`. Each
@@ -158,3 +162,9 @@ recipes worth following over an intuitive edit.)
 - **Skip what isn't yours to fix here.** If a finding's correct fix is a genuine
   behavior change (a real bug), surface it to the user as a bug to fix
   deliberately, rather than forcing a quality-pass edit over it.
+- **A false positive gets reported, not fixed.** When the code is right and the
+  rule is wrong for this code — the rule's assumption doesn't hold here — do not
+  contort the code to satisfy it. Leave it alone, tell the user which finding it
+  is and the concrete reason the rule misfits, and recommend marking it
+  won't-fix / accepted in the Sonar UI. This applies only when you can state that
+  reason; "the fix is awkward" or "I can't see how" is not a false positive.
