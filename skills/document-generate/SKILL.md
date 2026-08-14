@@ -13,7 +13,7 @@ description: >-
   context (scaffold-claude), designing a feature that is not built yet
   (new-feature), or decomposing an approved plan into feature specs
   (convert-plan-to-feature).
-allowed-tools: Read, Grep, Glob, Bash, Write, Edit
+allowed-tools: Read, Grep, Glob, Bash, Write, Edit, Agent
 ---
 
 # document-generate
@@ -133,6 +133,18 @@ is written before it completes.
 8. Close with: "Researched N files, K public-surface items, M concepts,
    J design decisions."
 
+**Whole-project scope — discovery may be delegated.** When the target is the
+whole project and it spans many modules, steps 1–6 above MAY be run in
+parallel subagents (`Agent`), one per module or module group, each returning
+that module's concept map and file inventory — file paths, public surface,
+test files, design-intent comments — which this run merges into the single
+concept map above.
+
+Delegation covers DISCOVERY ONLY — per-module concept maps and file
+inventories. The writer still personally reads, at a real `file:line` in this
+session, every identifier it puts in a doc. Citation evidence never comes
+from a subagent.
+
 ### Step 2 — Diataxis partition and the approval gate
 
 Classify each entity to document and apply the decision matrix:
@@ -211,7 +223,8 @@ completion report states the order actually followed.
 - CLAUDE.md and AGENTS.md: never.
 - Every new doc reachable within 2 clicks from the README.
 - Broken-link check: every `](path)` target in the new and extended docs
-  exists on disk.
+  exists on disk. A `](path)` target is resolved relative to the directory of
+  the doc file containing the link, not the repository root.
 
 ### Step 8 — Quality gates
 
@@ -229,24 +242,9 @@ Fix failures before reporting — don't report them as caveats.
 
 ### Step 9 — Report; never commit
 
-End with a structured summary:
-
-```
-Documentation generated:
-  Scope: [target]
-  Files: [N new] / [M extended]
-  Quadrants: reference [n], explanation [n], how-to [n], tutorial [n]
-  Order followed: reference → explanation → how-to → tutorial
-  Quality gates: accuracy PASS / completeness PASS / voice PASS
-  Examples verified:
-    - executed: [exact command]
-    - traced: src/x.ts:41
-    - illustrative (shape traced: src/x.ts:88)
-  Corrections: [every place existing docs or README contradicted the code —
-    what it said, what the code says, what the doc says now]
-  Not done (outside write surface): [suggested edits to files this skill
-    won't touch, e.g. a stale code comment or a CLAUDE.md line]
-```
+End with a structured summary. Read
+[`references/example-and-report.md`](references/example-and-report.md) §1 now
+and follow that report skeleton exactly.
 
 **Secrets.** Examples never contain live-format credentials — placeholder
 format only (`sk-...EXAMPLE`, `AKIA...EXAMPLE`). A live-format string found
@@ -273,39 +271,9 @@ exactly as written.
 
 ## Worked example
 
-Ask: "document the retry helper in src/retry.ts".
-
-Archaeology closes with a concept map:
-
-```
-Target: retry helper (src/retry.ts)
-Purpose: wraps an async fn with capped exponential backoff
-Public surface: retry(fn, opts) — opts.maxAttempts (default 3),
-  opts.baseDelayMs (default 100), opts.retryOn (default: all errors)
-Edge cases: maxAttempts=0 throws RangeError (retry.test.ts:71)
-```
-
-Partition: a public API surface → the API-endpoint row (how-to ✅,
-reference ✅, tutorial Maybe — not warranted for a single helper,
-explanation No):
-
-```
-entity        quadrant   action  file
-retry helper  reference  new     docs/reference-retry.md
-retry helper  how-to     new     docs/how-to-retry-flaky-calls.md
-```
-
-Gate approved as-is → two files written, one link line added to the
-README's `## Documentation`. Report excerpt:
-
-```
-Examples verified:
-  - executed: node examples/retry-demo.mjs
-  - traced: src/retry.ts:12 (RetryOptions fields and defaults)
-Corrections:
-  - README said the default maxAttempts is 5; src/retry.ts:14 says 3.
-    README line corrected; both new docs state 3.
-```
+An end-to-end run — archaeology, partition, gate, report — is in
+[`references/example-and-report.md`](references/example-and-report.md) §2.
+Read it when an illustration of the whole workflow would help.
 
 ---
 
