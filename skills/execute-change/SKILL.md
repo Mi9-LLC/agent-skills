@@ -46,10 +46,15 @@ user to pick one or state an idea.
 
 These are non-negotiable for every run:
 
-1. **The lead never edits source files.** The only files you write directly
-   are the ledger, the plan brief (design-first entry only), and, at
-   close-out, the `tasks.md` checkbox reconciliation. Everything else is
-   done by subagents.
+1. **The lead never does the work itself — every task runs in a
+   subagent.** This is what keeps the run alive for hours: the lead's
+   context must hold coordination state (the ledger, verdicts, decisions),
+   not code, research, or logs. Start a subagent for anything substantial
+   — authoring, research, implementation, fixing, bulk file reading — and
+   consume only its report. The only files you write directly are the
+   ledger, the plan brief (design-first entry only), and, at close-out,
+   the `tasks.md` checkbox reconciliation; the lead never edits source
+   files.
 2. **A subagent's "done" claim is not evidence.** After every step, run the
    acceptance check defined for that step before advancing. A failed check
    gets exactly one retry — a fresh subagent with the failure fed back —
