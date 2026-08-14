@@ -150,20 +150,41 @@ What you're looking for: API keys, tokens, and configuration values that ended u
 
 ### Probe
 
+**Discovery scope.** `<script src>` alone misses most of a modern build. Take bundle URLs from three places in the served HTML — `<script src>`, `<link rel="stylesheet">`, and `<link rel="modulepreload">` / `<link rel="preload" as="script">` — because Vite and Next.js list the real entry chunks as preload hints while the `<script type="module">` tag names only a small loader. Then follow **one level** of hashed chunk references found inside the downloaded entry bundles. **Depth 1 and the count cap below are hard limits**: chunk graphs are large, and a leaked secret lives in the entry bundle or its immediate imports — do not recurse further.
+
 ```bash
 # Fetch index, extract bundle URLs, fetch each bundle
 INDEX=$(curl -sL --max-time 15 "$URL")
-echo "$INDEX" | grep -oE 'src="[^"]+\.js[^"]*"' | sed 's/src="//;s/"//' > /tmp/bundles.txt
-echo "$INDEX" | grep -oE 'href="[^"]+\.css[^"]*"' | sed 's/href="//;s/"//' >> /tmp/bundles.txt
+{
+  echo "$INDEX" | grep -oE 'src="[^"]+\.js[^"]*"'  | sed 's/src="//;s/"//'
+  echo "$INDEX" | grep -oE 'href="[^"]+\.css[^"]*"' | sed 's/href="//;s/"//'
+  # modulepreload / preload hints — the real entry chunks on Vite and Next builds
+  echo "$INDEX" | grep -oE '<link[^>]+rel="(modulepreload|preload)"[^>]*>' \
+    | grep -oE 'href="[^"]+"' | sed 's/href="//;s/"//'
+} | sort -u > /tmp/bundles.txt
+
 while read b; do
   full=$(echo "$b" | grep -q '^http' && echo "$b" || echo "${URL%/}/${b#/}")
   curl -sL --max-time 30 "$full" -o "/tmp/bundle_$(echo $b | tr '/' '_').js"
 done < /tmp/bundles.txt
+
+# Depth 1 only, capped at 20 extra files: hashed chunks the entry bundles import.
+for f in /tmp/bundle_*.js; do
+  grep -oE '[a-zA-Z0-9_./-]*/(assets|chunks|static|_next)/[A-Za-z0-9._-]+\.js' "$f"
+done | sort -u | head -20 > /tmp/chunks.txt
+
+while read c; do
+  full=$(echo "$c" | grep -q '^http' && echo "$c" || echo "${URL%/}/${c#/}")
+  out="/tmp/bundle_chunk_$(echo $c | tr '/' '_')"
+  [ -e "$out" ] || curl -sL --max-time 30 "$full" -o "$out"
+done < /tmp/chunks.txt
 ```
+
+A chunk path written relative (`./chunks/Editor-11bb.js`) resolves against the **entry bundle's** directory, not the origin root — if such a fetch 404s, retry it under the entry bundle's path prefix before concluding the chunk doesn't exist. The chunk files land as `/tmp/bundle_chunk_*.js`, so the Step 4 and Step 5 greps over `/tmp/bundle_*.js` pick them up with no extra work.
 
 ### Grep targets
 
-The highest-value patterns are below — run each as a separate Grep call across the downloaded bundle files. The **complete** secret table (all provider prefixes, webhook URLs, env-var inlining, connection strings, ~30 patterns) lives in [`references/03-frontend-bundle-secrets.md`](references/03-frontend-bundle-secrets.md); load it and run the full set when triaging this step.
+The highest-value patterns are below — run them as **one** ripgrep call over the downloaded bundle directory (`rg -o --no-heading --with-filename /tmp/bundle_*.js -e '<pattern 1>' -e '<pattern 2>' …`), not one Grep call per pattern. Use `-o`, not `-n`: a minified bundle is a single enormous line, so match-only output is the readable form. The **complete** secret table (all provider prefixes, webhook URLs, env-var inlining, connection strings, ~30 patterns) lives in [`references/03-frontend-bundle-secrets.md`](references/03-frontend-bundle-secrets.md); load it and run the full set — still as one call — when triaging this step.
 
 | Pattern | What it catches | Severity |
 |---|---|---|
@@ -294,10 +315,16 @@ curl -sI --max-time 10 "$URL/api/" | grep -iE 'x-ratelimit|x-rate-limit|ratelimi
 
 If you see `x-ratelimit-limit`, `x-ratelimit-remaining`, `Cf-Ray` (Cloudflare), or `x-amzn-ratelimit-*`, the target has *some* form of throttling — you can predict what the full probe will show and adjust expectations. Note this in the report but **still run the 15-attempt probe** to confirm the limit applies to the login route specifically (gateway-wide limits often have generous budgets that wouldn't stop credential stuffing).
 
+### Resolve the real login endpoint first
+
+`/api/auth/login` is an example path, not a default. Take the login path from the Step 5 endpoint list — the candidates matching `login`, `signin`, `sign-in`, `session`, `auth/v1/token` (Supabase), `/api/auth/callback/credentials` (NextAuth). If Step 5 produced no candidate, **ask the user for the login endpoint path**; do not guess one. If neither source yields a path, mark Step 6 `Skipped — login endpoint not identified` and move on.
+
+**A 404 run is not a pass.** If every attempt returns `404` (or `405`), the probe never reached a login handler: report **"endpoint not found — probe inconclusive"**, then re-resolve the path or ask the user. Never write "no rate limit detected", "✅", or any clean result off a run that hit nothing.
+
 ### Probe
 
 ```bash
-EP="${URL%/}/api/auth/login"            # adapt to the real login path
+EP="${URL%/}/<resolved-login-path>"    # from Step 5 or the user — never assumed
 PROBE_USER="live-audit-probe-$(date +%s)@example.invalid"
 for i in $(seq 1 15); do
   curl -s -o /dev/null -w "%{http_code} %{time_total}s\n" \
@@ -336,9 +363,11 @@ What you're looking for: whether the response to `forgot-password` or `login` di
 
 ### Probe both endpoints
 
+Resolve both paths the same way as Step 6 before sending anything: take `RESET_EP` and `LOGIN_EP` from the Step 5 endpoint list — reset candidates match `forgot-password`, `reset-password`, `password/reset`, `recover`, `auth/v1/recover` (Supabase) — else ask the user. If one endpoint resolves and the other does not, run the one that did and record the other as `Skipped — endpoint not identified`. If every probe against an endpoint returns `404`/`405`, report **"endpoint not found — probe inconclusive"** for it; never "no enumeration detected", which claims a clean result for a check that never ran.
+
 ```bash
-RESET_EP="${URL%/}/api/auth/forgot-password"
-LOGIN_EP="${URL%/}/api/auth/login"
+RESET_EP="${URL%/}/<resolved-reset-path>"   # from Step 5 or the user — never assumed
+LOGIN_EP="${URL%/}/<resolved-login-path>"   # same path resolved in Step 6
 
 for email in "$EMAIL_A" "$EMAIL_B"; do
   echo "=== /forgot-password — $email ==="

@@ -17,7 +17,21 @@ This step is the single highest-yield check in the skill. On "vibe-coded" deploy
 
 ## What to check
 
-Grep the downloaded bundle files for the complete pattern set below (SKILL.md Step 3 inlines the 7 highest-value rows; this is the full table). Each is a separate Grep call.
+Grep the downloaded bundle files for the complete pattern set below (SKILL.md Step 3 inlines the 7 highest-value rows; this is the full table). Run the whole table as **one** ripgrep call over the bundle directory — one `-e` per row — not one Grep call per row:
+
+```bash
+rg -o --no-heading --with-filename /tmp/bundle_*.js \
+  -e 'sk-[A-Za-z0-9]{20,}' \
+  -e 'sk_live_[A-Za-z0-9]{24,}' \
+  -e 'AKIA[0-9A-Z]{16}' \
+  -e 'sb_secret_' \
+  -e 'service_role'
+  # … continue with one -e per row of the table below
+```
+
+Use `-o` (match only) rather than `-n`: a minified bundle is one enormous line, so line numbers locate nothing and `-n` would print the whole file. Record the filename plus the redacted match as the finding's evidence.
+
+**Bundle set.** Confirm the files being searched cover the whole discovery scope from SKILL.md Step 3 — `<script src>`, stylesheet links, `modulepreload`/`preload` hints, and the one level of hashed chunks those entry bundles import (depth 1, capped). A secret in a lazily-imported chunk is exactly as public as one in the entry bundle.
 
 | Pattern | What it catches | Severity |
 |---|---|---|
