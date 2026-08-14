@@ -1,5 +1,5 @@
 ---
-name: execute-plan
+name: execute-change
 description: >-
   Autonomous end-to-end execution of a plan brief in an OpenSpec-managed repo:
   one lead session drives the whole feature routine — author the OpenSpec
@@ -17,7 +17,7 @@ argument-hint: "<plan-brief path | free-text idea>"
 disable-model-invocation: true
 ---
 
-# execute-plan
+# execute-change
 
 Execute a plan brief end to end in an OpenSpec-managed repository. You (the
 session that loaded this skill) are the **lead**: you coordinate, you never
@@ -190,7 +190,7 @@ Run the checks in this order:
 
    ```bash
    git worktree add "../<repo folder name>.worktrees/<run name>" \
-     -b agent/execute-plan/<run name> <default branch>
+     -b agent/execute-change/<run name> <default branch>
    ```
 
    The entire run — every subagent, every lead command, every commit —
@@ -213,8 +213,8 @@ Run the checks in this order:
    key:
 
    ```markdown
-   # execute-plan ledger — <plan brief filename>
-   - Branch: agent/execute-plan/<run name>
+   # execute-change ledger — <plan brief filename>
+   - Branch: agent/execute-change/<run name>
    - Worktree: <absolute path of the worktree created in check 6>
    - Base branch: <the default branch identified in check 6>
    - Change ID: (set after step 1)
