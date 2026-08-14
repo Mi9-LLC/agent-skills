@@ -14,7 +14,7 @@ description: >-
   build. Reach for it even when the user only says "the app loads slowly" or "our
   JS bundle is too big" and the project uses Vite — the analysis is cheap and
   reliably finds deferrable weight. Vite/Rollup/Rolldown only (not Webpack/Next).
-allowed-tools: Bash, Read, Edit, Write, Grep, Glob
+allowed-tools: Bash, Read, Edit, Write, Grep, Glob, WebFetch
 ---
 
 # Trim the initial bundle (React + Vite)
@@ -29,6 +29,11 @@ grouping is `manualChunks`; on **Vite 8** (released March 2026) the bundler is
 Rolldown — now the default — and grouping moved to `output.advancedChunks` (being
 renamed `output.codeSplitting`). The diagnosis below is identical across both; only
 the grouping config knob differs (Fix C in `diagnosis-and-fixes.md` covers each).
+`WebFetch` is granted for one purpose only — reading the Rolldown *Manual Code
+Splitting* docs linked from Fix C to confirm the **current** Vite 8 / Rolldown
+chunk-grouping config key syntax before you edit it, since this skill itself calls
+those key names unstable (`advancedChunks` being renamed `codeSplitting`) — it is
+not for general web research.
 The diagnosis transfers to other bundlers too, but the *fixes* here are Vite-specific.
 If the project is Next.js or raw Webpack, stop and say so — this skill's fix recipes
 won't apply.

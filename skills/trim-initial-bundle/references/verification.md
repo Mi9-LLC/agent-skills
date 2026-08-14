@@ -128,12 +128,20 @@ reuse the `$DIST` build Phase 5 already produced:
 ANALYZER=<path-to-skill>/scripts/analyze-initial-load.mjs   # same script as Phase 1; use its full path so it runs from the project-root cwd this block needs
 BASELINE=../baseline
 git worktree add "$BASELINE" HEAD    # clean checkout of HEAD — untouched by your uncommitted fix
+(cd "$BASELINE" && <install command>)   # REQUIRED: a fresh worktree has no node_modules; the build fails without this
 (cd "$BASELINE" && <build command>)
 node "$ANALYZER" "$BASELINE/<same relative dist path as $DIST>" > /tmp/baseline.txt
 node "$ANALYZER" "$DIST" > /tmp/after.txt   # the fix build from Phase 5 — no rebuild needed
 diff /tmp/baseline.txt /tmp/after.txt
 git worktree remove "$BASELINE"       # add --force if build artifacts block removal
 ```
+
+Use the project's own package manager for `<install command>` (`pnpm install`,
+`npm ci`, `yarn install`, `bun install`) — a `git worktree` checkout shares the
+repo's history, not its `node_modules`, so the baseline build has nothing to
+resolve imports against until you install. With **pnpm** this install is cheap and
+fast: packages come from the shared content-addressable store and are hard-linked
+into the worktree rather than re-downloaded.
 
 **Fallback: `git stash`**, for when a worktree isn't practical (no spare disk, a
 workspace/submodule layout that doesn't tolerate a second checkout). This rebuilds
