@@ -32,10 +32,19 @@ claim — which is the point.
 ### 1. Verdict
 
 One of the three words, then one sentence of rationale, then (for `FIXED`)
-the list of fix commits.
+the list of fix commits, then a one-line **Passes not run** slot naming any
+of the seven verification passes that were skipped and why — `none` when all
+seven ran. The passes are a priority order and a cut comes from the bottom;
+this line is where the cut is visible, so it is never omitted.
 
 ```
 VERDICT: FIXED — 2 findings, both fixed in commits <sha1>, <sha2>; gates re-run green.
+Passes not run: none.
+```
+
+```
+VERDICT: NEEDS ATTENTION — 1 finding left for the owner (out of scope).
+Passes not run: 6 (scope) — diff spans a vendored directory excluded from review.
 ```
 
 ### 2. Claim audit
@@ -61,6 +70,12 @@ Most serious first. Each finding carries:
 A finding without a concrete failure is not a finding — file it as a note or
 drop it. Do not pad: if the implementation is correct, this section says so
 in one line and the report is short. That is a good report.
+
+When the verdict is `CLEAN` or `FIXED` on a `convert-plan-to-feature` feature
+file, the Status-cell update in the initiative's `REQUIREMENTS.md` is named
+here as its own line — path, cell, old value → `done`, and whether it was
+committed or is a proposed edit. It is the one change outside the reviewed
+diff, so it is stated, never silent.
 
 ### 4. Mutation proofs run
 

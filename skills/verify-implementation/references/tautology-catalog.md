@@ -62,6 +62,12 @@ One mutation per proof is enough when it targets the guarded behavior.
 Mutating an unrelated line and watching the test pass proves nothing either
 way.
 
+**Scope each run to the targeted test file, or the single test** (`vitest run
+path/to/file.test.ts -t "name"`, `dotnet test --filter`, `pytest path::test`).
+The proof only needs that one test to fail; running the whole suite once per
+mutation multiplies the slowest step in the review by the number of proofs.
+The full suite belongs to the Step 3 gate pass, run once.
+
 ## The acceptance bar for a mutation proof
 
 A proof consists of exactly three parts:

@@ -124,6 +124,12 @@ is an assertion about a test, not a proof. The catalog of tautological
 shapes, and how to construct a mutation for common test shapes, is in
 [`references/tautology-catalog.md`](references/tautology-catalog.md).
 
+**Run only the targeted test file — or the single test — in each
+mutate-run-revert cycle.** The proof needs one test to fail, and a full-suite
+run per mutation multiplies the slowest step in the skill by the number of
+proofs. The whole suite runs once, as the Step 3 gate pass. The proof bar is
+unchanged: verbatim failure output and a confirmed revert either way.
+
 ### Step 3 — re-run the gates yourself, and name what you did not run
 
 Never trust reported gate results. Re-run the project's own gates as the
@@ -160,6 +166,16 @@ And the standing rules: never commit to a shared branch (if the work sits
 directly on `main`/`master`/`develop`, report the fixes as proposed edits
 instead of committing), never push, never open a PR.
 
+**Close the status board.** When the claim being verified is a
+`convert-plan-to-feature` feature file (`<initiative>/features/NN - <name>.md`)
+and the verdict is `CLEAN` or `FIXED`, update that feature's **Status** cell to
+`done` in the initiative's `REQUIREMENTS.md` — it is the board that answers
+"where are we", and a verified feature left at `in progress` is how the board
+goes stale. Include the edit in the fix commit; on a shared branch, report it
+as a proposed edit like any other fix. **Name this write explicitly in the
+report** — it is the one change outside the diff under review, so it must never
+appear silently. A `NEEDS ATTENTION` verdict changes no Status cell.
+
 ### Step 5 — the verdict and the report
 
 Three verdicts, bound by this table, checked top-down — judgment never
@@ -172,9 +188,10 @@ overrides it:
 | Else | CLEAN |
 
 Without the table the verdict drifts optimistic. The full six-section report
-skeleton (verdict · claim audit · findings, most serious first · mutation
-proofs with verbatim output · gate results including not-run · acceptance
-table with the reviewer's own evidence) is in
+skeleton (verdict, with the one-line *Passes not run* slot · claim audit ·
+findings, most serious first · mutation proofs with verbatim output · gate
+results including not-run · acceptance table with the reviewer's own
+evidence) is in
 [`references/report-format.md`](references/report-format.md).
 
 **When run as a subagent, the report must be the run's return value — not
