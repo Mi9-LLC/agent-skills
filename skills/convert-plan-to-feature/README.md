@@ -29,9 +29,9 @@ The skill reads the plan from the conversation (plan-mode output or approved des
 ### What happens
 
 1. Derives a kebab-case initiative name from the plan title (ticket prefix included when present).
-2. Creates `<plan-location>/<initiative>/` and `<plan-location>/<initiative>/features/` — checking the repository's own plan location first (its CLAUDE.md and existing folders; e.g. some repos use `docs/up next/`), defaulting to `docs/plans/`.
+2. Creates `<plan-location>/<initiative>/` and `<plan-location>/<initiative>/features/` — checking the repository's own plan location first (its CLAUDE.md and existing folders; e.g. some repos use `docs/up next/`), defaulting to `docs/plans/`. If the initiative folder already exists, it re-runs instead of overwriting: reads the existing `REQUIREMENTS.md` first, preserves the Status value of every feature it re-emits, and asks before overwriting any feature file whose status is past `todo` (unanswered = not overwritten, reported as skipped).
 3. Writes `REQUIREMENTS.md` — the shared index: context, blast radius, locked decisions, cross-cutting catalogs, deploy/build ordering, feature table with suggested models, parallel groups (same group = no dependencies between them = safe to implement concurrently), and a Status column (`todo` / `in progress` / `done` / `blocked` — the initiative's status board), test strategy, and open questions.
-4. Writes one `features/NN - <Feature Name>.md` per unit of work — requirement, a Consumes/Produces interface contract, ordered implementation steps with real file paths (no placeholders), objectively checkable acceptance criteria, dependency/risk notes, its parallel group in the header, and a fixed *Standing instructions for the implementer* block (verbatim in every file: ask rather than resolve open questions by assumption; verify external library/API behavior against current documentation, not internal knowledge).
+4. Writes one `features/NN - <Feature Name>.md` per unit of work — requirement, a Consumes/Produces interface contract, ordered implementation steps with real file paths (no placeholders), objectively checkable acceptance criteria (a feature that modifies existing behavior must name its regression test in one of them), dependency/risk notes, its parallel group in the header, and a fixed *Standing instructions for the implementer* block (verbatim in every file: ask rather than resolve open questions by assumption; verify external library/API behavior against current documentation, not internal knowledge; the file's acceptance criteria are the verification contract `verify-implementation` runs against, so mid-feature scope changes are written back into them).
 5. Re-reviews every suggested model in a dedicated second pass against the quality-first rubric — Opus is the default; Sonnet only for fully-specified single-component work; Haiku only for purely mechanical edits; any underestimation signal (shared contracts, cross-component work, concurrency/caching/migrations/auth, modified existing behavior, open questions) forces Opus; when in doubt between two tiers, the higher one wins. The plan's own per-phase recommendations are input, not authority.
 6. Verifies consistency (every feature in the table has a file; numbering reflects dependency order; parallel groups match the dependency data) and reports the created tree with a one-line summary per feature, including any model assignment the second pass changed.
 
@@ -86,9 +86,9 @@ One file per unit of work. Sections:
 | Requirement | What the feature delivers and why, in behavioral terms |
 | Interface contract | **Consumes** (upstream types/endpoints/state, and which feature produces each) and **Produces** (the public surface downstream features cite by name) |
 | Technical implementation | Ordered steps — real file paths, new types/methods, sequence within the feature; complete steps, no `// TODO`/placeholder |
-| Acceptance criteria | Objectively checkable "done when…" bullets |
+| Acceptance criteria | Objectively checkable "done when…" bullets; a feature that modifies existing behavior names the regression test covering the changed path |
 | Dependencies & notes | Upstream/downstream features, risk, rollback notes |
-| Standing instructions for the implementer | Fixed text, verbatim in every file: don't resolve open questions by assumption — ask or return the feature; verify external library/API behavior against current docs, not internal knowledge |
+| Standing instructions for the implementer | Fixed text, verbatim in every file: don't resolve open questions by assumption — ask or return the feature; verify external library/API behavior against current docs, not internal knowledge; the acceptance criteria are the verification contract `verify-implementation` checks against, so a mid-feature scope change is written back into them |
 
 ## Usage Examples
 
@@ -140,7 +140,7 @@ Skill:
 | Step | Action |
 |------|--------|
 | 1. Locate source | Read the plan from a file path the user gave, an existing `docs/plans/` file, or the approved plan in the conversation. Ask if unclear. |
-| 2. Derive initiative | Kebab-case name from plan title (ticket prefix included); create `<plan-location>/<initiative>/` and `features/` subdirectory (repo's own plan location first, `docs/plans/` default) |
+| 2. Derive initiative | Kebab-case name from plan title (ticket prefix included); create `<plan-location>/<initiative>/` and `features/` subdirectory (repo's own plan location first, `docs/plans/` default). Folder already exists ⇒ re-run: read the existing REQUIREMENTS.md, preserve Status values, ask before overwriting any feature past `todo` |
 | 3. Decompose | Reuse the plan's own phase/component seams; split or merge only when warranted; number in dependency/deploy order |
 | 4. Write REQUIREMENTS.md | Context, blast radius, locked decisions, consolidated catalogs, deploy ordering, feature table, test strategy, open questions |
 | 5. Write feature files | One `features/NN - <name>.md` per feature — requirement, Consumes/Produces interface contract, ordered steps with real file paths (no placeholders), checkable acceptance criteria, dependencies |
@@ -152,8 +152,10 @@ Skill:
 
 ```yaml
 name: convert-plan-to-feature
-allowed-tools: Read, Write, Glob, Grep
+allowed-tools: Read, Write, Glob, Grep, AskUserQuestion
 ```
+
+`AskUserQuestion` is what the re-run path uses to ask before overwriting a feature file that is already past `todo`.
 
 ### Folder convention
 

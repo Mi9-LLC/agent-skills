@@ -18,7 +18,7 @@ description: >-
   port this skill's execution rigor (model rubric, parallel groups, acceptance
   criteria, standing implementer instructions) into that artifact instead of
   creating a parallel breakdown).
-allowed-tools: Read, Write, Glob, Grep
+allowed-tools: Read, Write, Glob, Grep, AskUserQuestion
 disallowed-tools: Edit, NotebookEdit
 ---
 
@@ -106,6 +106,25 @@ of truth.
   keeps concurrent initiatives from colliding and is the whole point of the layout.
 - Leave the original plan file where it is. `REQUIREMENTS.md` links back to it as
   the provenance record — don't move or delete it.
+
+**If the `<initiative>/` folder already exists, this is a re-run — not a fresh
+write.** Work already in flight lives in that folder, and the Status column is
+the initiative's status board; a blind overwrite destroys both.
+
+1. **Read the existing `REQUIREMENTS.md` first**, before writing anything, plus
+   the `features/` files it lists.
+2. **Preserve the Status value of every feature you re-emit.** A feature that
+   already reads `in progress`, `done`, or `blocked` keeps that value in the new
+   table — Status is owned by whoever is implementing, never reset to `todo` by a
+   regeneration. Only genuinely new features start at `todo`.
+3. **Before overwriting any feature file whose status is not `todo`, ask** with
+   AskUserQuestion — name the file, its current status, and what would change.
+   Someone may be mid-implementation against the version on disk, or it may
+   already be done. Offer at least: overwrite, keep the existing file, or write
+   the new version alongside as a new numbered feature.
+4. **Not answered means not overwritten.** If the question can't be asked or goes
+   unanswered, leave the file as it is and list it in the final report as skipped.
+   Files still at `todo`, and files that don't exist yet, are written normally.
 
 ### 3. Decompose into features
 
@@ -235,7 +254,10 @@ instead of stubbing it into a step.>
 
 ## Acceptance criteria
 <Objectively checkable "done when…" bullets. Behavioral + verifiable: builds clean,
-specific tests pass, a named scenario produces a named outcome. Not "works".>
+specific tests pass, a named scenario produces a named outcome. Not "works".
+**If this feature modifies existing behavior, one criterion must name the
+regression test that covers the changed path** — the existing test if one already
+covers it, otherwise the new test this feature adds.>
 
 - [ ] …
 - [ ] …
@@ -252,6 +274,10 @@ and any risk/rollback note specific to this slice.>
 - Do not rely on internal knowledge for anything external: verify the current
   behavior and documentation, as of the implementation date, of every external
   library, framework, or API this feature touches.
+- This file's *Acceptance criteria* are the verification contract: they are what
+  `verify-implementation` checks the finished work against. If the requester
+  changes scope mid-feature, update the criteria in this file as part of the
+  change — unwritten scope is not verified.
 ```
 
 The *Standing instructions for the implementer* section is fixed text — copy it
@@ -290,6 +316,9 @@ during writing are the ones that miss underestimation:
   REQUIREMENTS.md, not scattered; deploy ordering is explicit.
 - No placeholders survived: every step is concrete (no `// TODO` / "rest
   unchanged"); any genuine unknown is logged as an open question, not stubbed.
+- Every feature that modifies existing behavior carries an acceptance criterion
+  naming the regression test for the changed path. No named test on such a
+  feature is a gap — add the criterion before finishing.
 - Interface contracts line up: everything a feature lists under *Consumes* is
   *Produced* by an earlier-numbered feature (or already exists). A consume with no
   producer is a gap — fix the cut or flag it.
