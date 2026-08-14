@@ -1,7 +1,9 @@
 # Step prompts — verbatim subagent prompt templates
 
 Read this file at the design entry (idea runs) or when you reach step 1
-(brief runs), and keep it for the rest of the run.
+(brief runs) — and RE-READ the step's template from this file immediately
+before filling it, every time; never fill a template from memory
+(auto-compaction corrupts verbatim-ness silently).
 Every pipeline subagent gets its prompt from here: copy the template, fill
 the `{{...}}` placeholders (the table below names each one's source),
 change nothing else — then
@@ -117,6 +119,11 @@ treat it as the repository root. Invoke the plan-eng-review skill against
 the OpenSpec change in {{CHANGE_DIR}} (proposal.md, design.md, the spec
 deltas, tasks.md).
 
+Also read the original plan brief at {{PLAN_PATH}} (outside the worktree
+— the one outside file you read): flag any brief requirement the change
+artifacts drop, narrow, or contradict. Drift between the approved brief
+and the artifacts is a finding.
+
 You run non-interactively — do not call AskUserQuestion; it is not
 available to you. Every genuine scope or design fork the review would
 normally ask the user about goes under the report's UNRESOLVED DECISIONS
@@ -153,6 +160,16 @@ reason — never silently skip an item.
 ```
 
 + standing instructions.
+
+**Overlap variants** — when the step-3 overlap rule fired, step 4 is two
+subagents, each getting this template minus the block it doesn't own:
+the one launched during the pause gets only the required-changes block
+(decisions paragraph removed); the decision-folding one, launched after
+the answers arrive, gets only the decisions block (required-changes
+paragraph removed) plus this line: "Required changes were already
+applied by a previous subagent; if a decision answer contradicts one of
+them, reconcile the artifacts to honor the decision and report the
+conflict."
 
 ## Step 5 — Confirm the changes landed
 
@@ -194,7 +211,9 @@ every file you read or write and every command you run.
 
 Read first, in this order:
 1. {{CHANGE_DIR}} — proposal.md, design.md, the spec deltas, and tasks.md.
-2. The work already done on this branch: git diff {{BASE_BRANCH}}...{{BRANCH}}
+2. The work already done on this branch: git diff --stat
+   {{BASE_BRANCH}}...{{BRANCH}} first, then full diffs ONLY for the files
+   your group's file list touches or depends on — not the whole diff.
 3. Summaries of the groups completed before yours:
 {{COMPLETED_SUMMARIES}}
 
@@ -231,7 +250,9 @@ branch {{BRANCH}}.
 
 The diff scope is exactly: the feature branch against its base —
 git diff {{BASE_BRANCH}}...{{BRANCH}}. The acceptance criteria are the
-tasks.md verify clauses and the spec deltas in {{CHANGE_DIR}}.
+tasks.md verify clauses and the spec deltas in {{CHANGE_DIR}}, PLUS the
+verification expectations in the original plan brief at {{PLAN_PATH}}
+(outside the worktree — the one outside file you read).
 
 You run non-interactively — do not call AskUserQuestion; anything that
 needs a human lands in your report. Fix findings per that skill's own

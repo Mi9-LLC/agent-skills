@@ -102,6 +102,10 @@ itself, which the step-1 author reads.
    current documentation, and returns a compact design dossier: facts,
    constraints, reuse candidates, decision points. You do not read the
    code yourself — the dossier keeps your context lean for the long run.
+   When it returns, run one batch existence check (Glob) over every file
+   path the dossier cites: any missing path → the one retry, with the
+   bogus citations fed back. Existence is the floor, not proof of the
+   claim — but it catches fabrication before it shapes locked decisions.
 2. **Interview.** From the dossier, surface every genuinely open design
    decision as categorized questions (A, B, C, …), each option list
    carrying a `[REC]`-marked recommended default — one category per
@@ -203,9 +207,15 @@ Run the checks in this order:
    on. The main working tree is never touched (it may stay dirty; the user
    can keep working in it), and the run's only writes outside the worktree
    are the ledger and, on a design-first run, the brief it drafted — side
-   by side in the main tree. Finally, prepare the worktree so
-   the quality gates can run: the project's dependency install as its own
-   docs define it (e.g. `npm ci`) — a per-run setup cost.
+   by side in the main tree. Finally, launch the worktree preparation as
+   a BACKGROUND task, off the critical path (steps 1–5 don't need it):
+   the project's dependency install (e.g. `npm ci`) followed by one run
+   of the project's quality gates on the untouched worktree — the
+   **baseline**. Record per-gate pass/fail (with any failing output) in
+   the ledger's Baseline field when it finishes. Before the first step-6
+   group launches: confirm the task completed, and surface a red baseline
+   to the user — it means pre-existing failures that must never be
+   attributed to the implementation.
 7. **Readiness and authorization** — one batched AskUserQuestion:
    - Remote Control and "Push when actions required" are on (or the user
      accepts terminal-only waiting);
@@ -226,6 +236,7 @@ Run the checks in this order:
    - Last completed step: 0
    - Parallel groups approved: yes/no
    - Fix cycles used: 0 of 2
+   - Baseline gates: (set when the background worktree prep finishes)
    ## Step log        <!-- per step: subagent outcome + acceptance-check result -->
    ## Decisions       <!-- every user answer, verbatim -->
    ## Open questions
@@ -242,8 +253,9 @@ the exceptions their sections define: step 3 is lead-run (no subagent),
 step 6 launches one per task group, and steps 5, 7, and 8 may launch a
 bounded follow-up (re-review / fix subagent). Every prompt is taken
 verbatim from
-[`references/step-prompts.md`](references/step-prompts.md) **(read it when
-you reach step 1 and keep it open for the rest of the run)**, with the
+[`references/step-prompts.md`](references/step-prompts.md) **(re-read the
+step's template from that file immediately before each fill — never fill
+one from memory; compaction corrupts verbatim-ness silently)**, with the
 placeholders filled from the ledger: the change ID, the change folder
 `openspec/changes/<id>/` inside the worktree, the branch, the base branch,
 and the worktree path. Every acceptance-check command you run below —
@@ -284,8 +296,9 @@ pathspec:
 that is how the skill already works, and the feature branch is not shared.
 The ledger and the plan brief are excluded from every commit.
 
-**Models.** Steps 1, 2, 4, 5, 7, and 8 run on Opus — pass the model
-explicitly on step 7 too; do not rely on `verify-implementation`'s own
+**Models.** Steps 1, 2, 4, 5, 7, and 8 run on Opus, and so does the
+design-entry research subagent — pass the model explicitly on step 7 too;
+do not rely on `verify-implementation`'s own
 pin propagating into a subagent. Step 6 groups run on the model their
 `tasks.md` row names, passed as
 the Agent tool's `model` option — a missing or unmappable model name means
@@ -320,6 +333,12 @@ consecutive calls in the same pause, never dropped or merged-beyond-
 recognition questions. Record every answer in the ledger's Decisions
 section. No unresolved decisions → skip to step 4.
 
+Overlap rule: if the review produced Required plan changes AS WELL AS
+unresolved decisions, launch step 4's required-changes subagent at the
+same moment the question goes out — the required changes are
+unconditional, so they apply while the user answers (that pause can span
+hours). Only the decision-folding waits for the answers.
+
 ## Step 4 — Apply the review's required changes
 
 A verdict of `APPROVED` with zero required changes and zero decisions →
@@ -328,7 +347,12 @@ artifacts) now. Otherwise: subagent (Opus) applies the review's Required
 plan changes via the repo's
 OpenSpec update skill (the `/opsx:update` flow; generated name varies by
 CLI version, e.g. `openspec-update-change`) AND folds the user's answered
-decisions into the report's Decisions block.
+decisions into the report's Decisions block. When the overlap rule fired,
+this is two subagents instead: the required-changes one launched during
+the step-3 pause, then a decision-folding one once the answers arrive
+(`references/step-prompts.md` defines both prompt variants). A decision
+answer that contradicts an already-applied change is the folding
+subagent's to reconcile — step 5 verifies both lists either way.
 
 ## Step 5 — Confirm the changes landed
 
@@ -369,8 +393,14 @@ attributable to one group is that group's failed acceptance check (one
 retry); a failure spanning groups treats the whole set as the failed unit
 — one retry of the set, then pause and ask.
 
-After each group passes its acceptance check: commit the group by pathspec,
-add a one-paragraph summary to the ledger, advance.
+Before committing a serial group, run the project's gates yourself in the
+worktree — the implementer's own gate run is its iteration loop, not
+evidence (a subagent's "done" claim is not evidence; this is the same
+rule). Judge any failure against the ledger's Baseline: a failure already
+present at baseline is pre-existing — report it, never attribute it to
+the group. Then, after the group passes its acceptance check and your
+gate run: commit the group by pathspec, add a one-paragraph summary to
+the ledger, advance.
 
 ## Step 7 — Audit the implementation
 
