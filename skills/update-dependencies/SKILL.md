@@ -62,6 +62,8 @@ pnpm outdated -r
 
 Capture the full list: package, current → latest, and which workspace manifests declare it. Note that the outdated command of npm/pnpm exits non-zero when packages are outdated — that is the success case, not an error; never gate on its exit code.
 
+**Nothing outdated → stop here.** If the outdated command reports nothing at all — or nothing matching the packages named in `$ARGUMENTS` — there is no work to do. Return to the branch you were on (`git checkout -`), delete the work branch just created (`git branch -D <work-branch>`), and report "nothing to update" (naming the requested packages, if any). Do not run the remaining steps.
+
 ## Step 2 — Classify and group
 
 Split the outdated list into:
@@ -90,13 +92,15 @@ The in-range bulk update only moves versions within declared ranges, so re-run t
 
 **yarn Berry has no in-range-only bulk command** — `yarn up` resolves to latest and crosses majors, which would break this step's safe-baseline guarantee. On a Berry repo, skip the bulk pass and instead bump each non-major outdated package explicitly (`yarn up <pkg>@<target>`), then treat every major via Step 4 as usual.
 
+**A peer-dependency conflict is a research case, not an install-flag case** — this holds for every install in the run, Step 3 and Step 4 alike. An npm `ERESOLVE` error, or any unmet-peer complaint from another PM, means one package's declared peer range has not caught up with what you just installed. Identify which package declares the offending range (`npm view <pkg> peerDependencies`), then either bump that package too — it is often a lockstep-family member (Step 2) — or revert the update that caused the conflict. **Never pass `--legacy-peer-deps` or `--force`, or another package manager's equivalent escape hatch, without asking the user first:** they suppress the error, not the incompatibility.
+
 If a "safe" bump breaks something (semver violations happen), treat that package like a major: research its release notes and either migrate or revert it. Do not start majors on a red baseline.
 
 ## Step 4 — Handle majors, one group at a time
 
 For each major bump (or lockstep group) — in a monorepo, process **upstream workspace libraries before their downstream consumers** (no-op for a single package):
 
-1. **Research first.** Fetch the release notes / changelog / migration guide for every version between current and target. You can parallelize this across background sub-agents — research the next group while migrating the current one — but never skip it. Identify each breaking change and check whether this codebase actually uses the affected API (`Grep` for the symbols).
+1. **Research first, bounded to the major boundaries.** Fetch the release notes at each MAJOR version boundary crossed between current and target, plus that major's official migration guide — those are the documents to read in full. The intermediate minor/patch releases in between are only SCANNED for breaking-change markers (a `BREAKING CHANGE` note, a removal, a deprecation), not read end to end. You can parallelize this across background sub-agents — research the next group while migrating the current one — but never skip it. Identify each breaking change and check whether this codebase actually uses the affected API (`Grep` for the symbols).
 2. **No breaking changes that touch our usage** → run the explicit bump-to-version for the PM, install, verify, move on.
 3. **Breaking changes that touch our usage** → update the package, then migrate the code autonomously. Spawn a **general-purpose sub-agent** and feed it the relevant freshly fetched migration-guide excerpts — its training knowledge is as outdated as yours. If the host project defines a matching domain expert agent, delegate to it instead. Keep changes surgical: only what the migration requires.
 4. **Verify after each group:** the existing build + typecheck + lint + test gates for the affected packages. A green gate before the next group is what makes failures attributable.
