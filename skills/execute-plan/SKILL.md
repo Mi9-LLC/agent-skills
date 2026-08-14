@@ -7,10 +7,13 @@ description: >-
   group by task group, adversarial audit, simplification pass — each
   pipeline step running in fresh subagents, committing per checkpoint on a
   dedicated branch in the run's own git worktree (several plans can run
-  concurrently on one repo), and stopping after the local commits. Pauses
-  with a phone push only when it needs the user: a decision, or a failure
-  it may not resolve alone. Never deploys, never pushes, never opens a PR.
-argument-hint: "<plan-brief path> (docs/up next/...-plan.md)"
+  concurrently on one repo), and stopping after the local commits. Accepts
+  a finished plan brief or a free-text idea — an idea first goes through a
+  design interview and a user-approved brief before anything executes.
+  Pauses with a phone push only when it needs the user: a decision, or a
+  failure it may not resolve alone. Never deploys, never pushes, never
+  opens a PR.
+argument-hint: "<plan-brief path | free-text idea>"
 disable-model-invocation: true
 ---
 
@@ -24,28 +27,37 @@ pause for the user only on genuine human decisions (the question reaches
 their phone via Remote Control push), and stop after a local commit — the
 user deploys, archives, and opens the PR by hand.
 
-Each run works in its **own git worktree**, created at preflight: the main
-working tree is never touched, and several runs with different plans can
-execute on one repo at once — each has its own worktree and branch, and
-git refuses to check one branch out twice.
+Each run works in its **own git worktree**, created at preflight: the
+pipeline never touches the main working tree (a design-first run writes
+only the brief there), and several runs with different plans can execute
+on one repo at once — each has its own worktree and branch, and git
+refuses to check one branch out twice.
 
-The argument (`$ARGUMENTS`) is the path to the plan brief; if no argument was
-given, list the `docs/up next/*-plan.md` candidates and ask the user which
-one to execute.
+The argument (`$ARGUMENTS`) is either a plan-brief path or a free-text
+idea: if it resolves to an existing file, it is the brief — go straight to
+Step 0; anything else is an idea — run the design-first entry below first.
+One guard: an argument that looks like a file path (contains a slash or
+ends in `.md`) but matches no file is probably a typo'd brief path — ask
+before treating it as an idea.
+No argument → list the `docs/up next/*-plan.md` candidates and ask the
+user to pick one or state an idea.
 
 ## Ground rules
 
 These are non-negotiable for every run:
 
 1. **The lead never edits source files.** The only files you write directly
-   are the ledger and, at close-out, the `tasks.md` checkbox reconciliation.
-   Everything else is done by subagents.
+   are the ledger, the plan brief (design-first entry only), and, at
+   close-out, the `tasks.md` checkbox reconciliation. Everything else is
+   done by subagents.
 2. **A subagent's "done" claim is not evidence.** After every step, run the
    acceptance check defined for that step before advancing. A failed check
    gets exactly one retry — a fresh subagent with the failure fed back —
    then you pause and ask the user. A subagent that dies, or whose skill
    refuses to run, pauses the run immediately: never guess forward.
-3. **Human decisions pause the run.** Open questions and design forks from
+3. **Human decisions pause the run.** (The design-entry interview is the
+   one exception: it deliberately asks one category at a time, before any
+   ledger exists.) Open questions and design forks from
    any subagent report are batched into ONE pause per step — a single
    AskUserQuestion, or consecutive calls when there are more than 4 forks
    (the tool's per-call limit). Update the ledger first, then wait: the
@@ -65,6 +77,41 @@ These are non-negotiable for every run:
 There is no `allowed-tools`/`disallowed-tools` line in the frontmatter — the
 lead needs the Agent tool, Bash, AskUserQuestion, and file tools, so the
 never-rules above are workflow discipline, not a tool-pool restriction.
+
+## Design-first entry — from idea to approved brief
+
+Only when the argument is an idea, not a file. This phase runs **before
+Step 0**: no branch, worktree, or ledger exists yet, everything happens in
+the main tree, and an interruption here simply restarts the entry. The
+locked decisions are recorded in the brief itself, which the step-1 author
+reads.
+
+1. **Research.** Launch a fresh research subagent (prompt in
+   [`references/step-prompts.md`](references/step-prompts.md)) — it reads
+   the relevant code read-only, verifies external capabilities against
+   current documentation, and returns a compact design dossier: facts,
+   constraints, reuse candidates, decision points. You do not read the
+   code yourself — the dossier keeps your context lean for the long run.
+2. **Interview.** From the dossier, surface every genuinely open design
+   decision as categorized questions (A, B, C, …), each option list
+   carrying a `[REC]`-marked recommended default — one category per
+   AskUserQuestion call (4 questions per call; more → consecutive calls).
+   Lock each category as it is answered; continue until no ambiguity
+   remains. Never assume an answer.
+3. **Draft the brief.** Write
+   `docs/up next/<YYYY-MM-DD-HHmm>-<slug>-plan.md` (folder created if
+   missing; slug derived from the idea): context, the locked decisions,
+   requirements, technical approach, out of scope, verification
+   expectations. This is the one source-tree file the lead writes itself;
+   like any brief, it is never committed by the run.
+4. **Approval gate.** Post a compact summary plus the file path, then ask:
+   approve / request changes (AskUserQuestion — works from the phone).
+   Changes loop back into the draft, and into the interview if they open
+   a new fork. Only an approved brief enters Step 0 — nothing executes on
+   an unapproved brief.
+
+From here the run is identical to the brief-path entry: continue with
+Step 0 using the new brief's path.
 
 ## Step 0 — Preflight (the user is still at the keyboard)
 
@@ -137,7 +184,8 @@ Run the checks in this order:
    happens inside that worktree; treat it as the repository root from here
    on. The main working tree is never touched (it may stay dirty; the user
    can keep working in it), and the run's only writes outside the worktree
-   are the ledger next to the plan brief. Finally, prepare the worktree so
+   are the ledger and, on a design-first run, the brief it drafted — side
+   by side in the main tree. Finally, prepare the worktree so
    the quality gates can run: the project's dependency install as its own
    docs define it (e.g. `npm ci`) — a per-run setup cost.
 7. **Readiness and authorization** — one batched AskUserQuestion:

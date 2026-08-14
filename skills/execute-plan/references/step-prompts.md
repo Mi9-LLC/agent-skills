@@ -1,6 +1,7 @@
 # Step prompts — verbatim subagent prompt templates
 
-Read this file when you reach step 1 and keep it for the rest of the run.
+Read this file at the design entry (idea runs) or when you reach step 1
+(brief runs), and keep it for the rest of the run.
 Every pipeline subagent gets its prompt from here: copy the template, fill
 the `{{...}}` placeholders (the table below names each one's source),
 change nothing else — then
@@ -12,6 +13,7 @@ Placeholders:
 
 | Placeholder | Filled with |
 |---|---|
+| `{{IDEA}}` | The user's free-text idea (design-first entry only) |
 | `{{PLAN_PATH}}` | The plan brief's path (it lives in the main tree, outside the worktree) |
 | `{{WORKTREE}}` | The run's worktree directory (ledger) — the repo checkout this run works in |
 | `{{CHANGE_ID}}` | The OpenSpec change ID (ledger, set after step 1) |
@@ -51,6 +53,34 @@ A previous attempt at this exact task failed its acceptance check.
 What was found wrong: {{RETRY_FEEDBACK}}
 Fix that specifically, then complete the task as specified below.
 ```
+
+## Design entry — research subagent
+
+Runs BEFORE Step 0, so no worktree exists yet: this is the one prompt that
+works in the main repository checkout, strictly read-only.
+
+```
+You are a read-only design researcher in this repository (the main
+checkout — modify nothing). The user wants: {{IDEA}}
+
+Investigate what implementing this would touch: read the relevant source,
+configs, and specs (openspec/specs/ if present); identify the existing
+patterns, helpers, and conventions a design should reuse; verify any
+external library/framework capability the design would rely on against
+its current documentation (WebSearch/WebFetch), never memory.
+
+Return a compact design dossier, under ~150 lines, citing file paths for
+every fact:
+1. FACTS — what exists today (paths, current behavior).
+2. CONSTRAINTS — invariants, conventions, and limits the design must
+   respect.
+3. REUSE — existing code the design should build on instead of rewriting.
+4. DECISION POINTS — every genuinely open design choice, each with its
+   viable options and, where the evidence supports one, a recommended
+   default and why.
+```
+
++ standing instructions.
 
 ## Step 1 — Author the OpenSpec change
 
