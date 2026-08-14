@@ -32,6 +32,8 @@ Before writing any new function or helper, walk this ladder and take the FIRST r
 
 Never hand-roll file I/O, path manipulation, HTTP requests, date parsing, data validation, JSON handling, or retry logic when a rung 1–3 option exists.
 
+**Consistency exception.** Where the project already uses one library consistently for the exact task at hand (every date goes through `date-fns`, every HTTP call through the project's existing client), match that convention rather than introducing a rung-1 built-in alongside it — two ways to do the same thing in one codebase costs more than the heavier tool does. If you think the built-in is the better call anyway, say so and let the user decide; don't silently pick either one.
+
 ## Language rules
 
 TypeScript:
