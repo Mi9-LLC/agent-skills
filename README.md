@@ -57,15 +57,23 @@ Re-run either command anytime to update — it always pulls the current state of
 
 ## Recommended workflow — from idea to verified code
 
-This is one workflow, not a mandate: a way the catalog's planning and verification skills chain end to end for a substantial feature or initiative, shared because it works well in practice. Every step is independently useful — run the whole chain for large work, a single step for a small task, or just the pieces that fit how you already work. Each skill fires implicitly (describe the work and the matching skill launches on its own) or explicitly (start the message with `/<skill-name>`) — see "How these skills work" above.
+This is one workflow, not a mandate: a way the catalog's planning and verification skills chain end to end for a substantial feature or initiative, shared because it works well in practice. Every step is independently useful — run the whole chain for large work, a single step for a small task, or just the pieces that fit how you already work. Each skill fires implicitly (describe the work and the matching skill launches on its own) or explicitly (start the message with `/<skill-name>`) — see "How these skills work" above. In an OpenSpec-managed repo the whole chain is **one command** — start with the automated path; the manual path serves every other repo, and the runs you want to drive stage by stage yourself.
 
 ```
-new-feature → plan mode ─┬─ Path A ─ plan-eng-review → convert-plan-to-feature → implement → verify-implementation → /simplify
-  (design)    (the plan)  │           (pre-code gate)      (decomposition)                     (post-code gate)       (cleanup)
-                          └─ Path B (OpenSpec repos) ─ /execute-plan — the whole rest of the chain, unattended
+OpenSpec repos    /execute-plan "<idea or brief>" — design interview → review gate → implement → audit → simplify, unattended
+all other repos   new-feature → plan mode → plan-eng-review → convert-plan-to-feature → implement → verify-implementation → /simplify
+                    (design)     (the plan)  (pre-code gate)      (decomposition)                    (post-code gate)        (cleanup)
 ```
 
-Both paths start the same way:
+### The automated path — OpenSpec-managed repos (start here)
+
+One command runs the journey end to end. [`/execute-plan "add CSV import to the orders page"`](#execute-plan) starts from the raw idea: it runs its own design interview (research dossier first, then categorized questions with `[REC]`-marked defaults), drafts the plan brief, and waits for your approval — nothing executes on an unapproved brief. Already have a plan? Hand it the brief instead — `/execute-plan "docs/up next/<name>-plan.md"` — written however you like, including via manual steps 1–2 below.
+
+From the approved brief on, everything is agent-driven: it authors the OpenSpec change (the change's `tasks.md` is the decomposition — the OpenSpec counterpart of `convert-plan-to-feature`), runs `plan-eng-review` inside itself against the change artifacts (the gate is not skipped — it moves inside the automation), puts open decisions to you as batched questions (phone push via Remote Control), implements task group by task group, audits with `verify-implementation`, runs a simplification pass, and commits per checkpoint in the run's own git worktree. It stops after the local commits — deploy, archive, and PR remain yours.
+
+### The manual path — repos without OpenSpec, or when you drive each stage yourself
+
+`execute-plan` refuses to run outside an OpenSpec-managed repo (`openspec/config.yaml` at the root), so everywhere else this is the chain — and every skill in it stays independently useful; the automated path invokes the same gates internally:
 
 1. [`new-feature`](#new-feature) — design before code. Turns a fuzzy request into locked design decisions: it researches the code and current best practices first, then asks categorized questions with a recommended default on each — nothing is assumed.
 
@@ -78,10 +86,6 @@ Both paths start the same way:
    ```
 
 2. **Plan mode** (built into Claude Code) drafts the implementation plan from the locked decisions. Each phase gets a model recommendation — quality first: Opus is the default; a cheaper model only for clearly mechanical work.
-
-The plan exists. How the rest runs depends on the repo — this fork is already built into the catalog (`convert-plan-to-feature` itself says "not in OpenSpec repos"). The rule: **is the repo OpenSpec-managed** (`openspec/config.yaml` at the root)? No → Path A, where `convert-plan-to-feature` produces the per-feature specs and you drive each step; yes → Path B, where the OpenSpec change's `tasks.md` plays that role and `execute-plan` drives the steps for you. Path A is not made obsolete by Path B: it is the only path in repos without OpenSpec, and every skill in it remains independently usable — Path B invokes the same gates internally.
-
-### Path A — repos without a mandated spec workflow
 
 3. [`plan-eng-review`](#plan-eng-review) reviews the written plan before any code is written and ends in a verdict.
 4. [`convert-plan-to-feature`](#convert-plan-to-feature) decomposes the approved plan into per-feature spec files, each with its own checkbox acceptance criteria, a quality-first suggested model (Opus by default, a cheaper tier only for clearly mechanical work, every assignment re-reviewed in a second pass for underestimation), and a parallel group marking which features can be implemented concurrently.
@@ -101,11 +105,7 @@ The plan exists. How the rest runs depends on the repo — this fork is already 
 6. [`verify-implementation`](#verify-implementation) adversarially verifies each claim of doneness against the code and fixes what it finds. In the chain, the step-5 prompt launches it per feature; standalone, point it at any claim of doneness — a PR, a ticket marked complete, an agent's report. The feature files from step 4 are its highest-preference input — their acceptance criteria are exactly what it verifies against.
 7. **`/simplify`** (built into Claude Code, not part of this catalog) cleans up the verified code — reuse, simplification, efficiency. In the chain, the step-5 prompt runs it at the end; it also works anytime on its own. Re-run your quality gates after it edits.
 
-### Path B — OpenSpec-managed repos
-
-3. Save the plan as a brief file (e.g. `docs/up next/<name>-plan.md`), then run [`/execute-plan "<brief path>"`](#execute-plan) — or skip steps 1–2 entirely and give it the idea itself (`/execute-plan "add CSV import to the orders page"`): it then runs its own design interview (research dossier, categorized questions with `[REC]` defaults), drafts the brief, and waits for your approval before anything executes. Either way it executes steps 3–7 of Path A in their OpenSpec form, unattended: authors the OpenSpec change from the brief (the change's `tasks.md` is the decomposition — the OpenSpec counterpart of `convert-plan-to-feature`), runs `plan-eng-review` inside itself against the change artifacts (the gate is not skipped — it moves inside the automation), puts open decisions to you as batched questions (phone push via Remote Control), implements task group by task group, audits with `verify-implementation`, runs a simplification pass, and commits per checkpoint in the run's own git worktree. It stops after the local commits — deploy, archive, and PR remain yours.
-
-The two gates are deliberate counterparts: `plan-eng-review` catches problems while they are still words; `verify-implementation` catches them once they are code — on Path A you run each yourself; on Path B `execute-plan` runs both for you.
+The two gates are deliberate counterparts: `plan-eng-review` catches problems while they are still words; `verify-implementation` catches them once they are code — on the manual path you run each yourself; on the automated path `execute-plan` runs both for you.
 
 ---
 
