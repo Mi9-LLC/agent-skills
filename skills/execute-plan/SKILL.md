@@ -80,11 +80,16 @@ never-rules above are workflow discipline, not a tool-pool restriction.
 
 ## Design-first entry — from idea to approved brief
 
-Only when the argument is an idea, not a file. This phase runs **before
-Step 0**: no branch, worktree, or ledger exists yet, everything happens in
-the main tree, and an interruption here simply restarts the entry. The
-locked decisions are recorded in the brief itself, which the step-1 author
-reads.
+Only when the argument is an idea, not a file. Two quick guards first:
+run Step 0 check 3 (OpenSpec-managed?) now — one command, so a
+non-OpenSpec repo fails before the interview, not after it; and scan
+`docs/up next/*.ledger.md` — an existing ledger whose brief matches this
+idea is an interrupted run: offer resume instead of a new interview.
+
+This phase runs **before Step 0**: no branch, worktree, or ledger exists
+yet, everything happens in the main tree, and an interruption here simply
+restarts the entry. The locked decisions are recorded in the brief
+itself, which the step-1 author reads.
 
 1. **Research.** Launch a fresh research subagent (prompt in
    [`references/step-prompts.md`](references/step-prompts.md)) — it reads
@@ -128,10 +133,16 @@ Run the checks in this order:
 2. **Resume check — before anything is created.** If the brief's ledger
    (check 8 defines its exact name) already exists, this is a resume:
    re-read the recorded branch, worktree path, change ID, base branch, and
-   last completed step; if the worktree directory no longer exists,
-   recreate it (`git worktree add <recorded path> <recorded branch>` — the
-   branch still exists) and re-run the project's dependency install in it
-   (a recreated worktree is a bare checkout; the gates need it); re-run
+   last completed step; if the worktree directory no longer exists, run
+   `git worktree prune` first (a hand-deleted folder leaves a stale
+   registration that makes the add fail), then recreate it
+   (`git worktree add <recorded path> <recorded branch>` — the branch
+   still exists) and re-run the project's dependency install in it
+   (a recreated worktree is a bare checkout; the gates need it). If the
+   worktree survived, `git status` it: uncommitted changes, or a ledger
+   that disagrees with the branch (e.g. a committed group with no ledger
+   summary), → surface to the user before continuing — never build on
+   unexplained edits. Then re-run
    checks 3–5 (the environment can drift between runs), skip checks 6–8 —
    the branch, worktree, and ledger already exist, and the ledger records
    the check-7 answers — and continue the pipeline from the ledger. Never
@@ -166,14 +177,16 @@ Run the checks in this order:
    confirm the repo's own OpenSpec flows exist (`.claude/commands/opsx/` or
    `.claude/skills/openspec-*` files — steps 1 and 4 invoke them); missing
    → `openspec update` regenerates them (restart warning again).
-6. **Worktree and branch.** Identify the default branch. Build the run
+6. **Worktree and branch.** Identify the default branch; `git fetch`
+   first so the branch is created from a current base (a fetch failure is
+   not fatal — note it and continue from the local base). Build the run
    name `<timestamp>-<plan name>`: `<timestamp>` is the current date-time
    at run start (e.g. `20260813-1054`) — never a date taken from the
    brief's filename, which may be days old; `<plan name>` is the brief's
    filename without its extension and with any date-time stamp the
    filename itself carries stripped out, sanitized for git (spaces →
-   hyphens). Then create the run's dedicated worktree and branch in one
-   command:
+   hyphens). Then, from the main repo root (the path below is relative to
+   it), create the run's dedicated worktree and branch in one command:
 
    ```bash
    git worktree add "../<repo folder name>.worktrees/<run name>" \
@@ -234,7 +247,10 @@ worktree.
 
 **Acceptance checks** (run by you, the lead, after each step completes —
 the step's checkpoint commit, where one is defined, happens only AFTER its
-check passes, never before):
+check passes, never before). When a check passes, update the ledger before
+advancing: set "Last completed step" to that step and record the outcome
+in the Step log — this field is the resume key; left unwritten, a crash
+resumes at step 1.
 
 | After step | Evidence required on disk |
 |---|---|
@@ -242,7 +258,7 @@ check passes, never before):
 | 2 | `design.md` contains a review report with a verdict |
 | 3 | Every answered decision is recorded in the ledger |
 | 5 | The landing report says LANDED for every item, with quoted evidence |
-| 6 (each group) | The group's files actually changed on the branch, matching its report |
+| 6 (each group) | The group's files actually changed in the worktree, matching its report (uncommitted at check time — the commit follows the check) |
 | 7 | An audit report with a verdict exists |
 | 8 | The simplify report exists and the project's gates passed |
 
@@ -253,6 +269,9 @@ pathspec:
 
 - after step 5: the OpenSpec change artifacts (`openspec/changes/<id>/`);
 - after each step-6 group: that group's changed files;
+- after each step-7 fix cycle: the fix subagent's changed files, committed
+  BEFORE the re-audit — the audit diffs committed state only, so an
+  uncommitted fix is invisible to it;
 - after step 8: the simplification changes;
 - at close-out: the `tasks.md` reconciliation.
 
@@ -260,8 +279,10 @@ pathspec:
 that is how the skill already works, and the feature branch is not shared.
 The ledger and the plan brief are excluded from every commit.
 
-**Models.** Steps 1, 2, 4, 5, and 8 run on Opus; step 7's skill pins Opus
-itself; step 6 groups run on the model their `tasks.md` row names, passed as
+**Models.** Steps 1, 2, 4, 5, 7, and 8 run on Opus — pass the model
+explicitly on step 7 too; do not rely on `verify-implementation`'s own
+pin propagating into a subagent. Step 6 groups run on the model their
+`tasks.md` row names, passed as
 the Agent tool's `model` option — a missing or unmappable model name means
 Opus, never a more expensive tier (catalog constraint: never pin Fable).
 
@@ -270,7 +291,9 @@ Opus, never a more expensive tier (catalog constraint: never pin Fable).
 Subagent (Opus) authors the change from the plan brief via the repo's own
 OpenSpec propose skill — the `/opsx:propose` flow; its generated skill
 name varies by CLI version (e.g. `openspec-propose` or
-`openspec-propose-change`): `proposal.md`,
+`openspec-propose-change`) — with, per task group, a model, a
+parallel-group marking, and a file list (parallel safety depends on it):
+`proposal.md`,
 `design.md`, spec deltas, and `tasks.md` with a model column, parallel
 groups, verify clauses, and the standing implementer instructions. When it
 returns, record the change ID in the ledger, then run the acceptance check.
@@ -294,7 +317,10 @@ section. No unresolved decisions → skip to step 4.
 
 ## Step 4 — Apply the review's required changes
 
-Subagent (Opus) applies the review's Required plan changes via the repo's
+A verdict of `APPROVED` with zero required changes and zero decisions →
+skip steps 4–5 entirely and make the first checkpoint commit (the change
+artifacts) now. Otherwise: subagent (Opus) applies the review's Required
+plan changes via the repo's
 OpenSpec update skill (the `/opsx:update` flow; generated name varies by
 CLI version, e.g. `openspec-update-change`) AND folds the user's answered
 decisions into the report's Decisions block.
@@ -303,7 +329,10 @@ decisions into the report's Decisions block.
 
 Fresh subagent (Opus) — deliberately not the step-4 author — checks that
 each required change and each answered decision is actually present in the
-artifacts, with per-item evidence in its report. If the step-2 verdict was
+artifacts, with per-item evidence in its report. Any MISSING item means
+step 4 failed, not step 5: re-run step 4 with only the missing items as
+its inputs, then step 5 again — once; still MISSING → pause and ask. If
+the step-2 verdict was
 `NEEDS REVISION`, one re-run of `plan-eng-review` follows (decisions carried
 forward). Re-review outcomes: `APPROVED` → proceed; `APPROVED WITH CHANGES`
 with new required changes, or new `UNRESOLVED DECISIONS` → loop back through
@@ -321,14 +350,19 @@ ticks its own checkboxes and never self-verifies.
 
 Groups marked parallel run concurrently ONLY when the user approved
 concurrency in Step 0 AND their file lists in `tasks.md` are disjoint —
-otherwise serialize them: they share one working tree. A parallel set runs
-like this: launch every group in the set from the same snapshot (identical
-branch diff and completed-group summaries), using the parallel variant of
-the step-6 prompt (verify clauses only — no project-wide gates, they would
-race in the shared tree); when the whole set has returned, run the
-acceptance checks and the per-group pathspec commits serially, then run
-the project's quality gates once over the set — a failure there is handled
-like a failed acceptance check for the offending group.
+no file lists in `tasks.md` means the condition is unevaluable: serialize.
+Serialized is also the default otherwise: they share one working tree. A
+parallel set runs like this: launch every group in the set from the same
+snapshot (identical branch diff and completed-group summaries), using the
+parallel variant of the step-6 prompt (verify clauses only — no
+project-wide gates, they would race in the shared tree); when the whole
+set has returned, run the acceptance checks serially, then the project's
+quality gates once over the still-uncommitted set, and only after the
+gates pass make the per-group pathspec commits (the after-the-check
+commit rule holds — nothing red gets committed). A gate failure
+attributable to one group is that group's failed acceptance check (one
+retry); a failure spanning groups treats the whole set as the failed unit
+— one retry of the set, then pause and ask.
 
 After each group passes its acceptance check: commit the group by pathspec,
 add a one-paragraph summary to the ledger, advance.
@@ -337,10 +371,12 @@ add a one-paragraph summary to the ledger, advance.
 
 Subagent runs `verify-implementation` over the whole change; the prompt
 states the diff scope verbatim: the feature branch against its base branch.
-A `NEEDS ATTENTION` verdict → feed the findings to a fix subagent (Opus) →
-re-run the audit. Maximum 2 fix cycles for the whole run — update the
-ledger's "Fix cycles used" counter as each one starts (a crash must not
-reset the bound) — then pause and ask the user.
+A `NEEDS ATTENTION` verdict → feed the findings to a fix subagent (Opus),
+check its report, commit its changes by pathspec (the file list from that
+report), and only then re-run the audit — it reads committed state.
+Maximum 2 fix cycles for the whole run — update the ledger's "Fix cycles
+used" counter as each one starts (a crash must not reset the bound) —
+then pause and ask the user.
 
 ## Step 8 — Simplification pass
 

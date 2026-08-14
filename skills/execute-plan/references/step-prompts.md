@@ -98,8 +98,10 @@ fully first.
 The change must include: proposal.md, design.md, the spec deltas, and
 tasks.md. tasks.md must carry, for every task group: a model column
 (Opus/Sonnet/Haiku, quality-first — Opus is the default and any
-underestimation signal forces Opus), a parallel-group marking, verify
-clauses, and the standing implementer instructions block.
+underestimation signal forces Opus), a parallel-group marking, a file
+list (the files the group is expected to touch — concurrent execution is
+gated on these lists being disjoint), verify clauses, and the standing
+implementer instructions block.
 
 Report: the change ID, the full list of files created, and any OPEN
 QUESTIONS the brief left unanswered.

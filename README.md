@@ -79,7 +79,7 @@ Both paths start the same way:
 
 2. **Plan mode** (built into Claude Code) drafts the implementation plan from the locked decisions. Each phase gets a model recommendation — quality first: Opus is the default; a cheaper model only for clearly mechanical work.
 
-The plan exists. How the rest runs depends on the repo — this fork is already built into the catalog (`convert-plan-to-feature` itself says "not in OpenSpec repos"):
+The plan exists. How the rest runs depends on the repo — this fork is already built into the catalog (`convert-plan-to-feature` itself says "not in OpenSpec repos"). The rule: **is the repo OpenSpec-managed** (`openspec/config.yaml` at the root)? No → Path A, where `convert-plan-to-feature` produces the per-feature specs and you drive each step; yes → Path B, where the OpenSpec change's `tasks.md` plays that role and `execute-plan` drives the steps for you. Path A is not made obsolete by Path B: it is the only path in repos without OpenSpec, and every skill in it remains independently usable — Path B invokes the same gates internally.
 
 ### Path A — repos without a mandated spec workflow
 
@@ -927,7 +927,8 @@ npx skills add https://github.com/Mi9-LLC/agent-skills --skill verify-implementa
 ```
 /execute-plan "docs/up next/csv-import-plan.md"       # existing brief → straight to the pipeline
 /execute-plan "add CSV import to the orders page"     # free-text idea → design interview → approved brief → pipeline
-/execute-plan                                         # no argument → lists docs/up next/*-plan.md and asks
+/execute-plan                                         # no argument → lists docs/up next/*-plan.md candidates and asks
+/execute-plan "docs/up next/csv-import-plan.md"       # same brief again after a crash/interruption → resumes from the ledger
 ```
 
 No tool restriction and no model pin — the lead needs its full tool set, and you launch it on the model of your choice (subagent steps default to Opus; implementation groups run on the model their `tasks.md` row names).
