@@ -1,6 +1,17 @@
 ---
 name: repo-change-summary
-description: Summarize how much a git repository changed in a given month across ALL branches: lines added, lines deleted, total lines changed (added + deleted), distinct files modified, total file-touches, commits, pull requests merged, and authors — each commit counted once, merges excluded from the line/file/commit counts. Prints a Markdown summary table and writes a styled HTML report. Defaults to the current month and current repo; can target any local repo path, a specific month, or a named repo group (defined under ~/.claude/repo-change-summary-groups) for one combined rollup + per-repo report. Use whenever the user asks how many lines or files changed this month or in a named month (June, 2026-05), how many pull requests were merged, repo churn / change volume / diff volume, monthly commit/PR/author activity, a monthly change report or HTML change summary, a per-month change summary for a repo, or a summary report for a repo group ('summary report for STF') — even if they don't say 'skill'.
+description: >-
+  Summarize how much a git repository changed in a given month across ALL branches: lines
+  added, lines deleted, total lines changed (added + deleted), distinct files modified, total
+  file-touches, commits, pull requests merged, and authors — each commit counted once, merges
+  excluded from the line/file/commit counts. Prints a Markdown summary table and writes a styled
+  HTML report. Defaults to the current month and current repo; can target any local repo path, a
+  specific month, or a named repo group (defined under ~/.claude/repo-change-summary-groups) for
+  one combined rollup + per-repo report. Use whenever the user asks how many lines or files
+  changed this month or in a named month (June, 2026-05), how many pull requests were merged, repo
+  churn / change volume / diff volume, monthly commit/PR/author activity, a monthly change report
+  or HTML change summary, a per-month change summary for a repo, or a summary report for a repo
+  group ('summary report for STF') — even if they don't say 'skill'.
 allowed-tools: Bash
 model: claude-sonnet-5
 ---
