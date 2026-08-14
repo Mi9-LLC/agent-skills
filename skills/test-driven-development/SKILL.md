@@ -133,6 +133,13 @@ Confirm: it **fails** (not errors), and it fails because the feature is missing
 - Errors instead of failing? Fix the error (import, compile, path) and re-run
   until you get a clean assertion failure.
 
+**Brand-new class or module?** It doesn't exist yet, so the first run won't fail
+— it won't compile (C#) or won't resolve the import (TS). That's an error, not a
+red test. Write the minimal stub so the test can run: the class with the method
+throwing `NotImplementedException` in C#, an exported function with an empty body
+in TS. Then re-run and confirm a clean assertion failure. The stub is not the
+implementation — it holds no logic, and the GREEN step replaces its body.
+
 ### GREEN — minimal code
 
 Write the simplest thing that makes the test pass. No options you don't need, no
@@ -152,8 +159,29 @@ export async function retryOperation<T>(fn: () => Promise<T>): Promise<T> {
 }
 ```
 
-(The C# GREEN implementation for `Retry.OperationAsync` is intentionally left
-to the reader here, mirroring the TS example above.)
+The same thing in C#, replacing the `NotImplementedException` stub:
+
+```csharp
+public static class Retry
+{
+    public static async Task<T> OperationAsync<T>(Func<Task<T>> fn)
+    {
+        for (var i = 0; i < 3; i++)
+        {
+            try
+            {
+                return await fn();
+            }
+            catch
+            {
+                if (i == 2) throw;
+            }
+        }
+
+        throw new InvalidOperationException("unreachable");
+    }
+}
+```
 
 ### Verify GREEN — watch it pass (mandatory)
 
