@@ -72,6 +72,9 @@ Before attempting any fix:
    value was born. Fix it there. See `references/root-cause-tracing.md` for the
    full backward-tracing technique.
 
+**Phase 1 is done when** you can state the root cause in one sentence, with the
+evidence that supports it. If you can't, you're not finished — keep investigating.
+
 ### Phase 2 — Pattern and context analysis
 
 Understand the shape of the problem before fixing:
@@ -86,6 +89,9 @@ Understand the shape of the problem before fixing:
    what matters.
 4. **Map the dependencies.** What config, environment, services, or assumptions does
    the broken path rely on?
+
+**Phase 2 is done when** you can name the specific difference between the working
+path and the broken one that explains the failure.
 
 ### Phase 3 — Single hypothesis, tested minimally
 
@@ -102,6 +108,9 @@ Apply the scientific method. One variable at a time.
 4. **If you don't understand something, say so.** "I don't understand why X happens"
    is a valid, useful state. Research it or ask — don't fake certainty and fix
    blind.
+
+**Phase 3 is done when** you have written down one specific, testable hypothesis
+in the form "X is the root cause because Y".
 
 ### Phase 4 — Fix the cause, behind a test
 
@@ -136,6 +145,12 @@ Apply the scientific method. One variable at a time.
    just learned. **If 3 or more: stop fixing and question the architecture** (next
    point). Do not attempt fix #4 on the same theory.
 
+   **State the count out loud, every time a fix fails.** Write it in your visible
+   reply to the user — "that was fix attempt 2 for this bug" — before you do
+   anything else. The count has to live in the conversation, not in your head:
+   context gets summarized, and a counter you only tracked internally is the first
+   thing lost. Saying it also makes a 4th attempt visibly a violation.
+
 5. **After 3 failed fixes, question the architecture — don't try a 4th.** Three
    failures on the same problem is a signal, not bad luck. The tell-tale signs:
    each fix reveals a new instance of the problem somewhere else; each fix needs
@@ -145,39 +160,32 @@ Apply the scientific method. One variable at a time.
    inertia? Should we change the structure instead of patching symptoms? Raise it
    with the user before any further fix attempt.
 
+**Phase 4 is done when** the new test passes, the full suite passes, and the fix
+sits at the cause you named in Phase 1 — not one layer downstream of it.
+
 ## Red flags — stop and return to Phase 1
 
-If you catch yourself thinking any of these, you've left the process:
-
-- "Quick fix now, investigate later."
-- "Let me just try changing X and see."
-- "I'll change a few things and run the tests."
-- "Skip the test, I'll eyeball it."
-- "It's probably X, let me fix that." / "I see the problem" (seeing the symptom
-  isn't understanding the cause).
-- "I don't fully get it but this might work."
-- "The reference is long, I'll adapt the pattern from memory."
-- Listing fixes before you've traced the data flow.
-- "One more fix attempt" — when you've already tried two or more.
-- Each fix uncovering the same problem in a new place.
-
-Signals from the user that you're off-track: "Is that actually happening?" (you
-assumed without verifying), "Will that show us where it breaks?" (you should have
-instrumented), "Stop guessing," "We're still stuck?" When you hear these, return to
-Phase 1.
-
-## Common rationalizations
+Each of these is a thought you'll actually have, and the reason it's wrong. If you
+catch yourself in the left column, you've left the process.
 
 | Excuse | Reality |
 |--------|---------|
 | "It's simple, I don't need the process." | Simple bugs have root causes too. The process is fast for them. |
 | "Emergency — no time for process." | Systematic debugging is faster than guess-and-check thrashing. |
-| "Just try this one thing first, then investigate." | The first fix sets the pattern. Do it right from the start. |
-| "I'll write the test after I confirm the fix works." | Untested fixes don't stick. The failing-test-first proves you fixed the real bug. |
-| "Fixing several things at once saves time." | You can't tell which one worked, and you've likely added a new bug. |
-| "The reference is too long, I'll adapt it." | Partial understanding guarantees bugs. Read it completely. |
-| "I see the problem, let me fix it." | Seeing the symptom is not understanding the root cause. |
-| "One more fix attempt." (after 2+ failures) | 3+ failures means an architecture problem. Question the design, don't fix again. |
+| "Quick fix now, investigate later." / "Just try this one thing first, then investigate." | The first fix sets the pattern. Do it right from the start. |
+| "Let me just try changing X and see." | That's guessing, not debugging. You don't yet know what X does to the failure. |
+| "I'll change a few things and run the tests." / "Fixing several things at once saves time." | You can't tell which one worked, and you've likely added a new bug. |
+| "Skip the test, I'll eyeball it." / "I'll write the test after I confirm the fix works." | Untested fixes don't stick. The failing-test-first proves you fixed the real bug. |
+| "It's probably X, let me fix that." / "I see the problem, let me fix it." | Seeing the symptom is not understanding the root cause. |
+| "I don't fully get it but this might work." | Say you don't understand it and go find out. A blind fix adds a second bug on top of the first. |
+| "The reference is long, I'll adapt the pattern from memory." | Partial understanding guarantees bugs. Read it completely. |
+| Listing fixes before you've traced the data flow. | You're proposing solutions to a cause you haven't found yet. |
+| "One more fix attempt." (after 2+ failures) / each fix uncovering the same problem somewhere new | 3+ failures means an architecture problem. Question the design, don't fix again. |
+
+Signals from the user that you're off-track: "Is that actually happening?" (you
+assumed without verifying), "Will that show us where it breaks?" (you should have
+instrumented), "Stop guessing," "We're still stuck?" When you hear these, return to
+Phase 1.
 
 ## When investigation finds no root cause
 
