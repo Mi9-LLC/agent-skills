@@ -38,15 +38,23 @@ Determine which mode applies:
 Run the smart scaffold script to create a pre-filled handoff document:
 
 ```bash
-python scripts/create_handoff.py [task-slug]
+python "${CLAUDE_SKILL_DIR}/scripts/create_handoff.py" [task-slug]
 ```
 
-Example: `python scripts/create_handoff.py implementing-user-auth`
+Example: `python "${CLAUDE_SKILL_DIR}/scripts/create_handoff.py" implementing-user-auth`
 
 **For continuation handoffs** (linking to previous work):
 ```bash
-python scripts/create_handoff.py "auth-part-2" --continues-from 2024-01-15-auth.md
+python "${CLAUDE_SKILL_DIR}/scripts/create_handoff.py" "auth-part-2" --continues-from 2024-01-15-auth.md
 ```
+
+The scripts live in the installed skill directory, not in the user's project, so
+always invoke them through `${CLAUDE_SKILL_DIR}` — a bare `scripts/…` path
+resolves against the session's working directory and will not be found. Run them
+from the project directory: they read the project's git state and write into the
+project's `.claude/handoffs/`. On a Windows machine where `python` is not on
+PATH, use the launcher instead — `py -3 "${CLAUDE_SKILL_DIR}/scripts/…"` — for
+every command below.
 
 The script will:
 - Create `.claude/handoffs/` directory if needed
@@ -71,7 +79,7 @@ Use the template structure in [references/handoff-template.md](references/handof
 Run the validation script to check completeness and security:
 
 ```bash
-python scripts/validate_handoff.py <handoff-file>
+python "${CLAUDE_SKILL_DIR}/scripts/validate_handoff.py" <handoff-file>
 ```
 
 The validator checks:
@@ -100,7 +108,7 @@ Skip this step if the user already named the specific handoff file; go directly 
 List handoffs in the current project:
 
 ```bash
-python scripts/list_handoffs.py
+python "${CLAUDE_SKILL_DIR}/scripts/list_handoffs.py"
 ```
 
 This shows all handoffs with dates, titles, and completion status.
@@ -110,7 +118,7 @@ This shows all handoffs with dates, titles, and completion status.
 Before loading, check how current the handoff is:
 
 ```bash
-python scripts/check_staleness.py <handoff-file>
+python "${CLAUDE_SKILL_DIR}/scripts/check_staleness.py" <handoff-file>
 ```
 
 Staleness levels:
@@ -188,6 +196,9 @@ Example: `2024-01-15-143022-implementing-auth.md`
 ## Resources
 
 ### scripts/
+
+Invoke each as `python "${CLAUDE_SKILL_DIR}/scripts/<name>"` (or `py -3 …` where
+`python` is not on PATH). Python 3.9+, standard library only.
 
 | Script | Purpose |
 |--------|---------|

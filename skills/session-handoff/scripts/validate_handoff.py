@@ -10,8 +10,8 @@ Checks:
 - Quality scoring
 
 Usage:
-    python validate_handoff.py <handoff-file>
-    python validate_handoff.py .claude/handoffs/2024-01-15-143022-auth.md
+    python "${CLAUDE_SKILL_DIR}/scripts/validate_handoff.py" <handoff-file>
+    python "${CLAUDE_SKILL_DIR}/scripts/validate_handoff.py" .claude/handoffs/2024-01-15-143022-auth.md
 """
 
 from __future__ import annotations
@@ -19,6 +19,17 @@ from __future__ import annotations
 import re
 import sys
 from pathlib import Path
+
+# The word "Bearer" is ordinary prose in a handoff ("the API needs a Bearer
+# token", "send it as a Bearer header"), so matching `Bearer\s+\S+` flagged
+# every such sentence as a leaked credential. A secret finding forces a BLOCKED
+# verdict the user cannot override, so the value itself must look like a real
+# credential: at least 20 token characters, and not an obvious placeholder.
+_BEARER_PLACEHOLDER = (
+    r'x{3,}|\.{3,}|_{3,}|tokens?|credentials?|'
+    r'your[\w\-]*|my[\w\-]*|some[\w\-]*|the[\w\-]*|'
+    r'redacted|placeholder|example[\w\-]*|dummy|fake|sample|test[\w\-]*'
+)
 
 # Secret detection patterns
 SECRET_PATTERNS = [
@@ -31,7 +42,7 @@ SECRET_PATTERNS = [
     (r'mongodb(\+srv)?://[^/\s]+:[^@\s]+@', "MongoDB connection string with password"),
     (r'postgres://[^/\s]+:[^@\s]+@', "PostgreSQL connection string with password"),
     (r'mysql://[^/\s]+:[^@\s]+@', "MySQL connection string with password"),
-    (r'Bearer\s+[a-zA-Z0-9_\-\.]+', "Bearer token"),
+    (rf'Bearer\s+(?!(?:{_BEARER_PLACEHOLDER})\b)[a-zA-Z0-9_\-\.]{{20,}}', "Bearer token"),
     (r'ghp_[a-zA-Z0-9]{36}', "GitHub personal access token"),
     (r'sk-[a-zA-Z0-9]{48}', "OpenAI API key"),
     (r'xox[baprs]-[a-zA-Z0-9-]+', "Slack token"),
@@ -334,8 +345,9 @@ def print_report(result: dict):
 
 def main():
     if len(sys.argv) < 2:
-        print("Usage: python validate_handoff.py <handoff-file>")
-        print("Example: python validate_handoff.py .claude/handoffs/2024-01-15-auth.md")
+        me = Path(__file__).resolve()
+        print(f'Usage: python "{me}" <handoff-file>')
+        print(f'Example: python "{me}" .claude/handoffs/2024-01-15-auth.md')
         sys.exit(1)
 
     filepath = sys.argv[1]

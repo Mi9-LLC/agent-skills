@@ -8,8 +8,8 @@ Searches for handoff documents in .claude/handoffs/ and displays:
 - Status (if marked complete)
 
 Usage:
-    python list_handoffs.py           # List handoffs in current project
-    python list_handoffs.py /path     # List handoffs in specified path
+    python "${CLAUDE_SKILL_DIR}/scripts/list_handoffs.py"           # List handoffs in current project
+    python "${CLAUDE_SKILL_DIR}/scripts/list_handoffs.py" /path     # List handoffs in specified path
 """
 
 from __future__ import annotations
@@ -107,7 +107,8 @@ def main():
     if not handoffs:
         handoffs_path = Path(project_path) / ".claude" / "handoffs"
         print(f"No handoffs found in {handoffs_path}")
-        print("\nTo create a handoff, run: python create_handoff.py [task-slug]")
+        creator = Path(__file__).resolve().parent / "create_handoff.py"
+        print(f'\nTo create a handoff, run: python "{creator}" [task-slug]')
         return
 
     print(f"Found {len(handoffs)} handoff(s) in {project_path}/.claude/handoffs/\n")

@@ -98,29 +98,29 @@ Each handoff links to its predecessor, providing context breadcrumbs for new age
 
 **Basic handoff creation:**
 ```bash
-python scripts/create_handoff.py implementing-user-auth
+python "${CLAUDE_SKILL_DIR}/scripts/create_handoff.py" implementing-user-auth
 ```
 
 **Continuation handoff (linked to previous):**
 ```bash
-python scripts/create_handoff.py "auth-part-2" --continues-from 2024-01-15-auth.md
+python "${CLAUDE_SKILL_DIR}/scripts/create_handoff.py" "auth-part-2" --continues-from 2024-01-15-auth.md
 ```
 
 **Validate before finalizing:**
 ```bash
-python scripts/validate_handoff.py .claude/handoffs/2024-01-15-143022-implementing-auth.md
+python "${CLAUDE_SKILL_DIR}/scripts/validate_handoff.py" .claude/handoffs/2024-01-15-143022-implementing-auth.md
 ```
 
 ### Resuming from a Handoff
 
 **List available handoffs:**
 ```bash
-python scripts/list_handoffs.py
+python "${CLAUDE_SKILL_DIR}/scripts/list_handoffs.py"
 ```
 
 **Check if handoff is current:**
 ```bash
-python scripts/check_staleness.py .claude/handoffs/2024-01-15-143022-implementing-auth.md
+python "${CLAUDE_SKILL_DIR}/scripts/check_staleness.py" .claude/handoffs/2024-01-15-143022-implementing-auth.md
 ```
 
 **Load and continue work:**
@@ -157,10 +157,10 @@ Example: `2024-01-15-143022-implementing-auth.md`
 
 | Script | Purpose | Usage |
 |--------|---------|-------|
-| `create_handoff.py` | Generate new handoff with smart scaffolding | `python scripts/create_handoff.py [slug] [--continues-from <file>]` |
-| `list_handoffs.py` | List available handoffs in a project | `python scripts/list_handoffs.py [path]` |
-| `validate_handoff.py` | Check completeness, quality, and security | `python scripts/validate_handoff.py <file>` |
-| `check_staleness.py` | Assess if handoff context is still current | `python scripts/check_staleness.py <file>` |
+| `create_handoff.py` | Generate new handoff with smart scaffolding | `python "${CLAUDE_SKILL_DIR}/scripts/create_handoff.py" [slug] [--continues-from <file>]` |
+| `list_handoffs.py` | List available handoffs in a project | `python "${CLAUDE_SKILL_DIR}/scripts/list_handoffs.py" [path]` |
+| `validate_handoff.py` | Check completeness, quality, and security | `python "${CLAUDE_SKILL_DIR}/scripts/validate_handoff.py" <file>` |
+| `check_staleness.py` | Assess if handoff context is still current | `python "${CLAUDE_SKILL_DIR}/scripts/check_staleness.py" <file>` |
 
 ## Quality Standards
 
@@ -181,8 +181,10 @@ Example: `2024-01-15-143022-implementing-auth.md`
 
 - [handoff-template.md](references/handoff-template.md) - Complete template structure with guidance
 - [resume-checklist.md](references/resume-checklist.md) - Verification checklist for resuming agents
-- [evals/model-expectations.md](evals/model-expectations.md) - Model behavior expectations
-- [evals/test-scenarios.md](evals/test-scenarios.md) - Test cases for handoff creation and resumption
+
+The eval fixtures (model-behavior expectations, test scenarios, baseline results)
+are development material, not part of the installed skill. They live in the
+catalog repo at `evals/session-handoff/`.
 
 ## Benefits
 
