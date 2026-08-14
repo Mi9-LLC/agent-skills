@@ -20,7 +20,7 @@
  * beyond reading it (repo root, branch, working-tree cleanliness).
  */
 
-import { spawnSync } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { readFileSync, appendFileSync, mkdirSync, existsSync, readdirSync, statSync } from 'node:fs';
 import * as nodeUtil from 'node:util';
 import { resolve, join, delimiter, sep } from 'node:path';
@@ -70,10 +70,33 @@ const WIN32 = process.platform === 'win32';
 const PM_NAMES = ['npm', 'pnpm', 'yarn', 'bun'];
 const ANSI_CSI_RE = /\x1b\[[0-9;]*[A-Za-z]/g;
 const MAX_TAIL_LINES = 50;
+// A gate whose output PARSED cleanly, exited 0, and scored >= 7 has nothing to
+// forensically read: its tail is capped this short instead. Anything else --
+// exit-code-only fallback, a nonzero exit, or a score below 7 -- keeps the full
+// MAX_TAIL_LINES tail, because that is exactly when the raw output is evidence.
+const MAX_TAIL_LINES_HEALTHY = 5;
 const MAX_TAIL_LINE_CHARS = 400;
+const MAX_OUTPUT_BUFFER = 64 * 1024 * 1024;
+// --parallel only: how long to keep draining a child's pipes after it exits.
+// 'close' waits for the pipes to END, and `shell: true` means we spawn a shell
+// whose grandchildren survive our kill and hold those pipes open forever -- so
+// a timed-out gate would hang the whole run. 'exit' plus this grace gives a
+// normal drain time to finish while capping a hung one. (spawnSync has the same
+// orphan behaviour but never waits on the pipes, which is why sequential is
+// unaffected.)
+const EXIT_DRAIN_GRACE_MS = 500;
 const DOTNET_NEW_RE = /Failed:\s*(\d+),\s*Passed:\s*(\d+),\s*Skipped:\s*(\d+),\s*Total:\s*(\d+)/;
 const DOTNET_OLD_RE = /Total tests:\s*(\d+)\.\s*Passed:\s*(\d+)\.\s*Failed:\s*(\d+)\./;
 const DOTNET_DETECT_RE = /Failed:\s*\d+,\s*Passed:\s*\d+|Total tests:\s*\d+\.\s*Passed:\s*\d+\.\s*Failed:\s*\d+\./;
+// msbuild/roslyn diagnostics: "Foo.cs(12,5): error CS1002: ; expected [Proj.csproj]",
+// "error MSB4025: ...". The `N Error(s)` / `N Warning(s)` summary that the default
+// console logger prints is preferred when present -- msbuild repeats each
+// diagnostic in its end-of-build list, so the summary is the deduplicated truth.
+const MSBUILD_DIAG_RE = /:\s*(error|warning)\s+[A-Za-z]+\d+\s*:/i;
+const MSBUILD_ERROR_SUMMARY_RE = /^\s*(\d+)\s+Error\(s\)/mi;
+const MSBUILD_WARNING_SUMMARY_RE = /^\s*(\d+)\s+Warning\(s\)/mi;
+const MSBUILD_SUCCEEDED_RE = /^\s*Build succeeded/mi;
+const MSBUILD_DETECT_RE = /^\s*Build (?:succeeded|FAILED)|:\s*(?:error|warning)\s+[A-Za-z]+\d+\s*:|^\s*\d+\s+(?:Error|Warning)\(s\)/mi;
 
 /**
  * detectRe sniffs raw OUTPUT (used only when the command string gave no
@@ -84,6 +107,7 @@ const DOTNET_DETECT_RE = /Failed:\s*\d+,\s*Passed:\s*\d+|Total tests:\s*\d+\.\s*
  */
 const PARSERS = {
     tsc: { detectRe: /error TS\d+/, parse: parseTsc },
+    msbuild: { detectRe: MSBUILD_DETECT_RE, parse: parseMsbuild },
     eslint: { detectRe: /\d+\s+problems?\s+\(\d+\s+errors?,\s+\d+\s+warnings?\)/, parse: parseEslint },
     biome: { detectRe: /Checked \d+ files?|Found \d+ (?:errors?|warnings?)\./, parse: parseBiome },
     ruff: { detectRe: /All checks passed!|Found \d+ errors?/, parse: parseRuff },
@@ -99,7 +123,7 @@ const PARSERS = {
 
 /** Category -> candidate parsers, tried in this order once no command-string hint applies. */
 const CATEGORY_PARSERS = {
-    typecheck: ['tsc'],
+    typecheck: ['tsc', 'msbuild'],
     lint: ['eslint', 'biome', 'ruff'],
     test: ['vitest', 'jest', 'pytest', 'cargo', 'go', 'dotnet'],
     deadcode: ['knip'],
@@ -117,6 +141,10 @@ const COMMAND_HINTS = [
     { re: /\bpytest\b/, parser: 'pytest' },
     { re: /\bcargo\b/, parser: 'cargo' },
     { re: /\bgo\s+test\b/, parser: 'go' },
+    // Ahead of the bare-`dotnet` hint so `dotnet build` reads as a typecheck,
+    // not a test run (the `dotnet` parser is a test-category parser anyway, so
+    // the category filter in parseOutput would reject it -- this is belt and braces).
+    { re: /\bdotnet\s+build\b/, parser: 'msbuild' },
     { re: /\bdotnet\b/, parser: 'dotnet' },
     { re: /\bknip\b/, parser: 'knip' },
     { re: /\bshellcheck\b/, parser: 'shellcheck' },
@@ -140,7 +168,7 @@ class CliError extends Error {
 // CLI parsing
 // ---------------------------------------------------------------------------
 
-const USAGE = 'Usage: node check-health.mjs [--detect-only] [--config <path>] [--only <cat1,cat2>] [--save [dir]] [-h|--help]';
+const USAGE = 'Usage: node check-health.mjs [--detect-only] [--config <path>] [--only <cat1,cat2>] [--parallel] [--save [dir]] [-h|--help]';
 
 /**
  * parseArgs has no concept of an option with an optional value, and --save
@@ -171,6 +199,7 @@ function parseCliArgs(argv) {
                 'detect-only': { type: 'boolean', default: false },
                 config: { type: 'string' },
                 only: { type: 'string' },
+                parallel: { type: 'boolean', default: false },
                 help: { type: 'boolean', short: 'h', default: false },
             },
             strict: true,
@@ -208,10 +237,8 @@ async function main() {
         const packageJson = readPackageJson(repoRoot);
         const categoryDefs = buildCategoryList(filteredCategories);
 
-        const results = [];
-        for (const category of categoryDefs) {
-            results.push(processCategory(repoRoot, category, packageJson));
-        }
+        const parallel = opts.parallel === true;
+        const results = await runCategories(repoRoot, categoryDefs, packageJson, parallel);
 
         const ranCategories = results.filter((c) => c.status === 'ran');
         const sumRunWeights = sum(ranCategories, (c) => c.weight);
@@ -241,6 +268,9 @@ async function main() {
                     composite,
                     categories: Object.fromEntries(ranCategories.map((c) => [c.name, c.score])),
                     durationS: round1((Date.now() - startedAt) / 1000),
+                    // Marked so a later run's trend never reads this line's
+                    // durationS as a like-for-like sequential timing.
+                    ...(parallel ? { parallel: true } : {}),
                 };
                 mkdirSync(historyDir, { recursive: true });
                 appendFileSync(historyFile, `${JSON.stringify(entry)}\n`);
@@ -256,6 +286,10 @@ async function main() {
             configSource,
             configPath,
             only,
+            parallel,
+            parallelNote: parallel
+                ? 'Categories ran concurrently (--parallel): every durationS in this report is wall-clock under contention, so it is not comparable to a sequential run or to saved history. Scores, weights and guards are unaffected.'
+                : null,
             categories: results,
             composite,
             compositeLabel,
@@ -498,12 +532,21 @@ function detectPmRunPrefix(repoRoot, packageJson) {
     return null;
 }
 
+/**
+ * `dotnet build` is the .NET equivalent of a typecheck gate: the compiler is
+ * the type checker, so a build that reports CS/MSB diagnostics is exactly what
+ * `tsc --noEmit` reports for TypeScript. Checked last so a mixed repo with a
+ * JS toolchain still prefers its own typecheck script.
+ */
 function detectTypecheck(repoRoot, packageJson, pmPrefix) {
     if (packageJson?.scripts?.typecheck !== undefined) {
         return { command: `${pmPrefix ?? 'npm run'} typecheck` };
     }
     if (existsSync(join(repoRoot, 'tsconfig.json'))) {
         return { command: 'npx tsc --noEmit' };
+    }
+    if (hasDotnetProject(repoRoot)) {
+        return { command: 'dotnet build --nologo' };
     }
     return null;
 }
@@ -768,10 +811,15 @@ function stripAnsi(s) {
     return s.replace(ANSI_CSI_RE, '');
 }
 
-function computeOutputTail(strippedOutput) {
+/**
+ * The line budget is decided by the CALLER, after the score is known -- a
+ * healthy, cleanly-parsed gate gets a short tail, everything else gets the
+ * full one. See MAX_TAIL_LINES_HEALTHY.
+ */
+function computeOutputTail(strippedOutput, maxLines = MAX_TAIL_LINES) {
     return strippedOutput
         .split('\n')
-        .slice(-MAX_TAIL_LINES)
+        .slice(-maxLines)
         .map((line) => (line.length > MAX_TAIL_LINE_CHARS ? line.slice(0, MAX_TAIL_LINE_CHARS) : line));
 }
 
@@ -791,32 +839,45 @@ function childEnv(nodeModulesBin) {
 }
 
 /**
- * Sequential by design: tools share caches/lockfiles (e.g. two test runners
- * writing the same coverage dir), so categories are never run in parallel.
+ * The one place spawn options are defined, so the sequential (spawnSync) and
+ * --parallel (spawn) paths can never drift on cwd, env, shell, or timeout.
+ * `shell: true` is kept ONLY because Windows .cmd shims (npm/npx/pnpm/yarn)
+ * cannot be spawned directly since Node's EINVAL hardening; safe given the
+ * availability probe plus the command-shape validation in validateConfig (no
+ * shell operators, no $(...)).
  */
-function runCategory(repoRoot, category) {
-    const startedAt = Date.now();
-    const nodeModulesBin = join(repoRoot, 'node_modules', '.bin');
-
-    const res = spawnSync(category.command, {
-        // Kept ONLY because Windows .cmd shims (npm/npx/pnpm/yarn) cannot be
-        // spawned directly since Node's EINVAL hardening; safe given the
-        // availability probe plus the command-shape validation in
-        // validateConfig (no shell operators, no $(...)).
+function categorySpawnOptions(repoRoot, category) {
+    return {
         shell: true,
         cwd: repoRoot,
         timeout: category.timeoutSeconds * 1000,
-        encoding: 'utf8',
-        maxBuffer: 64 * 1024 * 1024,
         stdio: ['ignore', 'pipe', 'pipe'],
         windowsHide: true,
-        env: childEnv(nodeModulesBin),
+        env: childEnv(join(repoRoot, 'node_modules', '.bin')),
+    };
+}
+
+/** Concatenated in JS, never via a `2>&1` on the command string -- cmd.exe does not share sh's redirection syntax. */
+function joinStreams(stdout, stderr) {
+    return (stdout ?? '') + (stderr ? `\n${stderr}` : '');
+}
+
+/**
+ * Sequential is the default and stays on spawnSync: tools share
+ * caches/lockfiles (e.g. two test runners writing the same coverage dir), so
+ * concurrency is opt-in via --parallel, never automatic.
+ */
+function runCategory(repoRoot, category) {
+    const startedAt = Date.now();
+
+    const res = spawnSync(category.command, {
+        ...categorySpawnOptions(repoRoot, category),
+        encoding: 'utf8',
+        maxBuffer: MAX_OUTPUT_BUFFER,
     });
 
     const durationS = round1((Date.now() - startedAt) / 1000);
-    // Concatenated in JS, never via a `2>&1` on the command string -- cmd.exe
-    // does not share sh's redirection syntax.
-    const output = (res.stdout ?? '') + (res.stderr ? `\n${res.stderr}` : '');
+    const output = joinStreams(res.stdout, res.stderr);
 
     // ENOBUFS must be classified BEFORE the signal check: spawnSync kills a
     // child that overflows maxBuffer with SIGTERM too, so signal-first would
@@ -828,6 +889,94 @@ function runCategory(repoRoot, category) {
         return { durationS, timedOut: true, outputTruncated: false, exitCode: null, output };
     }
     return { durationS, timedOut: false, outputTruncated: false, exitCode: res.status, output };
+}
+
+/**
+ * The --parallel counterpart of runCategory: same options, same
+ * {durationS, timedOut, outputTruncated, exitCode, output} shape, same
+ * classification ORDER (buffer overflow before signal), so downstream scoring
+ * cannot tell the two apart. async spawn has no maxBuffer of its own, so the
+ * 64MB cap and the timeout kill are enforced here by hand to reproduce
+ * spawnSync's ENOBUFS / ETIMEDOUT outcomes exactly.
+ */
+function runCategoryAsync(repoRoot, category) {
+    return new Promise((settle) => {
+        const startedAt = Date.now();
+        const { timeout, ...spawnOpts } = categorySpawnOptions(repoRoot, category);
+        const child = spawn(category.command, spawnOpts);
+
+        let stdout = '';
+        let stderr = '';
+        let bytes = 0;
+        let outputTruncated = false;
+        let timedOut = false;
+        let done = false;
+        let graceTimer = null;
+
+        const timer = setTimeout(() => {
+            timedOut = true;
+            child.kill('SIGTERM');
+        }, timeout);
+
+        const capture = (stream, append) => {
+            stream.setEncoding('utf8');
+            stream.on('data', (chunk) => {
+                if (outputTruncated) {
+                    return;
+                }
+                bytes += Buffer.byteLength(chunk, 'utf8');
+                if (bytes > MAX_OUTPUT_BUFFER) {
+                    outputTruncated = true;
+                    child.kill('SIGTERM');
+                    return;
+                }
+                append(chunk);
+            });
+            stream.on('error', () => {});
+        };
+        capture(child.stdout, (c) => { stdout += c; });
+        capture(child.stderr, (c) => { stderr += c; });
+
+        const finish = (exitCode) => {
+            if (done) {
+                return;
+            }
+            done = true;
+            clearTimeout(timer);
+            clearTimeout(graceTimer);
+            // Release the pipes an orphaned grandchild may still be holding, so
+            // this process can exit once the report is printed.
+            child.stdout?.destroy();
+            child.stderr?.destroy();
+            child.unref();
+            const durationS = round1((Date.now() - startedAt) / 1000);
+            const output = joinStreams(stdout, stderr);
+            if (outputTruncated) {
+                settle({ durationS, timedOut: false, outputTruncated: true, exitCode: null, output });
+                return;
+            }
+            if (timedOut) {
+                settle({ durationS, timedOut: true, outputTruncated: false, exitCode: null, output });
+                return;
+            }
+            settle({ durationS, timedOut: false, outputTruncated: false, exitCode, output });
+        };
+
+        const finishFromExit = (code, signal) => {
+            if (signal !== null && signal !== undefined && !outputTruncated) {
+                timedOut = true; // killed by our timer, or externally -- same reading as spawnSync's res.signal check
+            }
+            finish(signal !== null && signal !== undefined ? null : code);
+        };
+
+        // A spawn-level failure (ENOENT and friends) lands on exitCode null,
+        // which is what spawnSync's res.status reports for the same case.
+        child.on('error', () => finish(null));
+        child.on('exit', (code, signal) => {
+            graceTimer = setTimeout(() => finishFromExit(code, signal), EXIT_DRAIN_GRACE_MS);
+        });
+        child.on('close', (code, signal) => finishFromExit(code, signal));
+    });
 }
 
 // ---------------------------------------------------------------------------
@@ -844,6 +993,46 @@ function sumMatches(matches) {
 
 function parseTsc(output) {
     return { errors: (output.match(/error TS\d+/g) ?? []).length };
+}
+
+/**
+ * `dotnet build` / msbuild. The end-of-build "N Error(s) / N Warning(s)"
+ * summary wins when the console logger printed it (it is already deduplicated);
+ * otherwise distinct CS/MSB diagnostic LINES are counted, deduplicated by line
+ * text because msbuild reprints each one in its end-of-build list. A build that
+ * only says "Build succeeded" (the .NET 8+ terminal logger prints no summary
+ * counts) is a real, parsed zero -- not an unrecognized output.
+ */
+function parseMsbuild(output) {
+    const errorSummary = MSBUILD_ERROR_SUMMARY_RE.exec(output);
+    const warningSummary = MSBUILD_WARNING_SUMMARY_RE.exec(output);
+    if (errorSummary && warningSummary) {
+        return { errors: parseInt(errorSummary[1], 10), warnings: parseInt(warningSummary[1], 10) };
+    }
+
+    const seen = new Set();
+    let errors = 0;
+    let warnings = 0;
+    for (const line of output.split('\n')) {
+        const m = MSBUILD_DIAG_RE.exec(line);
+        if (!m) {
+            continue;
+        }
+        const key = line.trim();
+        if (seen.has(key)) {
+            continue;
+        }
+        seen.add(key);
+        if (m[1].toLowerCase() === 'error') {
+            errors += 1;
+        } else {
+            warnings += 1;
+        }
+    }
+    if (errors === 0 && warnings === 0 && !MSBUILD_SUCCEEDED_RE.test(output)) {
+        return null;
+    }
+    return { errors, warnings };
 }
 
 function parseEslint(output) {
@@ -960,6 +1149,7 @@ function countsToFindings(name, counts) {
             return counts.errors;
         case 'eslint':
             return counts.problems;
+        case 'msbuild': // compiler warnings are real typecheck findings, same reading as biome's
         case 'biome':
             return counts.errors + counts.warnings;
         case 'ruff':
@@ -1118,15 +1308,14 @@ function skippedCategoryResult(category, skippedReason) {
     };
 }
 
-function processCategory(repoRoot, category, packageJson) {
-    const skippedReason = resolveCommandAvailability(repoRoot, category.command, packageJson).reason;
-    if (skippedReason) {
-        return skippedCategoryResult(category, skippedReason);
-    }
-
-    const runResult = runCategory(repoRoot, category);
+/**
+ * Turns one finished run into its scored result. BOTH schedulers (sequential
+ * and --parallel) funnel through here, so scores, parse fallbacks, tails and
+ * every guard-feeding field are produced by exactly one code path -- only how
+ * the run was scheduled differs.
+ */
+function buildCategoryResult(category, runResult) {
     const stripped = stripAnsi(runResult.output);
-    const outputTail = computeOutputTail(stripped);
 
     let score;
     let parseResult = { parsed: false, parser: null, counts: {}, findings: null };
@@ -1158,6 +1347,13 @@ function processCategory(repoRoot, category, packageJson) {
         }
     }
 
+    // Trimmed only now, once the score exists: a cleanly-parsed gate that
+    // exited 0 and scored >= 7 has no forensic value in its output, while an
+    // exit-code-only fallback, a nonzero exit, or a sub-7 score is precisely
+    // when the dashboard must quote real lines.
+    const healthy = parseResult.parsed && runResult.exitCode === 0 && score >= 7;
+    const outputTail = computeOutputTail(stripped, healthy ? MAX_TAIL_LINES_HEALTHY : MAX_TAIL_LINES);
+
     return {
         name: category.name,
         command: category.command,
@@ -1177,6 +1373,43 @@ function processCategory(repoRoot, category, packageJson) {
         outputTail,
         outputTruncated: runResult.outputTruncated,
     };
+}
+
+/**
+ * Runs every category and returns their results in categoryDefs order --
+ * ALWAYS that order, never completion order, so the JSON is byte-identical
+ * between the two modes apart from timings. Availability is probed for all
+ * categories up front in both modes, so "skipped" is decided from the same
+ * state either way.
+ *
+ * Sequential is the default: quality gates share caches, lockfiles and output
+ * directories, and running them concurrently can make two of them collide. The
+ * --parallel path only changes SCHEDULING -- every result still comes from
+ * buildCategoryResult, and per-gate durations become wall-clock under
+ * contention (reported as such via the top-level `parallel` / `parallelNote`).
+ */
+async function runCategories(repoRoot, categoryDefs, packageJson, parallel) {
+    const planned = categoryDefs.map((category) => ({
+        category,
+        skippedReason: resolveCommandAvailability(repoRoot, category.command, packageJson).reason,
+    }));
+
+    if (parallel) {
+        const runResults = await Promise.all(
+            planned.map((p) => (p.skippedReason ? Promise.resolve(null) : runCategoryAsync(repoRoot, p.category))),
+        );
+        return planned.map((p, i) => (
+            p.skippedReason
+                ? skippedCategoryResult(p.category, p.skippedReason)
+                : buildCategoryResult(p.category, runResults[i])
+        ));
+    }
+
+    return planned.map((p) => (
+        p.skippedReason
+            ? skippedCategoryResult(p.category, p.skippedReason)
+            : buildCategoryResult(p.category, runCategory(repoRoot, p.category))
+    ));
 }
 
 // ---------------------------------------------------------------------------
@@ -1261,6 +1494,13 @@ Options:
   --only <list>     Comma-separated subset of category names to run (typecheck,
                     lint, test, deadcode, shell). Categories left out are
                     omitted from the report entirely, not marked skipped.
+  --parallel        Run the categories concurrently instead of one after
+                    another. Opt-in: gates can share caches and output
+                    directories, so sequential stays the default. Scores,
+                    weights, skips and guards are identical either way, but
+                    per-gate durations become wall-clock under contention and
+                    must not be compared with sequential runs or history --
+                    the JSON says so via "parallel" and "parallelNote".
   --save [dir]      Append one JSONL line to <dir>/history.jsonl (default:
                     <repoRoot>/docs/health/) after the run. History is read for
                     the trend on every run regardless of --save.
@@ -1278,5 +1518,8 @@ Examples:
 
   # Run everything and record a snapshot for trend tracking
   node check-health.mjs --save
+
+  # Run the gates concurrently (durations are then wall-clock under contention)
+  node check-health.mjs --parallel
 `);
 }

@@ -66,6 +66,7 @@ node ${CLAUDE_SKILL_DIR}/scripts/check-health.mjs
 | Health check (config exists) | *(no flags)* |
 | First run — see what would be checked | `--detect-only` (prints proposed config, runs nothing) |
 | Only some gates ("skip the tests") | `--only typecheck,lint` |
+| Long run, timings not needed | `--parallel` (runs the gates concurrently; opt-in — see below) |
 | Keep a record / track the trend | `--save` (appends to `docs/health/history.jsonl`) |
 | History somewhere specific | `--save <dir>` (repeat the same `<dir>` on every future run, or the trend reverts to reading the default `docs/health/`) |
 
@@ -73,6 +74,16 @@ Run with `-h` for every option. Per-category timeout is `timeoutSeconds`
 in the config (default 300 s). Trends need no flag: when
 `docs/health/history.jsonl` exists the script always reads it and emits
 the `history` block.
+
+**`--parallel` is opt-in and never the default.** Gates share caches,
+lockfiles and output directories, so running them at the same time can make
+two of them collide; pass it only when the user asks for a faster run, or when
+the sequential run is too slow to be usable. Scores, weights, skips and every guard are
+identical in both modes — the only difference is timing: under `--parallel`
+each `durationS` is **wall-clock under contention**. When the JSON's
+`parallel` is `true`, say so in the dashboard (the script gives you the exact
+wording in `parallelNote`) and **never compare those durations to a
+sequential run or to saved history.**
 
 ## First run — detect, confirm, persist
 
@@ -106,7 +117,9 @@ Once config exists, runs go straight through — no confirmation ceremony.
   (normalized over the gates that ran), `status` (`ran`/`skipped` +
   `skippedReason`), `exitCode`, `timedOut`, `durationS`, `parsed`/`parser`,
   `findings` (the canonical count the rubric scored), `counts` (per-tool
-  detail), `score` 0–10, `label`, `outputTail` (last lines of real output),
+  detail), `score` 0–10, `label`, `outputTail` (last lines of real output —
+  up to 50, but a gate that parsed cleanly, exited 0 and scored 7 or higher
+  is capped at 5, since a healthy gate needs no forensic tail),
   `outputTruncated` (true when the gate's output overflowed the 64MB
   buffer).
 - `composite`/`compositeLabel` — weighted average over run categories,
@@ -117,6 +130,11 @@ Once config exists, runs go straight through — no confirmation ceremony.
   *prose* is yours.
 - `history` — previous run, `delta`, `direction`, per-category
   `regressions`, `last10`. `saved` — what `--save` appended, if anything.
+  A history line written by a `--parallel` run carries `parallel: true`; its
+  `durationS` is not a sequential timing.
+- `parallel` / `parallelNote` — `true` plus a ready-made caveat sentence when
+  the run used `--parallel`; carry that caveat into the dashboard and treat
+  every duration in the report as wall-clock under contention.
 - `guards` — honesty booleans (next section).
 
 ## Honesty guards — report them, verbatim
@@ -152,7 +170,8 @@ Carry any true guard into the dashboard as a plain-words caveat:
 6. **Trend** *(when `history` is present)* — delta vs previous run,
    direction, a compact `last10` line, and any `regressions` called out
    by name.
-7. **Caveats** — every true guard, one line each.
+7. **Caveats** — every true guard, one line each, plus `parallelNote` when
+   `parallel` is `true`.
 
 Keep it tight: tables and code blocks for data, a sentence or two of prose
 per section for meaning. No motivational filler.
