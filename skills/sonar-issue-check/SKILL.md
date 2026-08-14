@@ -89,12 +89,14 @@ Pick the variant that matches what the user asked for:
 | Full unresolved backlog on the branch/PR | `--all` |
 | Only bugs & vulnerabilities | `--types BUG,VULNERABILITY` |
 | Only high-severity issues | `--severities BLOCKER,CRITICAL`<br>(legacy severity names — Sonar deprecated `severities` and `types` in Aug 2023 for MQR impact severities/qualities, but the API still honors both flags; the script also reports each issue's MQR `impacts`) |
+| Quality-gate status (OK / ERROR / NONE) + failed conditions | `--quality-gate` |
 | Include resolved/closed issues too | `--include-resolved` |
 | Target a different project than auto-detected | `--project <key>` |
 | Target a different organization than auto-detected | `--org <org>` |
 | Read the token from a custom `.env` file | `--env-file <path>` |
 | Self-hosted SonarQube | `--host https://sonar.mycompany.com` |
 | Save full results to a file | `--out sonar-issues.json` |
+| Print more (or fewer) than the default 150 issues | `--max-print 400` |
 | Use as a hard gate (non-zero exit on findings) | `--fail-on-issues` |
 
 Run with `-h` to see every option.
@@ -105,6 +107,14 @@ Run with `-h` to see every option.
   counts by severity and type, and one line per issue as `file:line` + message +
   rule. The JSON dump (`--out`) also carries each issue's MQR `impacts` array
   (software quality + severity) when the server provides it.
+- The per-issue listing is **capped at 150 lines** (worst severities first) so a
+  large backlog cannot flood the terminal; anything beyond that prints as
+  `… and N more`. The cap is terminal-only — `--out` always writes every
+  fetched issue. Raise or lower it with `--max-print <n>`.
+- With `--quality-gate`, the script first prints the gate verdict — `OK`,
+  `ERROR`, or `NONE` (no gate computed yet) — and one line per failed condition
+  with its metric, the measured value, and the threshold that failed it. Lead
+  your verdict with the gate status when the user asked about it.
 - If the user asks to see the full JSON after a run with `--out`, Read that
   file directly rather than re-running the script.
 - After running, give the user a short verdict, not a raw dump: lead with

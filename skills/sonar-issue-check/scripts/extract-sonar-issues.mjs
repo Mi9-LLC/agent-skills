@@ -34,6 +34,10 @@ const PAGE_SIZE = 500;
 const MAX_TOTAL = 10000;
 // Abort a hung request rather than letting the skill hang forever.
 const FETCH_TIMEOUT_MS = 30000;
+// Cap the per-issue terminal listing so a large backlog (especially --all)
+// cannot flood the terminal. Only printing is capped — --out always writes
+// every fetched issue. Override with --max-print.
+const MAX_PRINT_DEFAULT = 150;
 // .env files searched (in order) when SONAR_TOKEN is not in the environment.
 const ENV_FILE_CANDIDATES = ['.env', 'env/.env'];
 
@@ -57,6 +61,8 @@ const { values: opts } = parseArgs({
         host: { type: 'string' },
         'env-file': { type: 'string' },
         'fail-on-issues': { type: 'boolean', default: false },
+        'quality-gate': { type: 'boolean', default: false },
+        'max-print': { type: 'string' },
         help: { type: 'boolean', short: 'h', default: false },
     },
 });
@@ -97,6 +103,11 @@ async function main() {
         const { org: organization, derived: orgDerived } = resolveOrg(props, host, projectKey);
         const token = resolveToken();
         const target = resolveTarget();
+        const maxPrint = resolveMaxPrint();
+        // Token-as-username Basic auth works on both SonarCloud and SonarQube
+        // (incl. older Server versions that predate Bearer-header support).
+        // Built once and shared by every Web API call below.
+        const auth = `Basic ${Buffer.from(`${token}:`).toString('base64')}`;
 
         printHeader({
             host,
@@ -108,9 +119,15 @@ async function main() {
             includeResolved: opts['include-resolved'],
         });
 
+        let qualityGate;
+        if (opts['quality-gate']) {
+            qualityGate = await fetchQualityGate({ host, auth, projectKey, organization, target });
+            reportQualityGate(qualityGate);
+        }
+
         const summary = await fetchIssues({
             host,
-            token,
+            auth,
             projectKey,
             organization,
             target,
@@ -120,7 +137,11 @@ async function main() {
             severities: opts.severities,
         });
 
-        report(summary);
+        if (qualityGate) {
+            summary.qualityGate = qualityGate;
+        }
+
+        report(summary, maxPrint);
 
         if (!isEmpty(opts.out)) {
             writeFileSync(opts.out, JSON.stringify(summary, null, 2));
@@ -352,6 +373,24 @@ function resolveTarget() {
     return { kind: 'branch', value: branch };
 }
 
+/**
+ * How many issues the terminal listing may print. Guards against a typo
+ * silently disabling the cap (Number('abc') would be NaN, which slices to an
+ * empty list). 0 is allowed and means "counts only, no per-issue lines".
+ */
+function resolveMaxPrint() {
+    if (isEmpty(opts['max-print'])) {
+        return MAX_PRINT_DEFAULT;
+    }
+
+    const n = Number(opts['max-print']);
+    if (!Number.isInteger(n) || n < 0) {
+        fail(`--max-print must be a non-negative whole number (got "${opts['max-print']}").`);
+    }
+
+    return n;
+}
+
 function currentBranch() {
     try {
         return execSync('git rev-parse --abbrev-ref HEAD', { encoding: 'utf8' }).trim();
@@ -368,9 +407,6 @@ function currentBranch() {
  * Page through /api/issues/search and collect every matching issue.
  */
 async function fetchIssues(cfg) {
-    // Token-as-username Basic auth works on both SonarCloud and SonarQube
-    // (incl. older Server versions that predate Bearer-header support).
-    const auth = `Basic ${Buffer.from(`${cfg.token}:`).toString('base64')}`;
     const issues = [];
     let page = 1;
     let total = 0;
@@ -407,19 +443,8 @@ async function fetchIssues(cfg) {
         }
 
         const url = `${cfg.host}/api/issues/search?${params.toString()}`;
-        const res = await fetchWithTimeout(url, auth, cfg.host);
-
-        if (!res.ok) {
-            const body = await res.text();
-            if (res.status === 401 || res.status === 403) {
-                fail(
-                    `${cfg.host} rejected the request (HTTP ${res.status}). The SONAR_TOKEN is ` +
-                        'missing, invalid, expired, or lacks access to this project.\n' +
-                        'Generate a new User Token in your Sonar account → Security, then update your env.',
-                );
-            }
-            fail(`Sonar API returned HTTP ${res.status}.\n${body}`);
-        }
+        const res = await fetchWithTimeout(url, cfg.auth, cfg.host);
+        await ensureOk(res, cfg.host);
 
         const data = await res.json();
         total = data.total ?? 0;
@@ -460,6 +485,69 @@ async function fetchWithTimeout(url, auth, host) {
     } finally {
         clearTimeout(timer);
     }
+}
+
+/**
+ * Shared non-2xx handling for every Web API call: a bad/expired token is called
+ * out explicitly, anything else surfaces the status plus the server's own body.
+ */
+async function ensureOk(res, host) {
+    if (res.ok) {
+        return;
+    }
+
+    const body = await res.text();
+    if (res.status === 401 || res.status === 403) {
+        fail(
+            `${host} rejected the request (HTTP ${res.status}). The SONAR_TOKEN is ` +
+                'missing, invalid, expired, or lacks access to this project.\n' +
+                'Generate a new User Token in your Sonar account → Security, then update your env.',
+        );
+    }
+    fail(`Sonar API returned HTTP ${res.status}.\n${body}`);
+}
+
+/**
+ * Read the quality-gate status from /api/qualitygates/project_status.
+ *
+ * Parameter note: this endpoint takes `projectKey` — NOT the `componentKeys`
+ * that /api/issues/search uses — so the key is set under its own name here.
+ * `branch` / `pullRequest` are spelled exactly as on the issues endpoint, so
+ * the same resolved target object drives both calls.
+ *
+ * Response shape: { projectStatus: { status: OK|WARN|ERROR|NONE, conditions: [
+ * { status, metricKey, comparator, errorThreshold, actualValue } ],
+ * ignoredConditions } }. A project or branch with no analysis answers 404,
+ * which we report as "unavailable" rather than aborting the run.
+ */
+async function fetchQualityGate(cfg) {
+    const params = new URLSearchParams({ projectKey: cfg.projectKey });
+
+    if (!isEmpty(cfg.organization)) {
+        params.set('organization', cfg.organization);
+    }
+    params.set(cfg.target.kind, cfg.target.value);
+
+    const url = `${cfg.host}/api/qualitygates/project_status?${params.toString()}`;
+    const res = await fetchWithTimeout(url, cfg.auth, cfg.host);
+
+    if (res.status === 404) {
+        return {
+            status: 'NONE',
+            conditions: [],
+            unavailable: 'no analysis found for this project/branch on the server',
+        };
+    }
+    await ensureOk(res, cfg.host);
+
+    const data = await res.json();
+    const gate = data.projectStatus ?? {};
+
+    return {
+        status: gate.status ?? 'NONE',
+        conditions: gate.conditions ?? [],
+        ignoredConditions: gate.ignoredConditions ?? false,
+    };
 }
 
 /**
@@ -517,7 +605,45 @@ function printHeader(ctx) {
     console.log('');
 }
 
-function report(s) {
+/**
+ * Print the gate verdict plus every condition that is not passing. Sonar's
+ * `comparator` describes the *failing* comparison (LT 85 = fails below 85), so
+ * it is printed as "fails when value LT 85" alongside the measured value.
+ */
+function reportQualityGate(gate) {
+    if (!isEmpty(gate.unavailable)) {
+        console.log(`⚠ Quality gate: unavailable — ${gate.unavailable}`);
+        console.log('');
+
+        return;
+    }
+
+    const mark = gate.status === 'OK' ? '✓' : gate.status === 'ERROR' ? '✗' : '•';
+    console.log(`${mark} Quality gate: ${gate.status}`);
+
+    if (gate.status === 'NONE') {
+        console.log('  No gate has been computed for this target (no analysis yet, or no gate assigned).');
+    }
+
+    const failed = gate.conditions.filter((c) => c.status !== 'OK');
+    if (failed.length > 0) {
+        console.log(`  Failed condition(s): ${failed.length}`);
+        for (const c of failed) {
+            const actual = isEmpty(c.actualValue) ? '?' : c.actualValue;
+            const threshold = isEmpty(c.errorThreshold) ? '?' : c.errorThreshold;
+            console.log(`    - ${c.metricKey}: actual ${actual} (fails when value ${c.comparator} ${threshold}) [${c.status}]`);
+        }
+    } else if (gate.status === 'OK') {
+        console.log(`  All ${gate.conditions.length} condition(s) passed.`);
+    }
+
+    if (gate.ignoredConditions) {
+        console.log('  Note: some new-code conditions were ignored for this analysis.');
+    }
+    console.log('');
+}
+
+function report(s, maxPrint = MAX_PRINT_DEFAULT) {
     if (s.issues.length === 0) {
         console.log(s.scope === 'new-code' ? '✓ No new issues. Clean to commit.' : '✓ No issues found.');
 
@@ -537,12 +663,20 @@ function report(s) {
     console.log('');
 
     const sorted = [...s.issues].sort((a, b) => severityRank(a.severity) - severityRank(b.severity));
+    // Cap only what reaches the terminal — s.issues (and therefore --out) keeps
+    // every fetched issue. The cap is applied after sorting, so the worst
+    // severities are always the ones shown.
+    const shown = sorted.slice(0, maxPrint);
 
-    for (const i of sorted) {
+    for (const i of shown) {
         const where = isEmpty(i.file) ? '(project-level)' : `${i.file}:${i.line ?? '?'}`;
         const kind = isEmpty(i.type) ? i.severity : `${i.severity}/${i.type}`;
         console.log(`  [${kind}] ${where}`);
         console.log(`     ${i.message}  (${i.rule})`);
+    }
+
+    if (shown.length < sorted.length) {
+        console.log(`… and ${sorted.length - shown.length} more — rerun with --out <file> for the full list`);
     }
 }
 
@@ -619,6 +753,10 @@ Options:
       --include-resolved  Include resolved/closed issues
       --types <list>      Comma list: BUG,VULNERABILITY,CODE_SMELL
       --severities <list> Comma list: BLOCKER,CRITICAL,MAJOR,MINOR,INFO
+      --quality-gate      Also report the quality-gate status (OK/ERROR/NONE)
+                          and every failed condition for the branch/PR
+      --max-print <n>     Max issues printed to the terminal (default:
+                          ${MAX_PRINT_DEFAULT}); --out always writes them all
       --out <file>        Also write the full result as JSON to <file>
       --host <url>        Sonar host (default: sonar.host.url / SONAR_HOST_URL,
                           else ${DEFAULT_HOST}); set this for self-hosted SonarQube
@@ -632,6 +770,9 @@ Examples:
 
   # Every unresolved issue on the branch/PR, dumped to a file
   node .../extract-sonar-issues.mjs --all --out sonar-all.json
+
+  # Is the quality gate green on this branch, and why not?
+  node .../extract-sonar-issues.mjs --quality-gate
 
   # New issues on a specific pull request, only bugs & vulnerabilities
   node .../extract-sonar-issues.mjs --pull-request 482 --types BUG,VULNERABILITY
