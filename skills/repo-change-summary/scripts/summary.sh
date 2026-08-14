@@ -8,6 +8,19 @@
 
 set -euo pipefail
 
+script_dir="$(cd "$(dirname "$0")" && pwd)"
+
+# The default exclude list and the awk matcher live in one shared file so this script
+# and multi-summary.sh can never disagree about what is excluded. Missing file =>
+# stop; silently counting excluded noise would corrupt every number below.
+exclude_lib="$script_dir/exclude-lib.sh"
+if [ ! -f "$exclude_lib" ]; then
+    echo "missing shared exclude library: $exclude_lib" >&2
+    echo "reinstall the skill — summary.sh cannot apply its exclusions without it" >&2
+    exit 2
+fi
+. "$exclude_lib"
+
 month=""
 repo="."
 out_dir="."
@@ -20,11 +33,8 @@ email_dry_run=0
 env_file=""
 mailmap=""
 
-# Matched by exact basename, not a glob — a nested frontend/package-lock.json still
-# matches. Kept in sync by hand with multi-summary.sh's copy of this same list (no
-# shared library between the two scripts today).
-default_excludes=(package-lock.json yarn.lock pnpm-lock.yaml composer.lock Gemfile.lock \
-    Cargo.lock poetry.lock Pipfile.lock go.sum pubspec.lock bitbucket-pipelines.yml)
+# default_excludes comes from exclude-lib.sh, sourced above; --exclude PATTERN adds
+# ad hoc entries on top of it.
 exclude_patterns=()
 
 while [ $# -gt 0 ]; do
@@ -119,10 +129,9 @@ fi
 # branch work.
 gitlog() { git -C "$repo" log --branches --remotes --no-merges --since="$since" --until="$until_date" "$@"; }
 
-# Comma-joined so the awk filters below can rebuild the set with split(). Exact
-# basename match, not a glob. Defaults apply on every run; --exclude PATTERN adds ad
-# hoc names on top. Kept in sync by hand with multi-summary.sh's own copy (no shared
-# library between the two scripts today).
+# Comma-joined so the awk filters below can rebuild the set with excl_init(). Matching
+# (exact basename, or a glob when the pattern contains * or ?) is defined once in
+# exclude-lib.sh. Defaults apply on every run; --exclude PATTERN adds ad hoc names.
 exclude_all=("${default_excludes[@]}" "${exclude_patterns[@]}")
 exclude_csv=""
 for e in "${exclude_all[@]}"; do exclude_csv="${exclude_csv:+$exclude_csv,}$e"; done
@@ -131,9 +140,9 @@ exclude_display="${exclude_csv//,/, }"
 # Drops a --name-only line whose basename is excluded, without altering survivors —
 # shared by the distinct/touch counts below.
 filter_excludes() {
-    awk -F/ -v excl="$exclude_csv" '
-        BEGIN { n = split(excl, e, ","); for (i = 1; i <= n; i++) exset[e[i]] = 1 }
-        { if (!($NF in exset)) print }
+    awk -F/ -v excl="$exclude_csv" "$EXCL_AWK"'
+        BEGIN { excl_init(excl) }
+        { if (!excl_hit($NF)) print }
     '
 }
 
@@ -141,11 +150,11 @@ filter_excludes() {
 # -F'\t' so a filename containing spaces still lands whole in $3 (matches the other
 # numstat site in multi-summary.sh's per-author pass).
 counts="$(gitlog --numstat --pretty=tformat: \
-    | awk -F'\t' -v excl="$exclude_csv" '
-        BEGIN { n = split(excl, e, ","); for (i = 1; i <= n; i++) exset[e[i]] = 1 }
+    | awk -F'\t' -v excl="$exclude_csv" "$EXCL_AWK"'
+        BEGIN { excl_init(excl) }
         {
             nsep = split($3, parts, "/")
-            if (parts[nsep] in exset) next
+            if (excl_hit(parts[nsep])) next
             if ($1 ~ /^[0-9]+$/) a += $1
             if ($2 ~ /^[0-9]+$/) d += $2
         }
@@ -328,7 +337,7 @@ if [ "$do_email" -eq 1 ]; then
     # Git Bash hands POSIX paths to native python.exe, which needs Windows paths; convert
     # every PATH argument (mirrors the browser-open above). Non-path args pass through.
     winpath() { case "$(uname -s)" in MINGW*|MSYS*|CYGWIN*) cygpath -w "$1" ;; *) printf '%s' "$1" ;; esac; }
-    send_py="$(cd "$(dirname "$0")" && pwd)/send-report.py"
+    send_py="$script_dir/send-report.py"
 
     email_args=(
         "$(winpath "$send_py")"

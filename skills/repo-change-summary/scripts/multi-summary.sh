@@ -16,6 +16,22 @@ set -euo pipefail
 script_dir="$(cd "$(dirname "$0")" && pwd)"
 SUMMARY="$script_dir/summary.sh"
 
+# The default exclude list and the awk matcher live in one shared file so this script
+# and summary.sh can never disagree about what is excluded. Missing file => stop;
+# silently counting excluded noise would corrupt the per-developer numbers below.
+exclude_lib="$script_dir/exclude-lib.sh"
+if [ ! -f "$exclude_lib" ]; then
+    echo "missing shared exclude library: $exclude_lib" >&2
+    echo "reinstall the skill — multi-summary.sh cannot apply its exclusions without it" >&2
+    exit 2
+fi
+. "$exclude_lib"
+
+# At most this many repos are summarized at the same time. Each job is an independent
+# summary.sh run writing only its own $tmp/r/<index>.* files, so a higher number costs
+# only machine load; 4 keeps a laptop usable during a 13-repo group.
+MAX_PARALLEL_REPOS=4
+
 group=""
 month=""
 out_dir="."
@@ -30,11 +46,8 @@ email_dry_run=0
 env_file=""
 mailmap=""
 
-# Matched by exact basename, not a glob — a nested frontend/package-lock.json still
-# matches. Kept in sync by hand with summary.sh's copy of this same list (no shared
-# library between the two scripts today).
-default_excludes=(package-lock.json yarn.lock pnpm-lock.yaml composer.lock Gemfile.lock \
-    Cargo.lock poetry.lock Pipfile.lock go.sum pubspec.lock bitbucket-pipelines.yml)
+# default_excludes comes from exclude-lib.sh, sourced above; --exclude PATTERN adds
+# ad hoc entries on top of it.
 exclude_patterns=()
 
 while [ $# -gt 0 ]; do
@@ -197,10 +210,9 @@ labels=("Lines added" "Lines deleted" "**Total lines changed (added + deleted)**
         "Files modified — distinct (each file once)" "Files modified — summed across commits" \
         "Commits" "Pull requests merged" "Authors")
 
-# Comma-joined so the per-author awk below can rebuild the set with split(). Exact
-# basename match, not a glob. Defaults apply on every run; --exclude PATTERN adds ad
-# hoc names on top. Kept in sync by hand with summary.sh's own copy (no shared
-# library between the two scripts today).
+# Comma-joined so the per-author awk below can rebuild the set with excl_init(). Matching
+# (exact basename, or a glob when the pattern contains * or ?) is defined once in
+# exclude-lib.sh. Defaults apply on every run; --exclude PATTERN adds ad hoc names.
 exclude_all=("${default_excludes[@]}" "${exclude_patterns[@]}")
 exclude_csv=""
 for e in "${exclude_all[@]}"; do exclude_csv="${exclude_csv:+$exclude_csv,}$e"; done
@@ -210,7 +222,6 @@ exclude_display="${exclude_csv//,/, }"
 exclude_args=()
 for e in "${exclude_patterns[@]}"; do exclude_args+=(--exclude "$e"); done
 
-repo_count=0
 fetch_failed_names=""
 repo_paths=()
 : > "$tmp/rows.md"; : > "$tmp/rows.html"; : > "$tmp/sections.html"; : > "$tmp/authors.txt"
@@ -218,45 +229,58 @@ repo_paths=()
 mkdir -p "$tmp/r"; : > "$tmp/order.idx"
 sum_added=0; sum_deleted=0; sum_total=0; sum_files=0; sum_touch=0; sum_commits=0; sum_prs=0
 
+# Read the whole group list up front. The per-repo work below runs concurrently, so the
+# list order has to be captured first — every output is assembled in that order, never
+# in job-completion order.
 while IFS= read -r path || [ -n "$path" ]; do
     path="${path%$'\r'}"
     case "$path" in ''|'#'*) continue ;; esac
-    name="$(basename "$path")"
-    repo_count=$((repo_count + 1))
     repo_paths+=("$path")
+done < "$list"
+repo_count=${#repo_paths[@]}
 
-    # Per-repo HTML side-files go to $tmp and are discarded — the combined report
-    # is the product here; the single-repo mode exists for individual reports.
-    if ! table="$(bash "$SUMMARY" --month "$month" --repo "$path" --out "$tmp" --no-open $fetch_flag "${exclude_args[@]}" 2>"$tmp/err.txt")"; then
-        echo "summary.sh failed for group entry: $path" >&2
-        cat "$tmp/err.txt" >&2
-        echo "fix or remove that line in $list" >&2
-        exit 1
+if [ "$repo_count" -eq 0 ]; then
+    echo "group '$group' has no repo entries ($list)" >&2
+    exit 2
+fi
+
+# One repo's entire contribution, run as a background job. It writes ONLY its own
+# $tmp/r/<index>.* files — no shared file is appended to, so concurrent jobs cannot
+# interleave — and records its own exit status in .status, since a background job's
+# failure would otherwise be swallowed. Nothing here is summed or ordered; the ordered
+# pass below reads these files and does that in list order.
+run_repo() {
+    local i="$1" path="$2"
+    local rk="$tmp/r/$i" name table mark v l
+    local vals=() raw=()
+    name="$(basename "$path")"
+
+    # Per-repo HTML side-files go to a private directory under $tmp and are discarded —
+    # the combined report is the product here; the single-repo mode exists for individual
+    # reports. Private per repo because concurrent runs would otherwise pick the same
+    # timestamped filename.
+    mkdir -p "$rk.out"
+    if ! table="$(bash "$SUMMARY" --month "$month" --repo "$path" --out "$rk.out" --no-open $fetch_flag "${exclude_args[@]}" 2>"$rk.err")"; then
+        echo 1 > "$rk.status"
+        return 0
     fi
     mark=""
-    if grep -q "could not fetch" "$tmp/err.txt"; then
+    if grep -q "could not fetch" "$rk.err"; then
         mark="\\*"
-        fetch_failed_names="${fetch_failed_names:+$fetch_failed_names, }$name"
+        : > "$rk.fetchfail"
     fi
 
-    vals=(); raw=()
     for l in "${labels[@]}"; do
         v="$(metric "$table" "$l")"
         vals+=("${v:-0}"); raw+=("$(printf '%s' "${v:-0}" | tr -d ',')")
     done
-    sum_added=$((sum_added + raw[0])); sum_deleted=$((sum_deleted + raw[1])); sum_total=$((sum_total + raw[2]))
-    sum_files=$((sum_files + raw[3])); sum_touch=$((sum_touch + raw[4])); sum_commits=$((sum_commits + raw[5]))
-    sum_prs=$((sum_prs + raw[6]))
+    # Raw (separator-free) metrics for the parent's totals and sort key.
+    ( IFS="$(printf '\t')"; printf '%s\n' "${raw[*]}" ) > "$rk.raw"
 
     # Authors can't be summed across repos — the same person would count once per
-    # repo. Collect names (mailmap-aware) and dedupe across the whole group.
-    git -C "$path" log --branches --remotes --no-merges --since="$since" --until="$until_date" --format='%aN' 2>/dev/null >> "$tmp/authors.txt" || true
+    # repo. Collect names (mailmap-aware) here; the parent dedupes across the group.
+    git -C "$path" log --branches --remotes --no-merges --since="$since" --until="$until_date" --format='%aN' 2>/dev/null > "$rk.authors" || true
 
-    # Buffer each repo's outputs in per-repo side-files plus a (total-changed, index)
-    # line, so the loop stays order-agnostic; after the loop they are concatenated in
-    # ascending total-changed order (smallest on top). raw[2] is "Total changed".
-    rk="$tmp/r/$repo_count"
-    printf '%s\t%s\n' "${raw[2]}" "$repo_count" >> "$tmp/order.idx"
     printf '%s\t%s\t%s\n' "$(html_escape "$name")" "${raw[0]}" "${raw[1]}" > "$rk.chart"
     echo "| ${name}${mark} | ${vals[0]} | ${vals[1]} | ${vals[2]} | ${vals[3]} | ${vals[4]} | ${vals[5]} | ${vals[6]} | ${vals[7]} |" > "$rk.rowmd"
     {
@@ -267,15 +291,55 @@ while IFS= read -r path || [ -n "$path" ]; do
 
     {
         printf '<h2>%s</h2>\n<table>\n  <tr><th>Metric</th><th style="text-align:right">Count</th></tr>\n' "$name"
-        i=0
+        local j=0
         for l in "Lines added" "Lines deleted" "Total lines changed (added + deleted)" "Files modified — distinct (each file once)" "Files modified — summed across commits" "Commits" "Pull requests merged" "Authors"; do
-            cls=""; [ "$i" -eq 2 ] && cls=' class="total"'
-            printf '  <tr%s><td class="metric">%s</td><td class="count">%s</td></tr>\n' "$cls" "$l" "${vals[$i]}"
-            i=$((i + 1))
+            cls=""; [ "$j" -eq 2 ] && cls=' class="total"'
+            printf '  <tr%s><td class="metric">%s</td><td class="count">%s</td></tr>\n' "$cls" "$l" "${vals[$j]}"
+            j=$((j + 1))
         done
         printf '</table>\n'
     } > "$rk.section"
-done < "$list"
+
+    echo 0 > "$rk.status"
+}
+
+# Run the per-repo jobs at most MAX_PARALLEL_REPOS at a time. The slow part is fetch +
+# git log, both non-interactive here (GIT_TERMINAL_PROMPT=0 above), so overlapping them
+# is safe and nothing downstream depends on which job finishes first.
+running=0
+for ((i = 1; i <= repo_count; i++)); do
+    run_repo "$i" "${repo_paths[i - 1]}" &
+    running=$((running + 1))
+    if [ "$running" -ge "$MAX_PARALLEL_REPOS" ]; then
+        wait
+        running=0
+    fi
+done
+wait
+
+# Ordered pass over the finished jobs — LIST order, not completion order. Everything a
+# background job could not safely do itself happens here: failure reporting, the totals
+# row, the fetch-failed list, the cross-repo author pool, and the sort key.
+for ((i = 1; i <= repo_count; i++)); do
+    rk="$tmp/r/$i"
+    path="${repo_paths[i - 1]}"
+    if [ ! -f "$rk.status" ] || [ "$(cat "$rk.status")" != "0" ]; then
+        echo "summary.sh failed for group entry: $path" >&2
+        [ -f "$rk.err" ] && cat "$rk.err" >&2
+        echo "fix or remove that line in $list" >&2
+        exit 1
+    fi
+    IFS="$(printf '\t')" read -r r_added r_deleted r_total r_files r_touch r_commits r_prs _r_authors < "$rk.raw"
+    sum_added=$((sum_added + r_added)); sum_deleted=$((sum_deleted + r_deleted)); sum_total=$((sum_total + r_total))
+    sum_files=$((sum_files + r_files)); sum_touch=$((sum_touch + r_touch)); sum_commits=$((sum_commits + r_commits))
+    sum_prs=$((sum_prs + r_prs))
+    if [ -f "$rk.fetchfail" ]; then
+        fetch_failed_names="${fetch_failed_names:+$fetch_failed_names, }$(basename "$path")"
+    fi
+    cat "$rk.authors" >> "$tmp/authors.txt"
+    # (total-changed, index) sort key; the concat below is what applies it.
+    printf '%s\t%s\n' "$r_total" "$i" >> "$tmp/order.idx"
+done
 
 # Concatenate the per-repo side-files in ascending total-changed order (smallest on top)
 # so the rollup table, its bar chart, and the per-repo sections share one order. Numeric
@@ -288,11 +352,6 @@ while IFS=$'\t' read -r _total ri; do
     cat "$tmp/r/$ri.chart"   >> "$tmp/chart-repos.tsv"
     cat "$tmp/r/$ri.section" >> "$tmp/sections.html"
 done < <(sort -t"$(printf '\t')" -k1,1n -k2,2n "$tmp/order.idx")
-
-if [ "$repo_count" -eq 0 ]; then
-    echo "group '$group' has no repo entries ($list)" >&2
-    exit 2
-fi
 
 distinct_authors="$(sed '/^$/d' "$tmp/authors.txt" | sort -u | awk 'END{print NR+0}')"
 
@@ -323,10 +382,10 @@ if [ "$per_author" -eq 1 ]; then
             printf '#REPO\t%s\n' "$(basename "$p")"
             git -C "$p" log --branches --remotes --no-merges --since="$since" --until="$until_date" --format='@%aN%x09%aE' --numstat 2>/dev/null || true
         done
-    } | awk -F'\t' -v bots="$bot_emails" -v excl="$exclude_csv" -v botfile="$tmp/pa-bots.tsv" '
+    } | awk -F'\t' -v bots="$bot_emails" -v excl="$exclude_csv" -v botfile="$tmp/pa-bots.tsv" "$EXCL_AWK"'
         BEGIN {
             nb = split(bots, bl, ","); for (i = 1; i <= nb; i++) botset[bl[i]] = 1
-            ne = split(excl, el, ","); for (i = 1; i <= ne; i++) exset[el[i]] = 1
+            excl_init(excl)
         }
         /^#REPO\t/ { repo = $2; next }
         /^@/ {
@@ -337,7 +396,7 @@ if [ "$per_author" -eq 1 ]; then
         }
         a != "" && NF >= 3 {
             nsep = split($3, parts, "/")
-            if (parts[nsep] in exset) next
+            if (excl_hit(parts[nsep])) next
             if ($1 ~ /^[0-9]+$/) { add[a] += $1; afa[a SUBSEP repo "/" $3] += $1 }
             if ($2 ~ /^[0-9]+$/) del[a] += $2
             fk = a SUBSEP repo "/" $3

@@ -38,11 +38,17 @@ Flags:
 - `--no-fetch` — skip the initial `git fetch` and use only local branches (for offline use).
 - `--no-open` — do not open the HTML report in a browser (for headless or scripted use).
 - `--exclude PATTERN` — repeatable; excludes a file from every count (lines, distinct
-  files, file-touches) by exact basename, not a glob — a nested `frontend/package-lock.json`
-  still matches `package-lock.json`. A built-in default list is always active with no flag
-  needed: `package-lock.json`, `yarn.lock`, `pnpm-lock.yaml`, `composer.lock`,
-  `Gemfile.lock`, `Cargo.lock`, `poetry.lock`, `Pipfile.lock`, `go.sum`, `pubspec.lock`,
-  `bitbucket-pipelines.yml`. `--exclude` adds ad hoc names on top of that default list.
+  files, file-touches). PATTERN is matched against the file's **basename only**, never the
+  directory part — so a nested `frontend/package-lock.json` still matches
+  `package-lock.json`. A pattern with no glob character is an exact basename match (the
+  fast path); a pattern containing `*` or `?` is treated as a glob, where `*` matches any
+  run of characters (including none) and `?` matches exactly one character — so
+  `*.generated.cs`, `*.min.js`, and `*.snap` all work. Character classes (`[abc]`, `[0-9]`)
+  are **not** supported: `[` and `]` match literally. Matching is case-sensitive.
+  A built-in default list is always active with no flag needed: `package-lock.json`,
+  `yarn.lock`, `pnpm-lock.yaml`, `composer.lock`, `Gemfile.lock`, `Cargo.lock`,
+  `poetry.lock`, `Pipfile.lock`, `go.sum`, `pubspec.lock`, `bitbucket-pipelines.yml`.
+  `--exclude` adds ad hoc patterns on top of that default list.
 
 By default the script fetches remote refs first so remote-only branches are included; a
 fetch failure is non-fatal and it falls back to local branches with a warning.
