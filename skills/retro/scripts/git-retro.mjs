@@ -51,8 +51,11 @@ const PR_REF_RE = /[#!]\d+/;
 // GitHub's default squash-merge subject convention: "Title (#123)".
 const SQUASH_PR_RE = /\(#\d+\)/;
 
-// Co-Authored-By trailer values that mark a commit as AI-assisted.
-const AI_CO_AUTHOR_RE = /anthropic|claude|copilot|openclaw|github-actions|\[bot\]/i;
+// Co-Authored-By trailer values that mark a commit as AI-assisted: the coding
+// assistants only. Ordinary automation (github-actions, dependabot and other
+// `[bot]` identities) is deliberately NOT matched — those commits are scripted,
+// not AI-assisted, and counting them inflates the AI-assisted share.
+const AI_CO_AUTHOR_RE = /anthropic|claude|copilot|openclaw|cursor|codex|aider|gemini|devin/i;
 
 // Cap on `git diff --shortstat <merge>^1..<merge>` calls for PR sizing — each
 // is a real subprocess spawn, so a repo with thousands of merges in-window
@@ -837,9 +840,11 @@ function computeAuthors(nonMergeCommits, perAuthorSessions, currentUser) {
 
 /**
  * A commit is AI-assisted when any Co-Authored-By trailer value matches
- * AI_CO_AUTHOR_RE. Co-authors never appear in totals.contributors or
- * authors[] because those are built from the commit AUTHOR field, never
- * from trailer text, so no separate exclusion step is needed here.
+ * AI_CO_AUTHOR_RE — i.e. a coding assistant co-authored it; CI bots and other
+ * `[bot]` identities do not count. Co-authors never appear in
+ * totals.contributors or authors[] because those are built from the commit
+ * AUTHOR field, never from trailer text, so no separate exclusion step is
+ * needed here.
  */
 function computeAiAssisted(nonMergeCommits, coAuthorMap, available) {
     if (!available) {

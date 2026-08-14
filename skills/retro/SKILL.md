@@ -91,6 +91,22 @@ and `prior.guards` separately; they can differ.
 
 ## Narrative structure
 
+**Short form for stat-shaped asks.** When the user asks for specific numbers
+rather than a retrospective — "commit stats for the last N days", "who worked
+on what lately", "how many commits did we make", "who touched `src/api/`
+recently" — answer with the one-liner, section 1 (**Summary table**), and
+*only* the sections the question actually asks about ("who worked on what" →
+section 7, **Team leaderboard**; a hotspot or test-coverage ask → section 4,
+**Code-quality signals**; a "when do we work" ask → section 2, **Time &
+session patterns**). Skip every other section rather than padding. The full
+sequence below is for retro-shaped asks: "what did we ship this week", "weekly
+retro", "engineering retrospective", "team velocity", "how productive were we
+this sprint", "summarize the last two weeks of work", and trend asks like "are
+we shipping faster than last month" (`--compare`, which adds section 11).
+Short form changes only *how much* you report, never the rules: every number
+still comes from the script's JSON, and every true honesty guard is still
+carried into the answer verbatim.
+
 Open with a **tweetable one-liner** (one line, from JSON values only, e.g.
 `Week of Jul 1: 47 commits (3 contributors), 3.2k LOC, 38% tests, 12 PRs, peak: 22:00 | streak 12d`),
 then these sections, in order:
@@ -145,7 +161,9 @@ then these sections, in order:
   that is a performance-review ask, out of scope by design.
 - Frame the AI-assisted share neutrally ("41% of commits were AI-assisted"),
   no judgment either way.
-- 1,500–2,500 words. Tables and code blocks for data, prose for meaning.
+- 1,500–2,500 words for a full retro; a short-form answer runs only as long
+  as the sections it includes. Tables and code blocks for data, prose for
+  meaning.
 - A solo repo gets the same retro minus the leaderboard/team sections — it
   is personal, not "a team of one".
 
