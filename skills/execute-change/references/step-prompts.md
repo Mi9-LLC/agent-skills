@@ -232,8 +232,8 @@ and any OPEN QUESTIONS.
 
 + standing instructions.
 
-**Parallel variant** — when the group is launched as part of an approved
-parallel set, replace the gates sentence with:
+**Parallel variant** — when the group is launched as part of a
+parallel set (disjoint file lists), replace the gates sentence with:
 
 ```
 Run the group's verify clauses; skip the project-wide quality gates — the

@@ -153,8 +153,8 @@ Run the checks in this order:
    summary), → surface to the user before continuing — never build on
    unexplained edits. Then re-run
    checks 3–5 (the environment can drift between runs), skip checks 6–8 —
-   the branch, worktree, and ledger already exist, and the ledger records
-   the check-7 answers — and continue the pipeline from the ledger. Never
+   the branch, worktree, and ledger already exist — and continue
+   the pipeline from the ledger. Never
    create a second branch, worktree, or ledger for the same plan.
 3. **OpenSpec-managed repo.** `openspec/config.yaml` at the repo root
    confirms it. If absent, run `openspec context` — a non-zero exit means
@@ -216,12 +216,22 @@ Run the checks in this order:
    group launches: confirm the task completed, and surface a red baseline
    to the user — it means pre-existing failures that must never be
    attributed to the implementation.
-7. **Readiness and authorization** — one batched AskUserQuestion:
-   - Remote Control and "Push when actions required" are on (or the user
-     accepts terminal-only waiting);
-   - the run is authorized to proceed autonomously through local commits
-     on the feature branch;
-   - whether task groups marked parallel may run concurrently.
+7. **Readiness line — printed, never asked.** There is no approval
+   question here. The manual invocation IS the authorization: this skill
+   is invoke-only, it commits solely to its own branch inside its own
+   worktree, and it never pushes. Concurrency is decided mechanically at
+   step 6 (disjoint `tasks.md` file lists, serialize otherwise) — at this
+   point `tasks.md` does not exist yet, so there is nothing to approve.
+   Print one line stating the run's shape before the user walks away:
+   plan brief, branch, base branch, worktree path, and the notification
+   state — read `agentPushNotifEnabled` and `hasUsedRemoteControl` from
+   `~/.claude.json`; either one false or absent → say plainly that pauses
+   will wait in this terminal only. Neither flag records the per-session
+   `/remote-control` toggle, so this is a notice, not a claim that the
+   phone push is confirmed working. The only Step-0 questions are the
+   conditional ones: a missing brief path (check 1), unexplained
+   worktree edits on resume (check 2), and the install/update offers in
+   checks 4–5.
 8. **Ledger.** Create `<plan path>.ledger.md` next to the plan brief —
    literally append `.ledger.md` to the brief's full filename (e.g.
    `foo-plan.md` → `foo-plan.md.ledger.md`); this exact name is the resume
@@ -234,7 +244,7 @@ Run the checks in this order:
    - Base branch: <the default branch identified in check 6>
    - Change ID: (set after step 1)
    - Last completed step: 0
-   - Parallel groups approved: yes/no
+   - Parallel groups: allowed when tasks.md file lists are disjoint
    - Fix cycles used: 0 of 2
    - Baseline gates: (set when the background worktree prep finishes)
    ## Step log        <!-- per step: subagent outcome + acceptance-check result -->
@@ -377,8 +387,8 @@ path, its task group verbatim, the ledger's summaries of completed groups,
 and an instruction to read the branch diff so far. The implementer never
 ticks its own checkboxes and never self-verifies.
 
-Groups marked parallel run concurrently ONLY when the user approved
-concurrency in Step 0 AND their file lists in `tasks.md` are disjoint —
+Groups marked parallel run concurrently ONLY when their file lists in
+`tasks.md` are disjoint —
 no file lists in `tasks.md` means the condition is unevaluable: serialize.
 Serialized is also the default otherwise: they share one working tree. A
 parallel set runs like this: launch every group in the set from the same

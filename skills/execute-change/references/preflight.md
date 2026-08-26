@@ -105,9 +105,12 @@ practical points:
 
 The run pauses on human decisions and waits indefinitely; this setup is what
 turns "waiting in a terminal you aren't looking at" into "a push
-notification on your phone you can answer from anywhere". Walk the user
-through confirming it at Step 0's readiness question — none of it is
-programmatically detectable, which is why the question exists.
+notification on your phone you can answer from anywhere". The skill does not
+ask the user to confirm it — the answer would change nothing the run does.
+Step 0 prints the notification state instead, read from `~/.claude.json`:
+`agentPushNotifEnabled` (the "Push when actions required" setting) and
+`hasUsedRemoteControl`. Neither file flag records the per-session
+`/remote-control` toggle, so a printed notice is as far as detection goes.
 
 ### Remote Control + phone push
 
