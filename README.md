@@ -55,6 +55,7 @@ Re-run either command anytime to update — it always pulls the current state of
 | [`verify-implementation`](#verify-implementation) | Post-implementation gate: adversarially verifies finished work against whatever claims it is done — audits the report against the actual diff, re-derives every acceptance criterion, reads every new test body and re-runs mutation proofs to catch tautological guards, re-runs the project's own gates — then **fixes what it finds** on the branch in dedicated commits. Pins `claude-opus-5`. |
 | [`execute-change`](#execute-change) | Autonomous end-to-end execution of a plan brief — or a free-text idea, which first gets a design interview and a user-approved brief — in an OpenSpec-managed repo: one lead session drives author-change → review gate → apply changes → implement → audit → simplify via fresh per-step subagents, pauses with a phone push only when it needs the user (a decision, or a failure it may not resolve alone), commits per checkpoint on a dedicated branch in the run's own git worktree (several plans can run concurrently on one repo), and stops after the local commits — never deploys, never opens a PR. **Manual-only** (`/execute-change`). |
 | [`clear-and-short`](#clear-and-short) | Behavioral mode that cuts the word count of Claude's replies and keeps them in simple English — drops preamble, tool-call narration, restated questions, repeated facts, option surveys, and closing summaries; prefers the common word, short sentences, and no idioms; keeps full sentences, articles, negations, numbers, and code verbatim; asks questions with numbered options so the user can answer with one number. Steps back to full prose for security warnings, destructive-action confirmations, and hand-followed step lists. Produces no files. |
+| [`unslop`](#unslop) | Edits human-facing prose (docs, READMEs, posts, emails, PR descriptions) to remove 31 catalogued AI-writing patterns — puffery, AI vocabulary, "not just X, but Y", forced groups of three, em-dash/colon/bold overuse, title-case headings, chatbot phrases, filler, hedging, abstract metaphor nouns, passive voice, feeling-words in place of facts. Keeps meaning, facts, numbers, and technical terms. Not for code, comments, commit messages, or chat replies. Produces no files of its own; edits the text it is given. |
 
 ## Recommended workflow — from idea to verified code
 
@@ -1012,6 +1013,45 @@ npx skills add https://github.com/Mi9-LLC/agent-skills --skill clear-and-short
 **Origin.** Adapted from [`juliusbrussee/caveman`](https://github.com/juliusbrussee/caveman) (MIT, © 2026 Julius Brussee). Caveman's structural cuts are kept (plus its rules against invented abbreviations and arrows, which save no tokens); its grammar compression and six intensity levels are dropped. It is roughly caveman's `lite` level, extended with the simple-English and question rules.
 
 **Full definition:** [`skills/clear-and-short/SKILL.md`](skills/clear-and-short/SKILL.md).
+
+---
+
+## `unslop`
+
+**What it does.** Edits prose to remove the patterns that mark text as AI-written. It works from a fixed list of 31 patterns in seven groups: **content** (puffery, name-dropping, "highlighting… / ensuring…" phrases, promotional adjectives, vague attributions, "despite challenges… continues to thrive"), **language** (AI vocabulary such as "delve", "crucial", "tapestry", "landscape"; "serves as / boasts" instead of "is"; "not just X, but Y"; forced groups of three; synonym cycling; false "from X to Y" ranges), **style** (em dashes, mid-sentence colons, bold on every noun, bold-label lists that restate the line, title-case headings, decorative emoji, curly quotes), **communication artifacts** (chatbot phrases, cutoff disclaimers, sycophantic openers), **filler** (phrases, hedging stacks, generic conclusions), **jargon** (abstract metaphor nouns such as "substrate", "wedge", "north star", "flywheel", with the concrete replacement for each), and **plain speech** (name the mechanism or number instead of the feeling, one idea per sentence, active voice, cut adverbs, the plain word). The process is: scan for the patterns, rewrite while preserving meaning and tone, then self-audit for anything still obviously machine-written.
+
+**Requirements.** None. Behavioral — it changes how Claude edits and writes prose.
+
+**How to run.** `/unslop` on a file or pasted text, or ask to "unslop", "de-AI", or "humanize" a piece of writing. Claude also applies it on its own when it writes a new documentation page, README, or announcement. Declares no `allowed-tools`/`disallowed-tools`.
+
+**Use it for.** Documentation, README files, blog posts, announcements, emails, PR descriptions, release notes — anything people will read where "this was written by an AI" is a cost.
+
+**Triggers on phrases like.** "unslop this", "make it sound less like AI", "remove the AI tells", "humanize this text", "de-AI the README", "this reads like ChatGPT wrote it".
+
+**What it does not do.** Touch code, code comments, commit messages, or Claude's own chat replies (chat length and wording are `clear-and-short`'s job — the two skills are complementary: `clear-and-short` decides how much to say in chat, `unslop` cleans up prose written for other readers). It does not change the meaning, facts, numbers, or the established technical terms of the text, and it does not add opinions or a first-person voice the author did not write. A project style guide (for example a house rule on heading case) overrides any conflicting pattern.
+
+**What it produces.** No files or reports of its own — it edits the text it is given in place, or returns the rewritten text when given a paste.
+
+**Example.**
+
+```
+Before:  This groundbreaking release serves as a testament to our commitment to
+         developer experience — delivering not just speed, but reliability and
+         elegance. Experts agree it's a pivotal moment for the ecosystem.
+
+After:   Version 3.0 cuts cold-start time from 900 ms to 120 ms and removes the
+         three flaky retry paths reported in #412, #418, and #430.
+```
+
+**Install.**
+
+```
+npx skills add https://github.com/Mi9-LLC/agent-skills --skill unslop
+```
+
+**Origin.** Adapted from the `unslop` skill in [`cursor/plugins`](https://github.com/cursor/plugins/tree/main/pstack/skills/unslop) (`pstack`, MIT, © 2026 Lauren Tan). The 31-pattern list is kept as-is. Upstream's "Adding soul" section (have opinions, use "I", let some mess in) and its "must always apply" trigger are dropped: the first conflicts with the plain-facts style used across this catalog, the second would fire on every turn including code and chat.
+
+**Full definition:** [`skills/unslop/SKILL.md`](skills/unslop/SKILL.md).
 
 ---
 
