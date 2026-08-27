@@ -75,14 +75,18 @@ function gitInit(directory: string) {
 }
 ```
 
-Three rules for diagnostics in tests:
+Four rules for diagnostics in tests:
 
 - **Write to stderr** (`Console.Error` / `console.error`), not a logger — a logger
   may be suppressed during test runs.
 - **Log before the dangerous operation**, not in the catch after it fails — you want
   the state going in.
-- **Include context:** the directory, the current working directory, relevant
-  environment variables, and the captured stack.
+- **Include context:** the directory, the current working directory, relevant,
+  non-secret environment variables, and the captured stack.
+- **Redact secrets.** In any command or output you show, write `<REDACTED>` in place
+  of the secret. Read credentials from environment variables, so they stay in the
+  environment and never appear in a transcript, and quote only the lines that carry
+  the signal.
 
 Run and read the captured stacks for the test file and line that triggers the call.
 Look for the pattern — same test? same parameter every time? **Remove the

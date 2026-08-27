@@ -103,7 +103,11 @@ itself, which the step-1 author reads.
    instruct the subagent) — it reads
    the relevant code read-only, verifies external capabilities against
    current documentation, and returns a compact design dossier: facts,
-   constraints, reuse candidates, decision points. You do not read the
+   constraints, reuse candidates, decision points. Every claim in the
+   dossier carries its source — a repo file path, or a URL for an
+   external fact — and external facts come from primary sources only
+   (official documentation, the library's own source code, the spec),
+   never a secondary write-up. You do not read the
    code yourself — the dossier keeps your context lean for the long run.
    When it returns, run one batch existence check (Glob) over every file
    path the dossier cites: any missing path → the one retry, with the
@@ -144,7 +148,12 @@ itself, which the step-1 author reads.
    `## Glossary updates` (each resolved term with its one-or-two-sentence
    definition and the words to avoid) and `## Decisions to record as
    ADRs` (each accepted ADR candidate in 1–3 sentences: context, decision,
-   why). Either section may read "none". This is the one source-tree file
+   why). Either section may read "none". The brief ends with a third
+   section, `## Research dossier`, holding item 1's dossier verbatim —
+   the subagents in steps 1, 2, and 7 already read the brief, and a
+   resumed run re-reads it, so this section is what gives them the same
+   facts the interview used instead of leaving those facts in your
+   context only. This is the one source-tree file
    the lead writes itself; like any brief, it is never committed by the
    run.
 4. **Approval gate.** Post a compact summary plus the file path, then ask:
@@ -360,7 +369,15 @@ groups, verify clauses, and the standing implementer instructions. Each
 task group is a **vertical slice** — a piece of the change that can be
 demonstrated or verified on its own, sized to fit one fresh context
 window; a group that only prepares the ground for later groups
-(prefactoring) comes first. The author also reads the repo's `CONTEXT.md`
+(prefactoring) comes first. One exception: a mechanical change too wide
+for a vertical slice — renaming a shared symbol or a column, where one
+edit breaks call sites across the whole codebase — is sequenced
+**expand–contract** instead. The first group adds the new form beside the
+old, so nothing breaks and that group is green on its own; the following
+groups migrate the call sites in batches, one group per batch, each green
+on its own because the old form still exists; the last group removes the
+old form and is blocked by every migration batch.
+The author also reads the repo's `CONTEXT.md`
 and `docs/adr/` when present, uses the glossary's words in the artifacts,
 and writes the brief's `## Glossary updates` and `## Decisions to record
 as ADRs` sections into `CONTEXT.md` (repo root) and `docs/adr/NNNN-slug.md`

@@ -112,6 +112,15 @@ test('detects duplicate server', async () => {
 });
 ```
 
+The boundary rule: mock at the lowest boundary that owns the slow or external
+effect — an external API, time, randomness, and sometimes the database or the
+file system. When the only place left to mock is one of your own modules, as
+`MCPServerManager` is above, the mock is the right call for this test but the
+design is worth a line in the report: an external effect is buried inside your
+own code instead of sitting behind its own boundary. Prefer one function per
+external operation over a single generic fetcher, so each mock returns one shape
+and needs no conditional logic.
+
 **Gate:** before mocking a method, ask what side effects the real method has,
 whether the test depends on any of them, and whether you actually understand
 what the test needs. If you're unsure, run the test against the real
@@ -154,6 +163,35 @@ omitted field. When uncertain, include every documented field.
 of implementation, not an optional follow-up — and a feature with no tests isn't
 complete. This is exactly what the red-green-refactor order prevents.
 
+## Anti-pattern 6: verifying through a side channel
+
+The test calls the interface but checks the result somewhere else — a direct
+database query, a private field, internal state. It passes only while those
+storage details stay the same, so it breaks on a refactor that changed no
+behavior, and it never proves a caller can see the result.
+
+Bad:
+```ts
+test('createUser saves to database', async () => {
+  await createUser({ name: 'Alice' });
+  const row = await db.query('SELECT * FROM users WHERE name = ?', ['Alice']);
+  expect(row).toBeDefined();
+});
+```
+
+Fix — verify through the interface, using the read path a caller would use:
+```ts
+test('createUser makes the user retrievable', async () => {
+  const user = await createUser({ name: 'Alice' });
+  const retrieved = await getUser(user.id);
+  expect(retrieved.name).toBe('Alice');
+});
+```
+
+**Gate:** before writing an assertion, ask "could a caller of this code see what
+I am checking?" If only the test can reach it, assert through the interface
+instead.
+
 ## When mocks get too complex
 
 Warning signs: the mock setup is longer than the test logic; you're mocking
@@ -171,6 +209,7 @@ often simpler and more honest than an elaborate mock.
 | Mock without understanding | Understand the dependency first, mock minimally |
 | Incomplete mocks | Mirror the real data shape completely |
 | Tests as afterthought | Test-first; not complete until tested |
+| Verify through a side channel | Assert through the interface, not the database or internal state |
 | Over-complex mocks | Consider an integration test instead |
 
 ## Red flags
@@ -181,6 +220,7 @@ often simpler and more honest than an elaborate mock.
 - The test fails when you remove a mock
 - You can't explain why the mock is needed
 - Mocking "just to be safe"
+- Assertions that read the database or internal state directly
 
 ## Bottom line
 

@@ -28,6 +28,15 @@ Evaluate the plan's design across:
 - **Build / publish / deploy path** — for every new artifact (package,
   container, binary, migration): how it is built, published, and deployed,
   and in what order relative to the code that needs it.
+- **The deletion test** — for every module the plan adds, imagine deleting
+  it. If the complexity disappears with it, the module was a pass-through
+  and the plan should drop it. If the same complexity reappears in each of
+  its N callers, the module is worth keeping.
+- **Two adapters before an interface** — one adapter means the seam is
+  hypothetical; two means it is real. A plan that adds an interface, port,
+  or other abstraction with only one implementation behind it is a finding
+  unless it justifies a second implementation — normally the production one
+  plus the test one.
 
 **Per-new-codepath failure scenario (mandatory).** For each new codepath or
 integration, describe one realistic production failure — timeout,
@@ -149,6 +158,35 @@ Tag each planned (or required) test:
 
 A plan that tests a 3+-component flow purely with mocks earns a finding:
 the mocks hide exactly the integration failures the flow exists to survive.
+
+### Seams and dependency categories
+
+A **seam** is a place where a test can replace behavior without editing the
+code under test. Two checks on the seams a plan picks:
+
+- **Tests belong at the interface, not past it.** A planned test that would
+  have to change every time the implementation changes is testing past the
+  interface — that is a finding. The fix is to move the test to the
+  module's interface, or to reshape the module so its interface covers what
+  the test needs.
+- **Fewer seams is better.** Prefer a seam the codebase already has. When
+  the plan genuinely needs a new one, it belongs at the highest point
+  possible; a plan that opens a new low-level seam next to a usable higher
+  one is a finding.
+
+The category of each dependency the plan touches decides how its tests
+reach that dependency:
+
+| Dependency category | Test strategy the plan should commit to |
+|---|---|
+| **In-process** — pure computation, in-memory state, no I/O | Test directly through the module's interface; no adapter and no injection needed |
+| **Locally substitutable** — a real local stand-in exists (PGLite for Postgres, an in-memory filesystem) | Run the stand-in inside the test suite; the seam stays internal, never exposed at the module's interface |
+| **Remote but owned** — the team's own service across a network call | Define a port at the seam, with an HTTP (or gRPC / queue) adapter in production and an in-memory adapter in tests |
+| **True external** — a third-party service nobody on the team controls (Stripe, Twilio) | Inject the dependency as a port; tests supply a mock adapter |
+
+A plan that names no strategy for a remote-but-owned or true-external
+dependency — or that plans to reach a true external service from the test
+suite — is a finding.
 
 ## 4. Performance
 

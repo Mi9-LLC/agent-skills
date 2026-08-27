@@ -92,6 +92,14 @@ async function waitFor<T>(
 | Wait for a file | the file exists on disk |
 | Compound | several conditions are all true |
 
+## Flaky bugs: raise the reproduction rate
+
+For a flaky bug the goal is not a clean reproduction but a higher reproduction
+rate. Run the trigger 100 times in a loop, run several copies in parallel, add load
+to the machine, and inject sleeps at the points where you suspect a race. A 50%
+flake is debuggable, a 1% one is not — keep raising the rate until you can debug
+against it.
+
 ## Common mistakes
 
 - **Polling too fast** (every 1ms) wastes CPU — poll every ~10ms.

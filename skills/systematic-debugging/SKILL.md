@@ -58,6 +58,40 @@ Before attempting any fix:
 2. **Reproduce it consistently.** Can you trigger it reliably? What are the exact
    steps? Every time, or intermittently? If you can't reproduce it, gather more
    data — don't guess.
+
+   Build a command that fails on the bug. Try these in order, until one works:
+
+   - A failing test, at whatever level reaches the bug — unit, integration, or
+     end-to-end.
+   - An HTTP script (`curl`) against a running dev server.
+   - A CLI run with a fixture input, its output diffed against a known-good
+     snapshot.
+   - A headless browser script (Playwright or Puppeteer) that drives the UI and
+     checks the DOM, the console, and the network calls.
+   - A replay of a captured trace or log: save the real request, payload, or event
+     log to disk and run it back through the code path on its own.
+   - A throwaway harness — the smallest part of the system that reaches the bug,
+     the rest mocked, called from one function.
+   - A fuzz or property loop over many random inputs, when the bug is "the output
+     is sometimes wrong".
+   - A `git bisect run` harness, when the bug appeared between two known states
+     (commit, dataset, or version): automate "set up state X, check, repeat".
+   - A differential run: the same input through the old version and the new one
+     (or through two configs), the outputs diffed.
+   - A human-in-the-loop script, last. When a person has to click, give them a
+     script to follow so the loop still produces captured output you can read.
+
+   **Done when** you can name **one command**, already run at least once with its
+   output shown, that fails on the exact symptom the user reported (not merely
+   "did not crash"), finishes in seconds, and gives the same verdict every run —
+   or, for a flaky bug, at the highest reproduction rate you can reach (see
+   `references/condition-based-waiting.md`). No such command, no Phase 2. A
+   failure you cannot reproduce locally at all — production-only, environmental —
+   goes to "When investigation finds no root cause" below, not to a guess.
+
+   **Then reduce it to the smallest failing case.** Cut inputs, callers, config,
+   and steps one at a time, re-running the command after each cut. Done when every
+   remaining element is needed: removing any one of them makes the command pass.
 3. **Check what recently changed.** `git diff`, recent commits, new dependencies,
    config or environment differences. A regression has a culprit commit.
 4. **In a multi-component system, instrument the boundaries.** When the failure
@@ -65,7 +99,9 @@ Before attempting any fix:
    backend), add temporary logging at each boundary: what data enters, what exits,
    whether config/env propagated. Run it once to see *which layer* breaks, then
    investigate that layer. Don't theorize about which component is at fault —
-   measure it. Remove the instrumentation once you've localized the failure.
+   measure it. Tag every temporary log with a unique prefix, such as `[DEBUG-a4f2]`,
+   so removing them all later is one grep. Remove the instrumentation once you've
+   localized the failure.
 5. **Trace the bad value back to its source.** When the error fires deep in the
    call stack, the fix usually doesn't belong there. Trace backward — what called
    this with the bad value, and what called *that* — until you reach where the bad
@@ -93,24 +129,33 @@ Understand the shape of the problem before fixing:
 **Phase 2 is done when** you can name the specific difference between the working
 path and the broken one that explains the failure.
 
-### Phase 3 — Single hypothesis, tested minimally
+### Phase 3 — Ranked hypotheses, one tested at a time
 
 Apply the scientific method. One variable at a time.
 
-1. **State one hypothesis, specifically.** "I think X is the root cause because Y."
-   Write it down. Vague hypotheses ("something with the state") aren't testable.
-2. **Test it with the smallest possible change.** Change one thing. Don't fix three
+1. **List 2–4 ranked hypotheses before you test any of them.** Writing down a
+   single hypothesis anchors you on the first idea that came to mind. Each one
+   needs a falsifiable prediction — "if X is the cause, changing Y makes the bug
+   disappear" — because a hypothesis you cannot predict from is a guess, not a
+   hypothesis. Show the ranked list in your reply, then test the top one; the user
+   often knows something that re-ranks it at once, or has already ruled one out.
+   Don't wait for an answer — continue with your own ranking.
+2. **State the top hypothesis, specifically.** "I think X is the root cause because
+   Y." Write it down. Vague hypotheses ("something with the state") aren't testable.
+3. **Test it with the smallest possible change.** Change one thing. Don't fix three
    suspects at once — if it goes green you won't know which one mattered, and you
    may have added a new bug.
-3. **Verify before continuing.** Worked? Move to Phase 4. Didn't? Form a *new*
-   hypothesis — do not pile a second fix on top of the first — and that failed
-   test counts toward the 3-attempt limit in Phase 4.
-4. **If you don't understand something, say so.** "I don't understand why X happens"
+4. **Verify before continuing.** Worked? Move to Phase 4. Didn't? Move to the next
+   hypothesis on the list, re-ranked with what you just learned — do not pile a
+   second fix on top of the first — and that failed test counts toward the
+   3-attempt limit in Phase 4.
+5. **If you don't understand something, say so.** "I don't understand why X happens"
    is a valid, useful state. Research it or ask — don't fake certainty and fix
    blind.
 
-**Phase 3 is done when** you have written down one specific, testable hypothesis
-in the form "X is the root cause because Y".
+**Phase 3 is done when** you have written down a ranked list of 2–4 hypotheses,
+each with its prediction, and one specific, testable top hypothesis in the form
+"X is the root cause because Y".
 
 ### Phase 4 — Fix the cause, behind a test
 
@@ -118,6 +163,13 @@ in the form "X is the root cause because Y".
    fails for the right reason. It must fail *before* the fix and pass *after* —
    that's your proof you fixed the actual bug and not something adjacent. If there's
    no test framework for this code yet, a tiny standalone repro script counts.
+
+   Put the test at a seam — a point in the code a test can call into — that
+   exercises the bug as it happens at the real call site. A seam that is too
+   shallow gives false confidence: a single-caller test when the bug needs several
+   callers, or a unit test that cannot reproduce the chain that triggered the bug.
+   If no correct seam exists, that itself is a finding to report: the code's
+   structure is what prevents the bug from being pinned down by a test.
 
    ```bash
    # C# / xUnit — run just the new test:
@@ -217,3 +269,10 @@ Adapted from the `systematic-debugging` skill in
 Vincent). Decoupled from that project's other skills, hooks, and dispatcher;
 made Windows-clean (no unix-only shell to run); examples given for both .NET/xUnit
 and TS/JS/Vitest. See `LICENSE`.
+
+The reproduction-loop list and smallest-failing-case rule in Phase 1, the ranked
+hypotheses in Phase 3, the seam rule in Phase 4, the `[DEBUG-…]` log tag, the
+secret-redaction rule, and the flaky-bug reproduction-rate section are adapted from
+the `diagnosing-bugs` skill in
+[`mattpocock/skills`](https://github.com/mattpocock/skills) (MIT, © 2026 Matt
+Pocock).

@@ -171,7 +171,10 @@ it when you reach this step. In brief:
   access control, API boundaries), and how any new artifact gets built,
   published, and deployed. For every new codepath or integration, describe
   one realistic production failure scenario and whether the plan accounts
-  for it — these rows feed the failure-modes table.
+  for it — these rows feed the failure-modes table. Two structural checks
+  belong here too: the deletion test on every module the plan adds, and the
+  two-adapter rule on every interface or port it adds (both in the
+  references file).
 - **Step 4 — Code quality of the planned code.** DRY against the existing
   codebase, over- and under-engineering, the error-handling strategy,
   right-sized abstractions. The code doesn't exist yet — judge what the
@@ -183,7 +186,11 @@ it when you reach this step. In brief:
   and no existing test covers the changed path, a regression test goes into
   Required plan changes. Not a question, not a decision — never asked,
   never waived.** Assign each planned test to E2E, unit, or eval per the
-  matrix in the references file.
+  matrix in the references file. Also check the seams the planned tests run
+  through and the dependency category of everything the plan touches — see
+  *Seams and dependency categories* in the references file: a planned test
+  that must change whenever the implementation changes is testing past the
+  interface, and that is a finding.
 - **Step 6 — Performance.** N+1 and data-access patterns, memory, caching,
   hot-path complexity — only where the plan plausibly touches them. No
   generic performance advice.
@@ -343,3 +350,7 @@ extended with an explicit absence-finding evidence form; and gstack state
 (`~/.gstack`, `bin/` loggers, brain calibration, TODOS.md flow, the
 readiness dashboard, review chaining, Lake Score, worktree parallelization)
 is dropped.
+
+The deletion test, the two-adapter rule, and the seam / dependency-category
+checks are adapted from the `codebase-design` and `to-spec` skills in
+`mattpocock/skills` (MIT License, © 2026 Matt Pocock).

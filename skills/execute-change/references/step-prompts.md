@@ -83,10 +83,15 @@ Investigate what implementing this would touch: read the relevant source,
 configs, and specs (openspec/specs/ if present); identify the existing
 patterns, helpers, and conventions a design should reuse; verify any
 external library/framework capability the design would rely on against
-its current documentation (WebSearch/WebFetch), never memory.
+its current documentation (WebSearch/WebFetch), never memory. Use
+primary sources only — official documentation, the library's own source
+code, the specification — never a secondary write-up of them (blog
+post, tutorial, forum answer); follow every claim back to the source
+that owns it.
 
-Return a compact design dossier, under ~150 lines, citing file paths for
-every fact:
+Return a compact design dossier, under ~150 lines, with a source per claim
+— a repo file path for a fact about this code, or the URL of the primary
+source for an external fact:
 1. FACTS — what exists today (paths, current behavior).
 2. CONSTRAINTS — invariants, conventions, and limits the design must
    respect.
@@ -133,7 +138,14 @@ gated on these lists being disjoint), verify clauses, and the standing
 implementer instructions block. Cut the work into vertical slices: each
 task group must be demonstrable or verifiable on its own and small enough
 for one fresh context window to implement; a group that only prepares
-the ground for later groups (prefactoring) goes first.
+the ground for later groups (prefactoring) goes first. If part of this
+change is one mechanical edit too wide for a vertical slice (renaming a
+shared symbol or column, where a single edit breaks call sites across
+the codebase), sequence that part expand-contract instead: one group
+adds the new form beside the old so nothing breaks; then one group per
+batch of call sites migrated to the new form, each batch passing on its
+own because the old form still exists; a final group removes the old
+form, blocked by every migration batch.
 
 Then write the brief's domain sections into files, using the formats in
 {{DOMAIN_DOCS}} exactly: each entry under "## Glossary updates" goes into
@@ -267,7 +279,9 @@ Your task group, verbatim from tasks.md:
 {{TASK_GROUP}}
 
 Implement exactly this group — nothing from other groups. Follow the
-repo's own CLAUDE.md conventions. Run the group's verify clauses and the
+repo's own CLAUDE.md conventions. As you work, run the type check and the
+single test files you touch often; run the full suite once before you
+report. Run the group's verify clauses and the
 project's quality gates relevant to your changes before reporting. Do NOT
 tick any checkbox in tasks.md, do not commit, and do not self-declare the
 group verified — the coordinating session checks and commits your work.
@@ -279,11 +293,13 @@ and any OPEN QUESTIONS.
 + standing instructions.
 
 **Parallel variant** — when the group is launched as part of a
-parallel set (disjoint file lists), replace the gates sentence with:
+parallel set (disjoint file lists), replace the two sentences about
+gates and test runs with:
 
 ```
-Run the group's verify clauses; skip the project-wide quality gates — the
-coordinating session runs them once after your parallel set completes.
+Run the group's verify clauses only; skip the project-wide quality gates
+and do not run the full suite — the coordinating session runs them once
+after your parallel set completes.
 ```
 
 ## Step 7 — Audit the implementation

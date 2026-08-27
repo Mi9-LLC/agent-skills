@@ -13,7 +13,7 @@ description: >-
   refactor of existing code, config change, or "add tests" after the fact. This is
   a deliberate methodology the user opts into for a specific piece of work — never
   a default mode imposed on all changes. If unsure whether they want it, ask.
-allowed-tools: Read, Write, Edit, Bash, Grep, Glob
+allowed-tools: Read, Write, Edit, Bash, Grep, Glob, AskUserQuestion
 ---
 
 # Test-driven development
@@ -51,6 +51,23 @@ Wrote the implementation before the test? Set it aside and drive it from a test
 instead — don't keep it open and "adapt" it line-by-line while you type the
 test, because that's just testing-after with extra steps. Implement fresh from
 what the test demands.
+
+## Agree the test seams first
+
+Before the first test, list the **seams** the tests will go through — the public
+boundaries where the behavior can be observed from outside, without reaching into
+internals. Prefer seams that already exist over new ones opened up for testing,
+and keep the list as short as the work allows: fewer seams means fewer tests that
+break on a refactor that changed no behavior.
+
+Confirm that list with the user before writing the first test, using
+AskUserQuestion. When there is no user to ask — running non-interactively, for
+example as an `execute-change` implementer subagent — state the seams in the
+report instead, before the first test.
+
+This is what stops the testing effort from spreading over every edge case. You
+cannot test everything, so agreeing the seams up front is what puts the tests on
+the critical paths and the complex logic.
 
 ## Red-green-refactor
 
@@ -208,6 +225,7 @@ adding behavior and without leaving the suite. Re-run after each change.
 | **Minimal** | One behavior per test. "and" in the name? Split it. | `test('validates email and domain and whitespace')` |
 | **Clear** | Name states the behavior | `test('test1')` |
 | **Intent-revealing** | Shows the API you wish you had | Obscures what the code should do |
+| **Independently verified** | Expected value comes from an independent source — a literal, a worked example, the spec: `expect(calculateTotal([{ price: 10 }, { price: 5 }])).toBe(15)` | Expected value recomputed the way the code computes it: `const expected = items.reduce((sum, i) => sum + i.price, 0)` |
 
 ## Common rationalizations (and the rebuttal)
 
@@ -226,6 +244,7 @@ test.
 | "I need to explore first" | Fine. Explore, throw the spike away, then start with TDD. |
 | "This test is hard to write" | Hard to test usually means hard to use. Listen to it; simplify the design. |
 | "TDD will slow me down" | TDD is faster than debugging-after-the-fact in production. |
+| "I'll write all the tests first, then the code" | That is horizontal slicing. Written in bulk, the tests describe behavior you have only imagined, and they stop responding to what each implementation step teaches you. One test, then one implementation, then repeat. |
 | "TDD is dogmatic; I'm being pragmatic" | The pragmatic win *is* test-first: bugs caught before commit, regressions caught immediately, behavior documented, refactoring made safe. |
 
 ## Stop and reconsider if you see
@@ -286,3 +305,9 @@ asks for TDD or wants a new feature built test-driven), **decoupled** from the
 superpowers hook/dispatcher and sibling skills (links point only to this skill's
 own `references/`), and reworked with **.NET/xUnit and TS/Vitest examples** and
 Windows-friendly commands in place of the originals.
+
+The seam-agreement step, the independent-expected-value rule, the
+horizontal-slicing rebuttal, the mocking-boundary rule and the side-channel
+anti-pattern are ported from
+[`mattpocock/skills`](https://github.com/mattpocock/skills) (`tdd`), MIT License,
+© 2026 Matt Pocock.
