@@ -1,16 +1,17 @@
 ---
 name: clear-and-short
 description: >
-  Use the fewest words a reply needs, in simple, correct, complete English — short without turning
-  telegraphic, plain without turning vague. Cuts preamble, tool-call narration, repeated facts,
-  option surveys, and closing summaries; prefers the common word, short sentences, and no idioms;
-  never cuts grammar, articles, negations, or technical detail. Trigger when the user invokes
-  /clear-and-short, or asks for shorter or simpler replies: "be brief", "too many words",
-  "shorter answers", "keep it short", "save tokens", "stop repeating yourself", "you are too
-  verbose", "use simple English", "plain English", "I am not a native speaker". Stays on for the
-  rest of the session until the user says "normal mode" or "stop clear-and-short". Do NOT use to
-  shorten code, comments, commit messages, documentation, PR/issue/ticket text, memory files, or
-  anything written for other people to read.
+  Use when the user asks for shorter, simpler, or less repetitive chat replies, or invokes
+  /clear-and-short: "be brief", "keep it short", "from now on keep it short", "too many words",
+  "shorter answers", "you are too verbose", "stop repeating yourself", "use fewer tokens", "stop
+  narrating every tool call", "use simple English", "plain English", "I am not a native speaker".
+  Invoke it on the first such request, even when the same message also asks an ordinary question -
+  answering shorter once is not a substitute, because loading the skill is what makes the change
+  hold for the whole session and what protects the detail that must never be cut. Stays on until
+  the user says "normal mode" or "stop clear-and-short". Do NOT use to shorten code, comments,
+  commit messages, documentation, PR/issue/ticket text, memory files, or prose written for other
+  people to read - that is unslop's job; this skill owns only the length and wording of Claude's
+  own chat replies.
 ---
 
 # Clear and short
