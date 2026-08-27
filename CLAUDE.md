@@ -71,3 +71,17 @@ If we ever need to ship non-skill components (agents, hooks, MCP servers, LSP) f
 2. Split into a second repo.
 
 Not in scope today; flagged for future reconsideration.
+
+## Agent skills
+
+### Issue tracker
+
+Issues live as local markdown files under `.scratch/<feature-slug>/` in this repo (gitignored — not published). See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+The five canonical roles, each label string equal to its name. See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Single-context: `CONTEXT.md` + `docs/adr/` at the repo root. See `docs/agents/domain.md`.

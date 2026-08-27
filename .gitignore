@@ -54,3 +54,6 @@ Thumbs.db
 .env
 repo-change-summary.env
 .mailmap
+
+# Local-markdown issue tracker (docs/agents/issue-tracker.md) — kept out of the public catalog
+.scratch/
