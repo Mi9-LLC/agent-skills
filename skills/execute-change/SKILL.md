@@ -113,14 +113,40 @@ itself, which the step-1 author reads.
    decision as categorized questions (A, B, C, …), each option list
    carrying a `[REC]`-marked recommended default — one category per
    AskUserQuestion call (4 questions per call; more → consecutive calls).
-   Lock each category as it is answered; continue until no ambiguity
-   remains. Never assume an answer.
+   Lock each category as it is answered. Never assume an answer.
+   The interview runs in **rounds**: after each answered category, work
+   out which new decisions those answers opened (a chosen option often
+   has its own sub-choices) and ask those in the next round; a question
+   whose answer depends on a still-open question waits for the round
+   after. The interview ends only when no decision is open — not after
+   the first pass over the dossier.
+   **Facts are your job, not the user's.** When a question needs a fact
+   from the repo or from documentation (does a helper exist, what does
+   the current code do, what does the library support), send a fresh
+   read-only research subagent for it and ask the rest of the round
+   meanwhile; never ask the user something the run can look up.
+   **Domain terms.** If the repo has a `CONTEXT.md` (the project
+   glossary), the research dossier quotes the relevant entries; when the
+   user's wording conflicts with a defined term, say so and ask which
+   meaning applies. When the user uses a vague or overloaded word,
+   propose one precise canonical term and its definition. Offer to record
+   a decision as an ADR (architecture decision record, a short file under
+   `docs/adr/`) only when all three hold: it is hard to reverse, it would
+   surprise a future reader without context, and it was a real trade-off
+   between viable options. Every resolved term and every accepted ADR
+   candidate is written into the brief (item 3) — the lead does not write
+   `CONTEXT.md` or `docs/adr/` itself.
 3. **Draft the brief.** Write
    `docs/up next/<YYYY-MM-DD-HHmm>-<slug>-plan.md` (folder created if
    missing; slug derived from the idea): context, the locked decisions,
    requirements, technical approach, out of scope, verification
-   expectations. This is the one source-tree file the lead writes itself;
-   like any brief, it is never committed by the run.
+   expectations, plus two sections the Step 1 author turns into files:
+   `## Glossary updates` (each resolved term with its one-or-two-sentence
+   definition and the words to avoid) and `## Decisions to record as
+   ADRs` (each accepted ADR candidate in 1–3 sentences: context, decision,
+   why). Either section may read "none". This is the one source-tree file
+   the lead writes itself; like any brief, it is never committed by the
+   run.
 4. **Approval gate.** Post a compact summary plus the file path, then ask:
    approve / request changes (AskUserQuestion — works from the phone).
    Changes loop back into the draft, and into the interview if they open
@@ -135,7 +161,9 @@ Step 0 using the new brief's path.
 Full command detail, the companion-skill check, and the one-time machine
 setup (Remote Control, push notifications, permission allowlist, optional
 hooks) live in [`references/preflight.md`](references/preflight.md)
-**(read it when you reach this step)**.
+**(read it when you reach this step)**. The third reference file,
+[`references/domain-docs.md`](references/domain-docs.md), holds the
+`CONTEXT.md` and ADR formats; only the step-1 author subagent reads it.
 
 Run the checks in this order:
 
@@ -297,7 +325,9 @@ close-out commit, so a crash is resumable from the last checkpoint and the
 step-7 audit gets a real branch-vs-base diff. You commit by explicit
 pathspec:
 
-- after step 5: the OpenSpec change artifacts (`openspec/changes/<id>/`);
+- after step 5: the OpenSpec change artifacts (`openspec/changes/<id>/`)
+  plus any `CONTEXT.md` / `docs/adr/` files step 1 created or updated
+  (the step-1 report lists them);
 - after each step-6 group: that group's changed files;
 - after each step-7 fix cycle: the fix subagent's changed files, committed
   BEFORE the re-audit — the audit diffs committed state only, so an
@@ -326,7 +356,18 @@ name varies by CLI version (e.g. `openspec-propose` or
 parallel-group marking, and a file list (parallel safety depends on it):
 `proposal.md`,
 `design.md`, spec deltas, and `tasks.md` with a model column, parallel
-groups, verify clauses, and the standing implementer instructions. When it
+groups, verify clauses, and the standing implementer instructions. Each
+task group is a **vertical slice** — a piece of the change that can be
+demonstrated or verified on its own, sized to fit one fresh context
+window; a group that only prepares the ground for later groups
+(prefactoring) comes first. The author also reads the repo's `CONTEXT.md`
+and `docs/adr/` when present, uses the glossary's words in the artifacts,
+and writes the brief's `## Glossary updates` and `## Decisions to record
+as ADRs` sections into `CONTEXT.md` (repo root) and `docs/adr/NNNN-slug.md`
+using the formats in
+[`references/domain-docs.md`](references/domain-docs.md) — files created
+only when there is something to write, so they are committed with the
+change artifacts at the first checkpoint. When it
 returns, record the change ID in the ledger, then run the acceptance check.
 
 ## Step 2 — Engineering review of the change
@@ -356,7 +397,7 @@ hours). Only the decision-folding waits for the answers.
 
 A verdict of `APPROVED` with zero required changes and zero decisions →
 skip steps 4–5 entirely and make the first checkpoint commit (the change
-artifacts) now. Otherwise: subagent (Opus) applies the review's Required
+artifacts plus step 1's `CONTEXT.md` / `docs/adr/` files) now. Otherwise: subagent (Opus) applies the review's Required
 plan changes via the repo's
 OpenSpec update skill (the `/opsx:update` flow; generated name varies by
 CLI version, e.g. `openspec-update-change`) AND folds the user's answered
@@ -380,14 +421,18 @@ forward). Re-review outcomes: `APPROVED` → proceed; `APPROVED WITH CHANGES`
 with new required changes, or new `UNRESOLVED DECISIONS` → loop back through
 steps 3–5 exactly once; still `NEEDS REVISION`, or anything unresolved after
 that one loop → pause and ask the user. Once the check passes, commit the
-change artifacts (first checkpoint commit).
+change artifacts and step 1's `CONTEXT.md` / `docs/adr/` files (first
+checkpoint commit).
 
 ## Step 6 — Implement, task group by task group
 
 One subagent per `tasks.md` task group, sequential in dependency order, each
 on the model its row names. Each group's prompt carries: the change folder
 path, its task group verbatim, the ledger's summaries of completed groups,
-and an instruction to read the branch diff so far. The implementer never
+and an instruction to read the branch diff so far, plus `CONTEXT.md` and
+`docs/adr/` when present (glossary words go into names and messages; an
+ADR is never contradicted silently — a conflict comes back as an open
+question). The implementer never
 ticks its own checkboxes and never self-verifies.
 
 Groups marked parallel run concurrently ONLY when their file lists in
