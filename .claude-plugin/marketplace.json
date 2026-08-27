@@ -1,0 +1,22 @@
+{
+  "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
+  "name": "mi9-agent-skills",
+  "owner": {
+    "name": "Mi9 LLC",
+    "url": "https://github.com/Mi9-LLC/agent-skills"
+  },
+  "metadata": {
+    "description": "Mi9 LLC catalog of Claude Code agent skills. Plugins here carry components npx skills cannot install, such as hooks.",
+    "version": "1.0.0"
+  },
+  "plugins": [
+    {
+      "name": "clear-and-short",
+      "description": "Short, simple chat replies. Ships the clear-and-short skill together with the UserPromptSubmit hook that turns the mode on when you ask for it.",
+      "source": "./",
+      "strict": false,
+      "category": "productivity",
+      "skills": ["./skills/clear-and-short"]
+    }
+  ]
+}
