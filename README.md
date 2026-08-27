@@ -54,6 +54,7 @@ Re-run either command anytime to update — it always pulls the current state of
 | [`repo-change-summary`](#repo-change-summary) | Deterministic per-month change totals for a git repo across **all** branches — lines added/deleted, total churn, distinct files, file-touches, commits, PRs merged, authors — as a Markdown table plus a styled HTML report; a companion multi-repo mode rolls up a named group of repos into one combined report. Bundled POSIX-shell scripts; each commit counted once, merges excluded. Optionally emails the report as a PDF attachment, preview-first. |
 | [`verify-implementation`](#verify-implementation) | Post-implementation gate: adversarially verifies finished work against whatever claims it is done — audits the report against the actual diff, re-derives every acceptance criterion, reads every new test body and re-runs mutation proofs to catch tautological guards, re-runs the project's own gates — then **fixes what it finds** on the branch in dedicated commits. Pins `claude-opus-5`. |
 | [`execute-change`](#execute-change) | Autonomous end-to-end execution of a plan brief — or a free-text idea, which first gets a design interview and a user-approved brief — in an OpenSpec-managed repo: one lead session drives author-change → review gate → apply changes → implement → audit → simplify via fresh per-step subagents, pauses with a phone push only when it needs the user (a decision, or a failure it may not resolve alone), commits per checkpoint on a dedicated branch in the run's own git worktree (several plans can run concurrently on one repo), and stops after the local commits — never deploys, never opens a PR. **Manual-only** (`/execute-change`). |
+| [`clear-and-short`](#clear-and-short) | Behavioral mode that cuts the word count of Claude's replies without breaking the English — drops preamble, tool-call narration, restated questions, repeated facts, option surveys, and closing summaries, while keeping full sentences, articles, negations, numbers, and code verbatim. Steps back to full prose for security warnings, destructive-action confirmations, and hand-followed step lists. Produces no files. |
 
 ## Recommended workflow — from idea to verified code
 
@@ -968,6 +969,47 @@ npx skills add https://github.com/Mi9-LLC/agent-skills --skill execute-change
 ```
 
 **Full definition:** [`skills/execute-change/SKILL.md`](skills/execute-change/SKILL.md) (plus the preflight/one-time-setup guide and the verbatim step-prompt templates under `references/`).
+
+---
+
+## `clear-and-short`
+
+**What it does.** Cuts the number of words in Claude's chat replies without making them harder to read. The compression happens at the level of **which facts get stated**, never **how the words are formed**: preamble and pleasantries, tool-call narration ("now I will read X"), restating your question back at you, the same fact repeated in a heading and a bullet and a closing line, a closing summary on a reply that is already short, surveys of options that were never going to be recommended, decorative tables and emoji, long raw logs, and hedging all go. Full sentences, articles, correct verb forms, negations, numbers, file paths, and verbatim code and error strings all stay. This is the deliberate opposite of telegraphic "caveman" compression: dropping articles saves roughly 5-8% of tokens and costs every reader real effort — most of all anyone reading in a second language — while the structural cuts save far more and cost nothing.
+
+**Requirements.** None. Purely behavioral — it changes how Claude writes, not what tools it can use.
+
+**How to run.** `/clear-and-short`, or just ask for shorter replies ("be brief", "too many words", "you are too verbose"). It then stays on for the rest of the session until you say "normal mode" or "stop clear-and-short" — it does not drift back to long form as the session grows. Declares no `allowed-tools`/`disallowed-tools`.
+
+**Use it for.** Spending your context budget on the work instead of on prose about the work — long agent sessions, repeated investigation summaries, and any workflow where you read many status reports. Also for keeping replies readable when English is not your first language: shorter, but still ordinary English sentences.
+
+**Triggers on phrases like.** "be brief", "keep it short", "shorter answers", "too many words", "stop repeating yourself", "you are too verbose", "save tokens".
+
+**What it does not do.** Shorten anything written for other people to read — code, comments, commit messages, documentation, PR/issue/ticket text, and memory files stay at normal length in normal prose. It also steps back to full prose on its own for security warnings, destructive or irreversible action confirmations, multi-step instructions you will follow by hand where the order matters, and whenever you repeat a question (a repeat means the short answer did not land, so it answers at greater length, not less). A shorter report never turns a partial result into a clean one: anything skipped, failed, uncertain, or assumed is still reported.
+
+**What it produces.** No files or reports — a behavioral discipline that changes how Claude writes in the chat.
+
+**Example.**
+
+```
+Normal:  I've finished looking into this. The issue you're running into is
+         caused by the auth middleware, which is checking token expiry with
+         a strict less-than comparison instead of less-than-or-equal. That
+         means a token expiring exactly on the boundary is rejected. I've
+         gone ahead and fixed that. Let me know if you'd like anything else!
+
+clear-and-short:
+         `auth/middleware.ts:42` compares token expiry with `<` instead of
+         `<=`, so a token expiring on the boundary is rejected. Fixed.
+         Tests pass.
+```
+
+**Install.**
+
+```
+npx skills add https://github.com/Mi9-LLC/agent-skills --skill clear-and-short
+```
+
+**Full definition:** [`skills/clear-and-short/SKILL.md`](skills/clear-and-short/SKILL.md).
 
 ---
 
