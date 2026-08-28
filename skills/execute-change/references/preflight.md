@@ -14,13 +14,48 @@ store (a shared spec location outside the repo), so ask the CLI:
 openspec context
 ```
 
-Current OpenSpec CLIs (verified on 1.9.0) fail loudly (non-zero exit) when
-run outside a managed root. Non-zero exit → the repo is not
-OpenSpec-managed → stop the run and explain; this skill only works where
-the `opsx:` command set does. Ordering caveat: this check needs the CLI —
-if `openspec` is not installed and `config.yaml` is absent, run the
-install path below first, then come back; a "command not found" failure
-must never be read as "not an OpenSpec repo".
+Current OpenSpec CLIs fail loudly when run outside a managed root — exit
+code 1, with `Error: No OpenSpec root found from the current directory.`
+on stderr (verified on 1.9.0 and again on 1.11.0). Ordering caveat: this
+check needs the CLI — if `openspec` is not installed and `config.yaml` is
+absent, run the install path below first, then come back; a "command not
+found" failure must never be read as "not an OpenSpec repo".
+
+**Non-zero exit → ask the user, do not just stop.** This skill only works
+where the `opsx:` command set does, so the run cannot proceed as it
+stands — but ending on a printed explanation is how a user misses that
+the run stopped at all. SKILL.md check 3 defines the blocking question:
+stop and work without OpenSpec (recommended), or initialize OpenSpec here
+and continue.
+
+**Initialize (the user chose to make the repo managed).** Do the version
+check FIRST, not after. `openspec init` writes the repo's instruction and
+command files, so an outdated CLI puts outdated files into a brand-new
+root, and nothing later in the run corrects them. Run the version
+comparison from "Update (CLI outdated)" below and take its update path if
+the local CLI is behind, then:
+
+```bash
+openspec init --tools claude
+```
+
+- **`--tools claude` is required, not cosmetic.** Without it, `init`
+  prompts for the tool list. An unattended run then hangs on a prompt
+  nobody is watching. `--tools` accepts `all`, `none`, or a
+  comma-separated list; `claude` is the one this skill needs.
+- **Do not pass `--force` by default.** It is documented as "auto-cleanup
+  legacy files without prompting", so it deletes without asking. If
+  `init` stops on a legacy-file question, that is a real user decision —
+  pause and ask rather than forcing past it.
+- `--no-animation` replaces the animated welcome screen with a static
+  one, which is the better choice when the output is being read by the
+  lead rather than a person.
+- `init` creates `.claude/commands/opsx/`, so the session-restart rule
+  under "Update" applies here too: commands and skills are scanned at
+  session start.
+- Confirm the result with `openspec context` before continuing. A zero
+  exit means the root resolves; anything else means initialization did
+  not take, and that is a stop-and-ask, not something to retry blindly.
 
 **Install (CLI missing).** `openspec --version` errors → the CLI is not
 installed. Ask the user (AskUserQuestion) before touching their machine.

@@ -198,12 +198,42 @@ Run the checks in this order:
    create a second branch, worktree, or ledger for the same plan.
 3. **OpenSpec-managed repo.** `openspec/config.yaml` at the repo root
    confirms it. If absent, run `openspec context` — a non-zero exit means
-   the repo is not OpenSpec-managed: stop and explain (a repo without a
-   local `openspec/` directory can still be managed via stores, which is
-   why the CLI, not the directory, is the authority). One ordering caveat:
-   if `openspec` is not installed at all, `openspec context` cannot answer
-   — when `config.yaml` is absent AND the CLI is missing, run check 4's
-   install path first, then return here.
+   the repo is not OpenSpec-managed (a repo without a local `openspec/`
+   directory can still be managed via stores, which is why the CLI, not
+   the directory, is the authority). One ordering caveat: if `openspec`
+   is not installed at all, `openspec context` cannot answer — when
+   `config.yaml` is absent AND the CLI is missing, run check 4's install
+   path first, then return here.
+
+   **Not managed → ask. Never end the run on a printed message alone.**
+   A notice is something the user can scroll past or read after the fact,
+   and a run that ends that way ends without them noticing. This is a
+   blocking AskUserQuestion, and the run waits on the answer:
+
+   - **Stop the run and work without OpenSpec** — recommend this one.
+     The pipeline has no change to author, review, or validate here, so
+     it cannot run at all. Hand the plan brief back and continue in this
+     session as ordinary work: no worktree, no checkpoint commits, and
+     none of the review or audit gates.
+   - **Run `openspec init` here, then continue the run.** This writes an
+     `openspec/` directory and Claude command files into the repo, so it
+     changes the repo before any plan work begins. A repo that is not
+     OpenSpec-managed is usually that way on purpose, which is why the
+     first option is the recommended one.
+
+   On the init answer, **bring the CLI current before initializing**: run
+   check 4's version comparison against `npm view @fission-ai/openspec
+   version` and take its install/update path when the local CLI is older.
+   `openspec init` generates the repo's instruction and command files, so
+   an outdated CLI writes outdated ones into a brand-new root — the one
+   moment where a stale CLI does lasting damage. Then initialize
+   (`openspec init --tools claude`; `--tools` is required, not cosmetic —
+   [`references/preflight.md`](references/preflight.md) has the flags and
+   the traps), re-run `openspec context` to confirm the root now resolves,
+   and apply check 4's restart rule, because `init` creates
+   `.claude/commands/opsx/` and commands are scanned at session start.
+   Record the answer in the ledger's Decisions block when check 8 creates
+   it.
 4. **OpenSpec CLI installed and current.**
    - `openspec --version` fails → AskUserQuestion: install globally? On
      yes: `npm install -g @fission-ai/openspec@latest`, then `openspec
@@ -290,8 +320,8 @@ Run the checks in this order:
    `/remote-control` toggle, so this is a notice, not a claim that the
    phone push is confirmed working. The only Step-0 questions are the
    conditional ones: a missing brief path (check 1), unexplained
-   worktree edits on resume (check 2), and the install/update offers in
-   checks 4–5.
+   worktree edits on resume (check 2), the not-OpenSpec-managed fork
+   (check 3), and the install/update offers in checks 4–5.
 8. **Ledger.** Create `<plan path>.ledger.md` next to the plan brief —
    literally append `.ledger.md` to the brief's full filename (e.g.
    `foo-plan.md` → `foo-plan.md.ledger.md`); this exact name is the resume
