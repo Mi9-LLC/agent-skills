@@ -8,8 +8,9 @@ published as a plugin as well. That is the only reason this directory exists.
 ## clear-and-short-trigger.py
 
 A `UserPromptSubmit` hook for the `clear-and-short` skill. It reads the prompt from stdin
-and, when the prompt asks for shorter or simpler chat replies, prints a directive telling
-Claude to load the skill. On any other prompt it prints nothing and the prompt is unaffected.
+and, when the prompt asks for shorter, simpler, or less AI-sounding chat replies, prints a
+directive telling Claude to load the skill. On any other prompt it prints nothing and the
+prompt is unaffected.
 
 The hook exists because the skill's own description does not trigger reliably. A bare
 "be brief" scored 0 out of 4 in testing: Claude answered briefly that one time without
@@ -17,9 +18,16 @@ loading the skill, so the mode never persisted. A regular expression either matc
 does not, which is what makes the mode hold for the rest of the session.
 
 Matching is deliberately narrow. Strong patterns name Claude's own replies and fire on their
-own. Weak patterns such as "too verbose" are ambiguous, so they fire only when the prompt
-names no file, function, or document to shorten. Shortening a file or a commit message is a
+own. Weak patterns such as "too verbose" or "ai tells" are ambiguous, so they fire only when
+the prompt names no file, function, or document. Rewriting a file or a commit message is a
 different job and belongs to the `unslop` skill.
+
+The script sorts a match into two kinds, because they are not the same request. **Length**
+("be brief", "too many words", "use fewer tokens") gets the directive to apply the whole
+skill. **Voice** ("humanize your responses", "remove the AI tells", "stop writing like an
+AI") gets a directive to apply the skill's voice and simple-English rules and leave the
+length caps off: that user asked for a different voice, not for less content. A prompt
+matching both gets the whole skill. Run `classify()` on a phrase to see which kind it is.
 
 ## Installing
 

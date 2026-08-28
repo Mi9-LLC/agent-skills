@@ -9,9 +9,11 @@ description: >
   clean up text, or to make writing "sound less like AI" — for documentation, README files,
   blog posts, emails, announcements, PR descriptions, and other prose people will read.
   Also apply on your own when writing a new documentation page, README, or announcement.
-  Do NOT use on code, code comments, commit messages, or chat replies (chat length and
-  wording are clear-and-short's job); do NOT change the meaning, facts, numbers, or the
-  technical terms of the text.
+  Do NOT use on code, code comments, commit messages, or Claude's own chat replies - the
+  length, wording, and AI tells of a chat reply are clear-and-short's job, including when the
+  user asks to humanize the replies themselves ("humanize your responses", "your answers sound
+  like ChatGPT"); this skill takes the request only when it names prose other people will read.
+  Do NOT change the meaning, facts, numbers, or the technical terms of the text.
 ---
 
 # Unslop
@@ -80,10 +82,12 @@ Edit text to remove the patterns that mark it as AI-written, keeping its meaning
 
 ## Boundaries
 
-Prose only. Preserve meaning, facts, numbers, file paths, identifiers, and established technical
-terms. Match the intended tone of the piece; do not add opinions or first-person voice the author
-did not write. When a rule conflicts with a project style guide (for example a house rule on
-heading case), the project style guide wins.
+Prose only, written for other people to read. A request aimed at Claude's own chat replies
+("humanize your responses", "remove the AI tells", "stop writing like an AI") belongs to
+`clear-and-short`, which owns their length, wording, and tells. Preserve meaning, facts, numbers,
+file paths, identifiers, and established technical terms. Match the intended tone of the piece; do
+not add opinions or first-person voice the author did not write. When a rule conflicts with a
+project style guide (for example a house rule on heading case), the project style guide wins.
 
 Adapted from the `unslop` skill in `cursor/plugins` (`pstack`, MIT, © 2026 Lauren Tan): the
 pattern list is kept as-is; the "Adding soul" section (opinions, first person, deliberate mess)
