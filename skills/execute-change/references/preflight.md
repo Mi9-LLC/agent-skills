@@ -231,6 +231,15 @@ the two reuse-checkout options the two directories are the same, so nothing
 changes there. The `run_root` field inside the metadata file is what points at
 the actual run root.
 
+That directory reset happens when the shell leaves the session's allowed
+directories, so **do not start the lead session with the run's worktree passed
+as an additional working directory** (`--add-dir`): a `cd` into an allowed
+directory is not reset, the payload's `cwd` can then be the worktree, and the
+metadata file in the session's project root is never found. The symptom is no
+`execute-change-run.jsonl` appearing at all and the lead's watcher reporting
+`NOLOG`. This has not been reproduced — treat it as a precaution, not
+established behavior.
+
 All three fire in the **parent (lead) session**, not inside the subagent, so
 one script wired to all three sees the whole run from one place. The JSONL
 log is what the lead's stall watcher reads (SKILL.md, "Heartbeat and stall
@@ -273,7 +282,11 @@ process only when all three of these hold. The `-Worktree` parameter keeps
 its name; the path passed to it is the run root, which is a worktree only
 when check 6 created one:
 
-1. its command line contains the run root path, OR it descends from the
+1. its command line contains the run root path — matched in both the
+   Windows and the Git Bash form, and only when the match ends on a path
+   boundary, so a sibling directory whose name merely starts with the run
+   root (`C:\Develop\Foo` against `C:\Develop\Foo.worktrees\...`) is never
+   selected — OR it descends from the
    current `claude` process through the `ParentProcessId` chain. The path is
    matched in **both** forms it can appear in: the Windows form
    (`C:\Temp\...`, compared case-insensitively with `/` and `\` treated

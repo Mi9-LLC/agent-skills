@@ -84,6 +84,13 @@ def _replay(cwd):
 
     The batch start is the `at` of the most recent start event that took the running set from
     empty to non-empty -- that is, when the current batch of subagents began.
+
+    A `resume` event is a hard reset. An interrupted run leaves `start` lines whose subagents
+    died without ever emitting `stop`, so a replay over the whole log would hold them forever:
+    the running set never empties again, the sweep never runs for the rest of the resumed run,
+    and the batch start stays pinned at the first batch of the original run. The resume check
+    appends the boundary event rather than truncating or renaming the log, because the history
+    is worth keeping and a boundary event is what makes the replay correct without losing it.
     """
     running = []
     batch_started_at = None
@@ -104,6 +111,10 @@ def _replay(cwd):
             continue
         kind = event.get("kind")
         agent_id = event.get("agent_id")
+        if kind == "resume":
+            running = []
+            batch_started_at = None  # forget the interrupted run's batch entirely
+            continue
         if kind == "start":
             if not running:
                 batch_started_at = event.get("at")  # empty -> non-empty: a new batch begins

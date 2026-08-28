@@ -217,16 +217,37 @@ Run the checks in this order:
    1. **Re-run checks 3–5.** The environment can drift between runs.
    2. **Re-arm the hooks.** Rewrite `.claude/execute-change-run.json` in
       the directory THIS session was started in, carrying this session's
-      own `session_id`. The hooks match on that id, so until this is done
-      a resumed run has every hook inert — it is a new session with a new
-      id, and the file check 6 wrote names the old one. Keep the
+      own `session_id` — read from the `CLAUDE_CODE_SESSION_ID`
+      environment variable, exactly as check 6 does, with the same
+      empty-variable guard. The hooks match on that id, so until this is
+      done a resumed run has every hook inert — it is a new session with
+      a new id, and the file check 6 wrote names the old one. Keep the
       `run_root`, `branch`, and `ledger` values the ledger records, and
       keep the ORIGINAL `started_at`: the process sweep uses it as its
       cutoff, so resetting it would spare every process the run started
       before the interruption. Leave the recorded start commit alone — a
       resume re-reads that field from the ledger and never re-derives it.
-      The heartbeat log `.claude/execute-change-run.jsonl` beside it is
-      appended to, never truncated: the batch-start replay reads it.
+
+      Then append one **resume boundary event** to the heartbeat log
+      `.claude/execute-change-run.jsonl` beside it — a single line:
+
+      ```json
+      {"kind":"resume","at":"<now, ISO-8601 UTC>"}
+      ```
+
+      The log is appended to, never truncated or renamed: its history is
+      worth keeping, and the boundary event is what makes the replay
+      correct without losing it. Both replays that read this log — the
+      hook's own sweep replay and the stall watcher below — treat a
+      `resume` line as a hard reset and forget everything before it.
+      Without it, the `start` lines of subagents the interruption killed
+      have no matching `stop`, so the running set never empties again:
+      the automatic sweep never runs for the rest of the resumed run and
+      every watcher ends in `STALL`.
+
+      **Order matters:** append the boundary event and rewrite the
+      metadata file BEFORE arming any watcher, or the first watcher of
+      the resumed run replays the stale tail.
    3. **Skip checks 6–8.** The branch, run root, start commit, and ledger
       already exist. Never create a second branch, run root, or ledger for
       the same plan.
@@ -396,8 +417,10 @@ Run the checks in this order:
    carries whatever the user committed before the run started.
 
    Whichever option was taken, the main tree keeps the ledger and, on a
-   design-first run, the brief; under the worktree option those two are
-   the run's only writes outside the run root. Then write the run's
+   design-first run, the brief; under the worktree option those two —
+   together with the metadata file and the heartbeat log written below,
+   which also live in the session's project root — are the run's writes
+   outside the run root. Then write the run's
    metadata file, `.claude/execute-change-run.json`, in **the directory
    this session was started in** — the main repo checkout — and not in
    the run root: the hooks read the payload's `cwd`, which is the
@@ -417,6 +440,31 @@ Run the checks in this order:
      "started_at": "<run start, ISO-8601 UTC>"
    }
    ```
+
+   **Where the session id comes from.** The Claude Code CLI puts it in the
+   `CLAUDE_CODE_SESSION_ID` environment variable, and the Bash tool
+   inherits it — read it, never guess it:
+
+   ```bash
+   SESSION_ID=$CLAUDE_CODE_SESSION_ID
+   ```
+
+   The hooks compare this string against the payload's `session_id`, so a
+   wrong one makes every hook silently inert. **If the variable is empty
+   or absent: say so to the user and continue WITHOUT writing the metadata
+   file** — no file is better than a wrong id, because a wrong id leaves
+   the hooks inert while the check-7 readiness line claims the heartbeat is
+   armed. The run then proceeds degraded, exactly as it does on a machine
+   where the hooks are not installed.
+
+   **Caution — do not pass the run's worktree as an additional working
+   directory** (`--add-dir`) when starting the lead session. The hooks read
+   the payload's `cwd`, and a `cd` into a directory the session already
+   allows is not reset, so `cwd` can become the worktree and the metadata
+   file sitting in the session's project root is never found. The symptom
+   is no `.claude/execute-change-run.jsonl` appearing at all and the
+   watcher reporting `NOLOG`. This has not been reproduced — treat it as a
+   precaution, not established behavior.
 
    The ledger path is the file check 8 will create: `<plan path>.ledger.md`
    is deterministic from the brief path, so writing it here, before check 8
@@ -615,6 +663,14 @@ for line in lines:
         continue
     # The running set is rebuilt from the WHOLE log: every start adds and every
     # stop removes, whatever their timestamps. cut is a separate question.
+    # A resume boundary is a hard reset: the interrupted run's subagents died
+    # without a stop, so their starts would otherwise hold the set non-empty
+    # forever and every watcher would end in STALL. The log is appended to
+    # rather than truncated -- the history is worth keeping, and this event is
+    # what makes the replay correct without losing it.
+    if kind == "resume":
+        running.clear()
+        continue
     if kind == "start":
         running[e.get("agent_id")] = at
         continue

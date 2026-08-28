@@ -29,6 +29,9 @@
 .PARAMETER Worktree
     Path of the run's git worktree. Compared case-insensitively, with / and \ treated alike,
     and matched in both the Windows form (C:\Temp\Foo) and the Git-Bash form (/c/temp/foo).
+    The match must end on a path boundary, so a sibling directory whose name merely starts with
+    the same characters -- C:\Develop\Foo.worktrees\run2 against C:\Develop\Foo -- is not a
+    match, and one run never sweeps another run's processes.
 
 .PARAMETER Since
     ISO-8601 timestamp. Processes started before it are never touched. What it points at
@@ -97,6 +100,50 @@ function Get-PosixPath([string]$comparablePath) {
     }
     # Already POSIX (or something with no drive letter at all) -- leave it alone.
     return $comparablePath
+}
+
+function Test-PathMatch([string]$commandLine, [string]$needle) {
+    # Why not a plain Contains: a substring test also matches a longer sibling path that merely
+    # starts with the same characters. Sweeping the run root C:\Develop\Foo would select a
+    # process whose command line names C:\Develop\Foo.worktrees\run2 -- and under the
+    # reuse-checkout option the run root IS the repository directory, while every worktree run
+    # sits at ../<repo>.worktrees/<run>, so that is the normal layout rather than a contrived
+    # one. One run would kill another run's processes with /T /F. So the character right after
+    # the match has to end the path segment.
+    if ([string]::IsNullOrEmpty($commandLine) -or [string]::IsNullOrEmpty($needle)) {
+        return $false
+    }
+
+    # A needle that already ends in a separator carries its own boundary.
+    $last = $needle[$needle.Length - 1]
+    if ($last -eq '/' -or $last -eq '\') {
+        return $commandLine.IndexOf($needle, [StringComparison]::OrdinalIgnoreCase) -ge 0
+    }
+
+    # IndexOf plus a character test, never a regex built from the needle: the needle is a real
+    # path, and its backslashes, dots and brackets would all be pattern syntax. Keep scanning
+    # past a rejected hit -- the first occurrence can land inside a longer segment while a
+    # later one on the same command line is a genuine match.
+    $from = 0
+    while ($from -le $commandLine.Length - $needle.Length) {
+        $at = $commandLine.IndexOf($needle, $from, [StringComparison]::OrdinalIgnoreCase)
+        if ($at -lt 0) { return $false }
+
+        $after = $at + $needle.Length
+        if ($after -ge $commandLine.Length) { return $true }   # end of string ends the path
+
+        $next = $commandLine[$after]
+        # Get-ComparablePath has already turned every backslash into '/', so '/' is the
+        # separator that actually turns up here; '\' stays in the set so the helper is still
+        # right if it is ever handed a path that has not been through that normalization.
+        if ($next -eq '/' -or $next -eq '\' -or $next -eq '"' -or $next -eq "'" -or
+            [char]::IsWhiteSpace($next)) {
+            return $true
+        }
+
+        $from = $at + 1
+    }
+    return $false
 }
 
 try {
@@ -186,8 +233,8 @@ foreach ($p in $procs) {
     $commandLine = Get-ComparablePath ([string]$p.CommandLine)
     # Either needle counts: which form is on the command line depends on who launched the
     # process, and a run mixes both.
-    $byPath = ($needle -ne '' -and $commandLine.Contains($needle)) -or
-              ($posixNeedle -ne '' -and $commandLine.Contains($posixNeedle))
+    $byPath = ($needle -ne '' -and (Test-PathMatch $commandLine $needle)) -or
+              ($posixNeedle -ne '' -and (Test-PathMatch $commandLine $posixNeedle))
     $byTree = $descendants.Contains($procId)
     if (-not ($byPath -or $byTree)) { continue }
 

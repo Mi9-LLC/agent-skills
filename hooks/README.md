@@ -125,6 +125,10 @@ at all, so nothing can test one; the stop event logs `agent_transcript_path` and
 `stop_hook_active` instead. The transcript path is the useful one, because it lets the lead
 read a failed subagent's transcript directly.
 
+The lead writes the metadata file with the session id it reads from the `CLAUDE_CODE_SESSION_ID` environment variable; an id that does not match the hook payload's makes every hook inert, so an absent variable is reported rather than guessed at.
+
+A resumed run appends one `{"kind":"resume"}` line before arming anything. Both replays -- the hook's and the lead's watcher -- treat it as a hard reset of the running set. Without it the `start` events of subagents that died in the interrupted run never get a matching `stop`, so the running set never empties: the automatic sweep would never fire again and every watcher would end in `STALL`.
+
 The lead arms a background watcher that re-reads the JSONL log every 180 seconds and speaks
 only when something is wrong: a 9-minute subagent silence, or a `permission_prompt`,
 `agent_needs_input`, or `idle_prompt` notification. There is no bad-stop condition in that
@@ -134,7 +138,7 @@ table is the gate; the watcher only says when to go and look.
 
 `sweep-worktree-processes.ps1` is Windows-only cleanup of processes a finished subagent left
 running -- `node`, test runners. A process is selected only when all three of these hold: its
-command line contains the run root path or it descends from the current `claude` process, AND
+command line contains the run root path (both the Windows and the Git Bash form, and only where the match ends on a path boundary, so `C:\Develop\Foo` never matches a process in `C:\Develop\Foo.worktrees\...` — one run must not kill another run's processes) or it descends from the current `claude` process, AND
 it started at or after `-Since`, AND its executable is in a fixed allowlist. Selected
 processes are killed with `taskkill /PID <n> /T /F`. `-WhatIf` lists them without killing. The
 run root is passed in the `-Worktree` parameter, whose name predates the run-root choice and

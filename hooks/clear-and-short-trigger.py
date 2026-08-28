@@ -104,21 +104,59 @@ WEAK_VOICE = [
     r"\b(sound|read)s?\s+like\s+(an?\s+)?(ai|chat\s?gpt)\b",
 ]
 
-# Asks for the mode OFF. All strong by the same rule as the lists above: each one is
-# unambiguously about Claude's own replies, so none needs the untargeted check.
+# The words that make a phrase about Claude's own replies rather than about a dropdown,
+# an API, or a quiz.
+REPLY = r"(?:replies|answers|responses|output|writing|wording)"
+
+# Asks for the mode OFF, matched ANYWHERE in the prompt. Each one is reply-directed on its
+# own -- it names the skill, names Claude's replies, or asks Claude to stop being brief --
+# so none needs the untargeted check the WEAK lists use. The generic phrases that read the
+# same way in an unrelated sentence ("normal mode", "back to normal") live in
+# OFF_SWITCH_ONLY below instead.
 OFF_SWITCH = [
-    r"\bnormal mode\b",
+    # The skill by name.
     r"\b(stop|end|exit|quit|turn off|switch off|disable|cancel)\b.{0,20}?"
     r"\bclear[\s-]?and[\s-]?short\b",
     r"\bclear[\s-]?and[\s-]?short\b.{0,20}?\boff\b",
-    r"\bstop being (brief|concise|terse|short|so short)\b",
+    # Asking Claude to stop being brief.
+    r"\bstop being (brief|concise|terse|short|so short|so brief|so concise)\b",
     r"\bstop (keeping|making) (it|them|your (replies|answers|responses))\b.{0,20}?"
     r"\b(short|brief|concise)\b",
-    r"\bbe (verbose|wordy|long|longer|detailed|thorough)( again)?\b",
-    r"\b(back|go back|revert|return) to (normal|your normal|full|the usual|regular)\b",
-    r"\b(full|normal|long|longer|verbose|regular) (replies|answers|responses)\b",
     r"\bstop\b.{0,20}?\b(the )?(short|brief|concise) (mode|replies|answers|responses)\b",
+    # "be verbose" is an off-switch only when it is aimed at the replies: "again" means
+    # back to how Claude answered before, and "your replies" says it outright. Bare
+    # "be verbose about the error" asks for more detail on a topic, not for the mode off.
+    r"\bbe (verbose|wordy|long|longer|detailed|thorough)\s+again\b",
+    r"\bbe (verbose|wordy|long|longer|detailed|thorough)\b.{0,30}?\byour\s+" + REPLY + r"\b",
+    # "full/normal/longer replies", but only when they are Claude's replies -- "full
+    # answers to the quiz" and "the API returns longer responses" are neither.
+    r"\byour\s+(full|normal|long|longer|verbose|regular)\s+" + REPLY + r"\b",
+    r"\b(back to|go back to|return to|resume|give me|i want)\s+"
+    r"(full|normal|long|longer|verbose|regular)\s+" + REPLY + r"\b",
+    # "back to normal" tied to the replies in the same breath, either order.
+    r"\b(back|go back|revert|return) to (normal|your normal|full|the usual|regular)\b"
+    r".{0,30}?\byour\s+" + REPLY + r"\b",
+    r"\byour\s+" + REPLY + r"\b.{0,30}?"
+    r"\b(back|go back|revert|return) to (normal|your normal|full|the usual|regular)\b",
 ]
+
+# Asks for the mode OFF, matched against the WHOLE prompt. These phrases are too generic
+# to look for inside a sentence -- "normal mode" also appears in "the normal mode of
+# failure", "back to normal" in "make the dropdown return to normal size". A real
+# off-switch message is the switch and nothing else, so they must account for the entire
+# prompt, give or take politeness.
+OFF_SWITCH_ONLY = [
+    r"(?:go\s+)?(?:back\s+to\s+)?normal\s*mode",
+    r"(?:go\s+|switch\s+)?back\s+to\s+normal(?:\s+mode)?",
+    r"return\s+to\s+normal(?:\s+mode)?",
+    r"(?:back\s+to\s+)?(?:full|normal|regular|verbose|longer)\s+"
+    r"(?:replies|answers|responses|mode)",
+    r"normal\s+(?:voice|style|length)",
+]
+
+# Filler an off-switch message carries without becoming a sentence about something else.
+POLITE_PREFIX = r"(?:(?:ok(?:ay)?|please|hey|claude|and|now)[\s,]+)*"
+POLITE_SUFFIX = r"(?:[\s,]+(?:please|now|again|thanks|thank\s+you|claude))*"
 
 # A named code/document target means a WEAK match is about that thing, not the reply.
 TARGET = (
@@ -139,6 +177,9 @@ WEAK_LENGTH_RX = _compile(WEAK_LENGTH)
 STRONG_VOICE_RX = _compile(STRONG_VOICE)
 WEAK_VOICE_RX = _compile(WEAK_VOICE)
 OFF_SWITCH_RX = _compile(OFF_SWITCH)
+OFF_SWITCH_ONLY_RX = _compile(
+    [POLITE_PREFIX + "(?:" + p + ")" + POLITE_SUFFIX for p in OFF_SWITCH_ONLY]
+)
 TARGET_RX = re.compile(TARGET, re.I)
 
 INVOKE = (
@@ -194,13 +235,25 @@ def classify(prompt: str) -> str:
     return ""
 
 
+def _normalize(prompt: str) -> str:
+    """Lowercase, collapse whitespace, drop surrounding punctuation. For whole-prompt matching."""
+    return re.sub(r"\s+", " ", prompt.strip().lower()).strip(" .!?,;:\"'")
+
+
 def is_off_switch(prompt: str) -> bool:
     """True when the prompt asks for the mode OFF ("normal mode", "stop clear-and-short").
+
+    Two tests. The reply-directed phrases are looked for anywhere in the prompt; the
+    generic ones must account for the whole prompt, or an ordinary sentence that happens
+    to contain "normal mode" would silently suppress the default for the whole session.
 
     Kept out of classify() on purpose: classify() names the directive to emit, and an
     off-switch emits none. It only decides whether the default stays quiet.
     """
-    return any(rx.search(prompt) for rx in OFF_SWITCH_RX)
+    if any(rx.search(prompt) for rx in OFF_SWITCH_RX):
+        return True
+    text = _normalize(prompt)
+    return any(rx.fullmatch(text) for rx in OFF_SWITCH_ONLY_RX)
 
 
 def _load_seen() -> dict:
