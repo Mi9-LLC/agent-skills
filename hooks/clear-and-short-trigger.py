@@ -33,6 +33,23 @@ and a later "normal mode" still turns the skill off. A prompt that matches a pat
 closes out the default as well: it emits its own directive AND records the session, so
 the voice directive can never fire a turn later and tell the model to drop the length
 rules the user just asked for.
+
+Three things hold the default back, none of which touch a prompt that matches a pattern
+(an explicit "be brief" is a real request and is always honored):
+
+  OFF-SWITCH  -- "normal mode", "stop clear-and-short", "stop being brief" and friends ask
+                 for the mode OFF. They match none of the pattern lists, so without this
+                 check the very prompt asking for the mode off would receive the default.
+                 An off-switch prompt emits nothing and records the session, which also
+                 stops the default firing later in that session.
+  SOURCE      -- the payload's "source" field says who typed the prompt ("user", "sdk",
+                 "system", ...). The default fires only for "user", or when the field is
+                 absent (older payloads keep working). Otherwise `claude -p`, SDK runs and
+                 eval harnesses would silently get a directive nobody asked for, changing
+                 output that is being measured for something else.
+  OPT-OUT     -- setting the environment variable CLEAR_AND_SHORT_NO_DEFAULT to any
+                 non-empty value turns the default off permanently, without uninstalling
+                 the hook.
 """
 import json
 import os
@@ -87,6 +104,22 @@ WEAK_VOICE = [
     r"\b(sound|read)s?\s+like\s+(an?\s+)?(ai|chat\s?gpt)\b",
 ]
 
+# Asks for the mode OFF. All strong by the same rule as the lists above: each one is
+# unambiguously about Claude's own replies, so none needs the untargeted check.
+OFF_SWITCH = [
+    r"\bnormal mode\b",
+    r"\b(stop|end|exit|quit|turn off|switch off|disable|cancel)\b.{0,20}?"
+    r"\bclear[\s-]?and[\s-]?short\b",
+    r"\bclear[\s-]?and[\s-]?short\b.{0,20}?\boff\b",
+    r"\bstop being (brief|concise|terse|short|so short)\b",
+    r"\bstop (keeping|making) (it|them|your (replies|answers|responses))\b.{0,20}?"
+    r"\b(short|brief|concise)\b",
+    r"\bbe (verbose|wordy|long|longer|detailed|thorough)( again)?\b",
+    r"\b(back|go back|revert|return) to (normal|your normal|full|the usual|regular)\b",
+    r"\b(full|normal|long|longer|verbose|regular) (replies|answers|responses)\b",
+    r"\bstop\b.{0,20}?\b(the )?(short|brief|concise) (mode|replies|answers|responses)\b",
+]
+
 # A named code/document target means a WEAK match is about that thing, not the reply.
 TARGET = (
     r"\b(function|method|class|variable|docstring|comment|paragraph|sentence|"
@@ -105,6 +138,7 @@ STRONG_LENGTH_RX = _compile(STRONG_LENGTH)
 WEAK_LENGTH_RX = _compile(WEAK_LENGTH)
 STRONG_VOICE_RX = _compile(STRONG_VOICE)
 WEAK_VOICE_RX = _compile(WEAK_VOICE)
+OFF_SWITCH_RX = _compile(OFF_SWITCH)
 TARGET_RX = re.compile(TARGET, re.I)
 
 INVOKE = (
@@ -158,6 +192,15 @@ def classify(prompt: str) -> str:
     if voice:
         return "voice"
     return ""
+
+
+def is_off_switch(prompt: str) -> bool:
+    """True when the prompt asks for the mode OFF ("normal mode", "stop clear-and-short").
+
+    Kept out of classify() on purpose: classify() names the directive to emit, and an
+    off-switch emits none. It only decides whether the default stays quiet.
+    """
+    return any(rx.search(prompt) for rx in OFF_SWITCH_RX)
 
 
 def _load_seen() -> dict:
@@ -228,6 +271,27 @@ def _emit(directive: str) -> None:
     )
 
 
+def _default_allowed(payload) -> bool:
+    """True when the unasked-for VOICE default may fire for this payload.
+
+    Two gates, both about the default only -- a prompt that matches a pattern is a real
+    request and is honored whatever the source or the environment says.
+
+    CLEAR_AND_SHORT_NO_DEFAULT set to any non-empty value turns the default off.
+
+    "source" says who typed the prompt: "user", "sdk", "system" and others. Only "user"
+    gets the default, so `claude -p`, SDK callers and eval harnesses are left alone. An
+    ABSENT source is treated as a user prompt, so older payloads keep working; a present
+    but non-user (or non-string) source does not fire.
+    """
+    if os.environ.get("CLEAR_AND_SHORT_NO_DEFAULT"):
+        return False
+    if "source" not in payload:
+        return True
+    source = payload.get("source")
+    return isinstance(source, str) and source.strip().lower() == "user"
+
+
 def _voice_default(payload) -> None:
     """Emit DIRECTIVE_VOICE once, on the first unmatched prompt of a session.
 
@@ -237,6 +301,8 @@ def _voice_default(payload) -> None:
     an unrecorded session would fire again on the next prompt, which is the every-prompt
     behavior this default exists to avoid.
     """
+    if not _default_allowed(payload):
+        return
     session_id = payload.get("session_id")
     if not isinstance(session_id, str) or not session_id.strip():
         return
@@ -252,11 +318,21 @@ def main() -> None:
         payload = json.load(sys.stdin)
     except Exception:
         return  # never block a prompt on a malformed payload
+    if not isinstance(payload, dict):
+        return
     prompt = payload.get("prompt") or ""
     if not isinstance(prompt, str) or not prompt.strip():
         return
     kind = classify(prompt)
     if not kind:
+        # An off-switch asks for the mode OFF, so it emits nothing -- but it does record
+        # the session, or the default would fire on the next prompt of the session the
+        # user just asked to be quiet.
+        if is_off_switch(prompt):
+            session_id = payload.get("session_id")
+            if isinstance(session_id, str) and session_id.strip():
+                _record_seen(session_id)
+            return
         _voice_default(payload)
         return
     # A matched prompt emits exactly what it always did, on any prompt of the session.

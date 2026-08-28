@@ -10,19 +10,32 @@
 
     A process is killed only when ALL THREE of these hold:
       1. its command line names the worktree, OR it descends from the current claude process;
-      2. it started at or after -Since (the run start), so nothing predating the run is touched;
+      2. it started at or after -Since, so nothing predating that point is touched;
       3. its executable name is in the allowlist below (build and test tools only).
 
-    KNOWN BLIND SPOT: a process started as `node script.js` with its working directory set to
-    the worktree shows no worktree path anywhere on its command line, so rule 1 catches it
-    only through the parent chain. Win32_Process has no working-directory field, so there is
-    no cheap way to close that gap -- reading each process's PEB would mean native interop.
+    KNOWN BLIND SPOTS -- two separate cases, each of them leaving rule 1 with nothing but the
+    command line to work with:
+      a. a process started as `node script.js` with its working directory set to the worktree
+         shows no worktree path anywhere on its command line, so rule 1 can only reach it
+         through the parent chain. Win32_Process has no working-directory field, so there is
+         no cheap way to close that gap -- reading each process's PEB would mean native
+         interop.
+      b. a process orphaned by its launching shell -- started with `&` or `nohup`, shell then
+         exited -- has a dead ParentProcessId, and Windows does not reparent orphans onto a
+         live process. The parent chain cannot reach it at all.
+    In both cases the process is caught only if its command line happens to carry the worktree
+    path, in either of the two forms rule 1 matches.
 
 .PARAMETER Worktree
-    Path of the run's git worktree. Compared case-insensitively, with / and \ treated alike.
+    Path of the run's git worktree. Compared case-insensitively, with / and \ treated alike,
+    and matched in both the Windows form (C:\Temp\Foo) and the Git-Bash form (/c/temp/foo).
 
 .PARAMETER Since
-    ISO-8601 timestamp of the run start. Processes older than this are never touched.
+    ISO-8601 timestamp. Processes started before it are never touched. What it points at
+    depends on the caller: the automatic sweep passes the start of the batch of subagents that
+    just finished, so anything predating that batch -- the Step 0 background dependency
+    install being the case that matters -- is never a candidate; the close-out sweep passes
+    the run start.
 
 .PARAMETER WhatIf
     List what would be killed and kill nothing.
@@ -68,6 +81,24 @@ function Get-ComparablePath([string]$path) {
     return $path.Replace('\', '/').ToLowerInvariant()
 }
 
+function Get-PosixPath([string]$comparablePath) {
+    # Git Bash rewrites C:\Temp\Foo to /c/temp/foo before handing it to the process it starts,
+    # so a needle built from the Windows form never appears on that command line. The lead
+    # drives an execute-change run through the Bash tool, which IS Git Bash, so this is the
+    # common form on this machine rather than the exotic one.
+    #
+    # The input has already been through Get-ComparablePath, so it is lowercased with forward
+    # slashes and all that is left is turning a leading '<letter>:' into '/<letter>'. Substring
+    # work, not -replace, for the same regex reason as above.
+    if ([string]::IsNullOrWhiteSpace($comparablePath)) { return '' }
+    if ($comparablePath.Length -ge 2 -and $comparablePath[1] -eq ':' -and
+        [char]::IsLetter($comparablePath[0])) {
+        return '/' + $comparablePath.Substring(0, 1) + $comparablePath.Substring(2)
+    }
+    # Already POSIX (or something with no drive letter at all) -- leave it alone.
+    return $comparablePath
+}
+
 try {
     $styles = [System.Globalization.DateTimeStyles]::AdjustToUniversal -bor `
               [System.Globalization.DateTimeStyles]::AssumeUniversal
@@ -87,6 +118,7 @@ catch {
 }
 
 $needle = Get-ComparablePath $Worktree
+$posixNeedle = Get-PosixPath $needle
 
 $byPid = @{}
 foreach ($p in $procs) { $byPid[[int]$p.ProcessId] = $p }
@@ -152,7 +184,10 @@ foreach ($p in $procs) {
     if ($created.ToUniversalTime() -lt $sinceUtc) { continue }
 
     $commandLine = Get-ComparablePath ([string]$p.CommandLine)
-    $byPath = ($needle -ne '' -and $commandLine.Contains($needle))
+    # Either needle counts: which form is on the command line depends on who launched the
+    # process, and a run mixes both.
+    $byPath = ($needle -ne '' -and $commandLine.Contains($needle)) -or
+              ($posixNeedle -ne '' -and $commandLine.Contains($posixNeedle))
     $byTree = $descendants.Contains($procId)
     if (-not ($byPath -or $byTree)) { continue }
 

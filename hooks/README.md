@@ -54,6 +54,24 @@ would fight an explicit "normal mode" later in the session. Emitting once leaves
 quiet for the rest of the session, so a later matched prompt still works: "be brief"
 upgrades to the length rules, "normal mode" turns the skill off.
 
+Three things hold the default back.
+
+An **off-switch prompt** asks for the mode OFF -- "normal mode", "stop clear-and-short",
+"stop being brief", "you can be verbose again", "back to normal". When one of those is the
+first prompt of a session, the hook prints nothing and records the session id, which closes
+out the default for the rest of it. Before that, such a prompt got the voice directive on the
+very message asking for the mode to be off.
+
+**The payload's `source` field** gates the default. It fires when `source` is `user`, or when
+`source` is absent -- older payloads keep working. It no longer fires in `claude -p`, SDK
+runs, or automated eval harnesses, where it silently changed output that was being measured
+for something else. A prompt that explicitly matches the skill's patterns is still honored
+whatever the source says.
+
+**The environment variable `CLEAR_AND_SHORT_NO_DEFAULT`**, set to any non-empty value, turns
+the default off. Matched prompts still work. This is the documented opt-out; before it, the
+only way out was uninstalling the plugin.
+
 A prompt that matches the skill's own patterns does two things: it prints its own directive,
 exactly as it always did, and it closes out the default by recording the session id. That
 second part matters when the match comes first. Without it, a session opening with "be
@@ -78,17 +96,27 @@ Hooks for the `execute-change` skill, shipped as the second plugin entry,
 
 `execute-change-watch.py` is one Python script handling three events: `SubagentStart`,
 `SubagentStop`, and `Notification`. All three fire in the parent session, not inside the
-subagent. The script reads `<run root>/.claude/execute-change-run.json`, written once by the
-`execute-change` lead session, and appends one JSON line per event to
-`<run root>/.claude/execute-change-run.jsonl`. The run root is the directory the run works
-in: the checkout the run was started from, or a dedicated worktree, chosen by a question at
-preflight. The metadata file names it under the key `run_root`; the hook falls back to the
-older key `worktree` so a run already in flight keeps working. If that metadata file is
+subagent. The script reads `<session project root>/.claude/execute-change-run.json`, written
+once by the `execute-change` lead session, and appends one JSON line per event to
+`<session project root>/.claude/execute-change-run.jsonl`. If that metadata file is
 absent, or its `session_id` does not match the payload's, the hook exits 0 and writes
 nothing. That
 pass-through rule is what keeps it inert in every session that is not an `execute-change`
 run. It always exits 0: exit code 2 on `SubagentStop` would block the subagent from
 stopping.
+
+Both run-state files sit in the directory the session was started in -- the main repo
+checkout -- and not in the run root. The hooks read the payload's `cwd`, which is the
+session's directory, and Claude Code resets the shell's directory back to the project root
+whenever a command leaves it. A worktree lives outside the project, so a metadata file
+written inside the worktree was never found and every hook stayed inert. Under the two
+reuse-checkout options the two directories are the same, so nothing changes there.
+
+The run root is a separate thing: the directory the run works in, which is the checkout the
+run was started from or a dedicated worktree, chosen by a question at preflight. The
+metadata file names it under the key `run_root`, and that field is what the sweep is pointed
+at; the hook falls back to the older key `worktree` so a run already in flight keeps
+working.
 
 Two payload details are easy to get wrong. The `Notification` field carrying the text is
 `message`, with an optional `title` beside it, not `notification_text`. The log key stays
@@ -105,14 +133,37 @@ check after the subagent returns, against the acceptance-check table in `SKILL.m
 table is the gate; the watcher only says when to go and look.
 
 `sweep-worktree-processes.ps1` is Windows-only cleanup of processes a finished subagent left
-running -- `node`, test runners, shells. A process is selected only when its command line
-contains the run root path or it descends from the current `claude` process, AND it started
-at or after the run start, AND its executable is in a fixed allowlist. Selected processes
-are killed with `taskkill /PID <n> /T /F`. `-WhatIf` lists them without killing. The run
-root is passed in the `-Worktree` parameter, whose name predates the run-root choice and
-is unchanged. One blind spot: `node script.js` launched with its working directory set to the
-run root shows no run root path on its command line, so only the parent-chain rule catches
-it. `Win32_Process` has no working-directory field.
+running -- `node`, test runners. A process is selected only when all three of these hold: its
+command line contains the run root path or it descends from the current `claude` process, AND
+it started at or after `-Since`, AND its executable is in a fixed allowlist. Selected
+processes are killed with `taskkill /PID <n> /T /F`. `-WhatIf` lists them without killing. The
+run root is passed in the `-Worktree` parameter, whose name predates the run-root choice and
+is unchanged.
+
+The allowlist is exactly `node`, `npm`, `npx`, `pnpm`, `yarn`, `bun`, `biome`, `eslint`,
+`tsc`, `vitest`, `jest`, `esbuild`, `dotnet` -- thirteen entries, no shells. `bash`, `sh`,
+and `pwsh` were deliberately left off: every leftover the sweep exists for is a node or
+dotnet process, while a shell is far more often the lead's own tooling, including the stall
+watcher.
+
+`-Since` is not always the run start. The value depends on the caller. The automatic sweep
+passes the start of the batch of subagents that just finished, so the Step 0 background
+dependency install -- which runs while steps 1 to 5 run their subagents -- is never a
+candidate. The close-out sweep passes the run start, which is correct there because every
+subagent has finished by then.
+
+The run root path is matched in both forms it can appear in on a command line: the Windows
+form (`C:\Temp\...`, compared case-insensitively with `/` and `\` treated alike) and the Git
+Bash form (`/c/temp/...`). The second was added because the lead drives the run through the
+Bash tool, which is Git Bash, so the POSIX form is the common case.
+
+Two blind spots, each leaving the command line as the only way in. First, `node script.js`
+launched with its working directory set to the run root shows no run root path on its command
+line, so only the parent-chain rule can reach it -- `Win32_Process` has no working-directory
+field. Second, a process orphaned by its launching shell -- started with `&` or `nohup`, the
+shell then exited -- has a dead `ParentProcessId`, and Windows does not reparent orphans, so
+the parent chain cannot reach it at all. In both cases it is caught only if its command line
+carries the run root path in one of the two forms.
 
 ## Installing
 
@@ -129,6 +180,17 @@ Restart the session. For `clear-and-short`, type "be brief" to confirm the skill
 
 Do not install `clear-and-short` both ways on one machine. `npx skills add` and the plugin
 each register a skill under the same name, and only the plugin carries the hook.
+
+Two ways to end up running a hook twice.
+
+**A stale plugin cache.** Anyone who installed the plugin earlier has a cached copy that
+still contains `hooks/hooks.json`. If the marketplace clone updates before `claude plugin
+update` refreshes that cache, the cached file and the new inline declaration both register,
+and the directive fires twice until the cache updates. The fix is to update the plugin.
+
+**A hand-written registration.** Registering the hook script yourself in
+`~/.claude/settings.json` *in addition to* installing the plugin runs it twice as well. Pick
+one.
 
 ## Requirements
 

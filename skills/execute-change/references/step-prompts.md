@@ -22,7 +22,7 @@ Placeholders:
 | `{{CHANGE_ID}}` | The OpenSpec change ID (ledger, set after step 1) |
 | `{{CHANGE_DIR}}` | `{{RUN_ROOT}}/openspec/changes/{{CHANGE_ID}}/` |
 | `{{BRANCH}}` | The feature branch name (ledger) |
-| `{{BASE_BRANCH}}` | The default branch the feature branch was created from |
+| `{{START_COMMIT}}` | The run's start commit (ledger, `Start commit`) — the full sha `HEAD` pointed at in the run root when the run began. Every diff in these templates is `{{START_COMMIT}}..HEAD`, two dots: the start commit is an ancestor of `HEAD` under all three run-root options, so that range is exactly what this run committed and nothing the branch already carried |
 | `{{TASK_GROUP}}` | One task group from `tasks.md`, verbatim |
 | `{{COMPLETED_SUMMARIES}}` | The ledger's one-paragraph summaries of completed groups |
 | `{{DECISIONS}}` | The ledger's Decisions section, verbatim |
@@ -271,8 +271,8 @@ every file you read or write and every command you run.
 
 Read first, in this order:
 1. {{CHANGE_DIR}} — proposal.md, design.md, the spec deltas, and tasks.md.
-2. The work already done on this branch: git diff --stat
-   {{BASE_BRANCH}}...{{BRANCH}} first, then full diffs ONLY for the files
+2. The work this run has already done: git diff --stat
+   {{START_COMMIT}}..HEAD first, then full diffs ONLY for the files
    your group's file list touches or depends on — not the whole diff.
 3. Summaries of the groups completed before yours:
 {{COMPLETED_SUMMARIES}}
@@ -317,8 +317,9 @@ treat it as the repository root. Invoke the verify-implementation skill
 on this claim: OpenSpec change {{CHANGE_ID}} is fully implemented on
 branch {{BRANCH}}.
 
-The diff scope is exactly: the feature branch against its base —
-git diff {{BASE_BRANCH}}...{{BRANCH}}. The acceptance criteria are the
+The diff scope is exactly: everything this run committed —
+git diff {{START_COMMIT}}..HEAD, where {{START_COMMIT}} is the commit
+the run started from. The acceptance criteria are the
 tasks.md verify clauses and the spec deltas in {{CHANGE_DIR}}, PLUS the
 verification expectations in the original plan brief at {{PLAN_PATH}}
 (the one file you may read from outside {{RUN_ROOT}}).
@@ -344,7 +345,7 @@ checkout for this run. Resolve exactly these findings — nothing else:
 
 {{FINDINGS}}
 
-Read {{CHANGE_DIR}} for context and git diff {{BASE_BRANCH}}...{{BRANCH}}
+Read {{CHANGE_DIR}} for context and git diff {{START_COMMIT}}..HEAD
 for the current state. Re-run the gates the findings touch. Do not commit
 — the coordinating session commits after its acceptance check.
 
@@ -359,7 +360,8 @@ why it needs a human (OPEN QUESTIONS).
 ```
 You are a simplification reviewer for branch {{BRANCH}}, checked out in
 {{RUN_ROOT}} — work exclusively inside that directory. The review
-object is the combined diff: git diff {{BASE_BRANCH}}...{{BRANCH}}
+object is the combined diff of everything this run committed:
+git diff {{START_COMMIT}}..HEAD
 
 Look for: duplicated logic that should reuse an existing helper, code that
 can be simplified without changing behavior, and obvious inefficiencies

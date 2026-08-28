@@ -209,11 +209,29 @@ Run the checks in this order:
    group with no ledger summary), → surface to the user — never build on
    unexplained edits. (In a reused checkout a dirty tree may simply be the
    user's own work, which is exactly why it goes to them rather than being
-   assumed either way.) Then re-run
-   checks 3–5 (the environment can drift between runs), skip checks 6–8 —
-   the branch, run root, and ledger already exist — and continue
-   the pipeline from the ledger. Never
-   create a second branch, run root, or ledger for the same plan.
+   assumed either way.)
+
+   Then do these three things, in this order, before the pipeline
+   continues:
+
+   1. **Re-run checks 3–5.** The environment can drift between runs.
+   2. **Re-arm the hooks.** Rewrite `.claude/execute-change-run.json` in
+      the directory THIS session was started in, carrying this session's
+      own `session_id`. The hooks match on that id, so until this is done
+      a resumed run has every hook inert — it is a new session with a new
+      id, and the file check 6 wrote names the old one. Keep the
+      `run_root`, `branch`, and `ledger` values the ledger records, and
+      keep the ORIGINAL `started_at`: the process sweep uses it as its
+      cutoff, so resetting it would spare every process the run started
+      before the interruption. Leave the recorded start commit alone — a
+      resume re-reads that field from the ledger and never re-derives it.
+      The heartbeat log `.claude/execute-change-run.jsonl` beside it is
+      appended to, never truncated: the batch-start replay reads it.
+   3. **Skip checks 6–8.** The branch, run root, start commit, and ledger
+      already exist. Never create a second branch, run root, or ledger for
+      the same plan.
+
+   Then continue the pipeline from the ledger.
 3. **OpenSpec-managed repo.** `openspec/config.yaml` at the repo root
    confirms it. If absent, run `openspec context` — a non-zero exit means
    the repo is not OpenSpec-managed (a repo without a local `openspec/`
@@ -333,6 +351,29 @@ Run the checks in this order:
      execute against those changes, so a failure they cause can be blamed
      on the implementation. Committing or stashing first is the clean
      path.
+   - **The first two options and the process sweep.** When the last
+     subagent of a batch stops, the run sweeps the run root: it kills
+     allowlisted build and test processes (`node`, `npm`, `vitest`,
+     `dotnet`, and the like) whose command line names the run root, or
+     that descend from this `claude` process, started after the batch
+     began. Reusing this checkout puts that sweep in the user's own
+     directory at the end of every subagent batch, and a `vitest` or dev
+     server they started in another terminal carries the run root's path
+     on its command line, so it is killed too. The sweep runs
+     automatically, with no preview and no confirmation.
+
+   **Second confirmation — the first option while the default branch is
+   checked out.** When the user picks "reuse the current branch and this
+   checkout" and HEAD is the default branch, ask once more, with a real
+   second AskUserQuestion, before anything is created or written. State
+   both consequences plainly: an hours-long autonomous run's checkpoint
+   commits go straight onto the default branch, and step 7 runs
+   `verify-implementation`, whose own rule is that it never commits to a
+   shared branch — so its fix commits would land on the default branch
+   too. Offer confirming the first option, switching to a new branch in
+   this checkout (recommend this one here), or switching to a worktree.
+   Only a clear confirmation proceeds on the default branch; any other
+   answer takes the option it names.
 
    Record the answer in the ledger's Decisions block, and the chosen
    option in the ledger's Run root field (check 8) — a resume has to know
@@ -345,12 +386,27 @@ Run the checks in this order:
    report must not tell the user to remove a worktree that does not
    exist.
 
+   Once the chosen option has been carried out and the run root exists,
+   record the run's **start commit**: `git rev-parse HEAD` in the run
+   root, the full sha. This is the diff base for steps 7 and 8. Every
+   commit the run makes is a descendant of it under all three options,
+   which is what makes it a scope the base branch cannot give: under the
+   first option the base branch IS the branch the run commits on, so a
+   base-branch diff is empty, and under a reused feature branch it also
+   carries whatever the user committed before the run started.
+
    Whichever option was taken, the main tree keeps the ledger and, on a
    design-first run, the brief; under the worktree option those two are
    the run's only writes outside the run root. Then write the run's
-   metadata file, `.claude/execute-change-run.json` — the `.claude/`
-   **inside the run root**, since the run root is the run's working
-   directory and that is where the hooks look:
+   metadata file, `.claude/execute-change-run.json`, in **the directory
+   this session was started in** — the main repo checkout — and not in
+   the run root: the hooks read the payload's `cwd`, which is the
+   session's directory, and that directory is the same one for the whole
+   run whatever the run root is. Under the two reuse-checkout options the
+   session's directory and the run root are the same directory anyway, so
+   this is one fixed location in all three cases, not worktree-only
+   special-casing. The `run_root` field inside the file is what points at
+   the actual run root:
 
    ```json
    {
@@ -365,8 +421,9 @@ Run the checks in this order:
    The ledger path is the file check 8 will create: `<plan path>.ledger.md`
    is deterministic from the brief path, so writing it here, before check 8
    runs, is safe. This file is what the three `execute-change` hooks read
-   (`references/preflight.md` describes them) — it is written once, never
-   modified afterwards, and close-out deletes it. Finally, launch the
+   (`references/preflight.md` describes them) — it is written here,
+   rewritten only by a resume (check 2) to carry the new session's id,
+   and deleted at close-out. Finally, launch the
    run-root preparation as a BACKGROUND task, off the critical path
    (steps 1–5 don't need it):
    the project's dependency install (e.g. `npm ci`) followed by one run
@@ -409,6 +466,7 @@ Run the checks in this order:
    - Branch: <the branch check 6 settled on>
    - Run root: <absolute path> (reused-checkout | new-branch-here | worktree)
    - Base branch: <the default branch identified in check 6>
+   - Start commit: <full sha>   <!-- the diff base for steps 7 and 8 -->
    - Change ID: (set after step 1)
    - Last completed step: 0
    - Parallel groups: allowed when tasks.md file lists are disjoint
@@ -419,6 +477,11 @@ Run the checks in this order:
    ## Open questions
    ## Completed implementation groups   <!-- one paragraph per group -->
    ```
+
+   The Start commit field is written once, by check 6. A resume re-reads
+   it; it never recomputes it, because `HEAD` has moved since the run
+   began and re-deriving it would shrink the audit's diff to the work
+   done after the interruption.
 
    The ledger and the plan brief are never committed; the user deletes both
    at manual close-out.
@@ -434,8 +497,10 @@ verbatim from
 step's template from that file immediately before each fill — never fill
 one from memory; compaction corrupts verbatim-ness silently)**, with the
 placeholders filled from the ledger: the change ID, the change folder
-`openspec/changes/<id>/` inside the run root, the branch, the base branch,
-and the run root path. Every acceptance-check command you run below —
+`openspec/changes/<id>/` inside the run root, the branch, the start commit
+(`{{START_COMMIT}}` — the diff base every template's diff uses), and the
+run root path. The base branch is a ledger field, not a placeholder: no
+template takes it any more. Every acceptance-check command you run below —
 `openspec validate`, the diffs, the commits, the gates — runs inside the
 run root.
 
@@ -458,8 +523,8 @@ resumes at step 1.
 
 **Commit model** — a deliberate deviation from the manual routine's single
 close-out commit, so a crash is resumable from the last checkpoint and the
-step-7 audit gets a real branch-vs-base diff. You commit by explicit
-pathspec:
+step-7 audit gets a real diff from the run's start commit. You commit by
+explicit pathspec:
 
 - after step 5: the OpenSpec change artifacts (`openspec/changes/<id>/`)
   plus any `CONTEXT.md` / `docs/adr/` files step 1 created or updated
@@ -490,9 +555,13 @@ question it cannot ask, or simply dead — costs the run hours of silence,
 because the lead deliberately does not watch subagents work. Immediately
 after launching any subagent, arm one background watcher with
 `Bash(run_in_background: true)`: an `until` loop that re-reads
-`.claude/execute-change-run.jsonl` (the path is relative to the run root,
-which is the loop's working directory) — the heartbeat log the three
-`execute-change` hooks append to, described in
+`.claude/execute-change-run.jsonl` **in the session's project root** — the
+same directory check 6 wrote the metadata file in, since each hook writes
+the log next to the metadata file it just read. Give the loop the absolute
+path, not a bare relative one: the shell's working directory moves between
+commands, so a relative path would silently resolve somewhere else. That
+file is the heartbeat log the three `execute-change` hooks append to,
+described in
 [`references/preflight.md`](references/preflight.md) — every 180 seconds
 and exits, which notifies you, on the first of these:
 
@@ -521,7 +590,7 @@ this skill's whole subagent design exists to protect.
 ```bash
 # Arm this right after launching a subagent, with Bash(run_in_background: true).
 # It stays quiet until you need to act, then exits — which notifies you.
-LOG=".claude/execute-change-run.jsonl"
+LOG="<absolute path of the session's project root>/.claude/execute-change-run.jsonl"
 SINCE=$(date -u +%Y-%m-%dT%H:%M:%SZ)   # the arm time: older events are not fresh activity
 silent=0; checks=0; prev_last=""; verdict=""
 until [ -n "$verdict" ]; do
@@ -760,7 +829,9 @@ the ledger, advance.
 ## Step 7 — Audit the implementation
 
 Subagent runs `verify-implementation` over the whole change; the prompt
-states the diff scope verbatim: the feature branch against its base branch.
+states the diff scope verbatim: the run's start commit against `HEAD`
+(`git diff <start commit>..HEAD`) — everything this run committed, and
+nothing the branch already carried before it began.
 A `NEEDS ATTENTION` verdict → feed the findings to a fix subagent (Opus),
 check its report, commit its changes by pathspec (the file list from that
 report), and only then re-run the audit — it reads committed state.
@@ -804,10 +875,10 @@ simplification changes by pathspec.
    update`, so a literal path written into this file would go stale. An
    empty `$SWEEP` means the plugin is not installed → skip the sweep and
    say so in the report. Otherwise list what it killed. Then delete the
-   run's
-   `.claude/execute-change-run.json` and `.claude/execute-change-run.jsonl`
-   — the run is over, and removing the metadata file is what makes the
-   hooks inert again.
+   run's `.claude/execute-change-run.json` and
+   `.claude/execute-change-run.jsonl` from the session's project root,
+   where check 6 wrote them — the run is over, and removing the metadata
+   file is what makes the hooks inert again.
 4. **STOP.** Report to the user: verdicts per step, decisions taken, the
    commit list, leftover processes killed, the run root, and the
    remaining manual steps verbatim:

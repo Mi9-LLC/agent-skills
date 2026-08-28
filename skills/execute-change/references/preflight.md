@@ -216,9 +216,20 @@ plugin or not at all:
 
 | Hook event | What it does |
 |---|---|
-| `SubagentStart` | Appends a `start` line to `<run root>/.claude/execute-change-run.jsonl` |
+| `SubagentStart` | Appends a `start` line to `<session project root>/.claude/execute-change-run.jsonl` |
 | `SubagentStop` | Appends a `stop` line (agent id, `agent_transcript_path`, `stop_hook_active`); when replaying the log shows no subagent still running and the platform is Windows, also runs the process sweep |
 | `Notification` | Appends a `notify` line — permission prompts, agent-needs-input, idle |
+
+**Where the run-state files live.** Both `execute-change-run.json` and
+`execute-change-run.jsonl` are written under `.claude/` in the **directory the
+session was started in** — the main repo checkout — and not in the run root.
+The hooks read the payload's `cwd`, which is the session's directory, and
+Claude Code resets the shell's directory back to the project root whenever a
+command leaves it. A worktree lives outside the project, so a metadata file
+written inside the worktree was never found and every hook stayed inert. Under
+the two reuse-checkout options the two directories are the same, so nothing
+changes there. The `run_root` field inside the metadata file is what points at
+the actual run root.
 
 All three fire in the **parent (lead) session**, not inside the subagent, so
 one script wired to all three sees the whole run from one place. The JSONL
@@ -244,11 +255,11 @@ survive in the run root until the close-out sweep is run by hand.
 
 **Pass-through rule.** The hooks are installed per machine, so they run in
 every session, including every session that has nothing to do with this
-skill. They do nothing at all unless `<cwd>/.claude/execute-change-run.json`
-exists AND names the current `session_id`; absent, unreadable, malformed, or
-another session's run file all mean the same thing — write nothing and
-return. This is the same inert-when-not-a-run rule the optional `Stop` hook
-below needs.
+skill. They do nothing at all unless
+`<session project root>/.claude/execute-change-run.json` exists AND names the
+current `session_id`; absent, unreadable, malformed, or another session's run
+file all mean the same thing — write nothing and return. This is the same
+inert-when-not-a-run rule the optional `Stop` hook below needs.
 
 **Always exit 0.** Exit code 2 on `SubagentStop` tells Claude Code to block
 the subagent from stopping and hand it the hook's stderr, which is the
@@ -263,31 +274,48 @@ its name; the path passed to it is the run root, which is a worktree only
 when check 6 created one:
 
 1. its command line contains the run root path, OR it descends from the
-   current `claude` process through the `ParentProcessId` chain;
+   current `claude` process through the `ParentProcessId` chain. The path is
+   matched in **both** forms it can appear in: the Windows form
+   (`C:\Temp\...`, compared case-insensitively with `/` and `\` treated
+   alike) and the Git Bash form (`/c/temp/...`). The second form is there
+   because the lead drives the run through the Bash tool, which is Git Bash,
+   so the POSIX form is the common case rather than the exotic one;
 2. it started at or after `-Since`, so nothing older than that timestamp is
    ever touched. The value differs by caller. The automatic sweep passes
    the start of the batch of subagents that just finished — the moment the
    running set last went from empty to non-empty — so a process that
    predates that batch is never a candidate. The case that matters is Step
    0's background dependency install and baseline gate run: it is a
-   descendant of `claude`, it runs allowlisted executables (`bash`, `npm`,
-   `node`), and it is still working while steps 1–5 run their subagents, so
+   descendant of `claude`, it runs allowlisted executables (`npm`, `node`),
+   and it is still working while steps 1–5 run their subagents, so
    a sweep armed with the run's start time would kill it mid-flight. The
    close-out sweep does pass the run's `started_at`, which is correct
    there because every subagent has finished by then;
 3. its executable name is in the fixed allowlist: `node`, `npm`, `npx`,
    `pnpm`, `yarn`, `bun`, `biome`, `eslint`, `tsc`, `vitest`, `jest`,
-   `esbuild`, `dotnet`, `bash`, `sh`, `pwsh`.
+   `esbuild`, `dotnet` — thirteen entries, and **no shells**. `bash`, `sh`,
+   and `pwsh` are deliberately absent: every leftover the sweep exists for is
+   a node or dotnet process, while a shell is far more often the lead's own
+   tooling, including the stall watcher.
 
 It kills with `taskkill /PID <n> /T /F` and prints one summary line per
 kill; `-WhatIf` lists the matches without killing any of them. On a
 non-Windows platform it exits 0 with a note and kills nothing.
 
-**Known blind spot.** A process started as `node script.js` with its
-working directory set to the run root carries no path at all on its
-command line, so only the parent-chain rule catches it. `Win32_Process`
-exposes no working-directory field, so there is no cheap way to close that
-gap.
+**Two known blind spots.** Each one leaves rule 1 with nothing but the
+command line to work with:
+
+- A process started as `node script.js` with its working directory set to
+  the run root carries no path at all on its command line, so only the
+  parent-chain rule can reach it. `Win32_Process` exposes no
+  working-directory field, so there is no cheap way to close that gap.
+- A process orphaned by its launching shell — started with `&` or `nohup`,
+  the shell then exited — has a dead `ParentProcessId`, and Windows does not
+  reparent orphans onto a live process, so the parent chain cannot reach it
+  at all.
+
+In both cases the process is caught only when its command line happens to
+carry the run root path in one of the two forms rule 1 matches.
 
 **When the run root is the user's own checkout, the sweep can reach the
 user's own processes.** A dev server or test watcher they started in that
