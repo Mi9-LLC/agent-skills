@@ -7,16 +7,73 @@
   },
   "metadata": {
     "description": "Mi9 LLC catalog of Claude Code agent skills. Plugins here carry components npx skills cannot install, such as hooks.",
-    "version": "1.0.0"
+    "version": "1.1.0"
   },
   "plugins": [
     {
       "name": "clear-and-short",
-      "description": "Short, simple chat replies. Ships the clear-and-short skill together with the UserPromptSubmit hook that turns the mode on when you ask for it.",
+      "description": "Short, simple chat replies. Ships the clear-and-short skill together with the UserPromptSubmit hook that applies the plain-voice rules once at the start of every session and turns the length rules on when you ask for them.",
       "source": "./",
       "strict": false,
       "category": "productivity",
-      "skills": ["./skills/clear-and-short"]
+      "skills": ["./skills/clear-and-short"],
+      "hooks": {
+        "UserPromptSubmit": [
+          {
+            "hooks": [
+              {
+                "type": "command",
+                "command": "python",
+                "args": ["${CLAUDE_PLUGIN_ROOT}/hooks/clear-and-short-trigger.py"]
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "execute-change",
+      "description": "Autonomous end-to-end execution of a plan brief in an OpenSpec-managed repo. Ships the execute-change skill together with the SubagentStart, SubagentStop, and Notification hooks that log subagent activity for the lead's stall watcher and sweep leftover processes when a subagent finishes.",
+      "source": "./",
+      "strict": false,
+      "category": "productivity",
+      "skills": ["./skills/execute-change"],
+      "hooks": {
+        "SubagentStart": [
+          {
+            "hooks": [
+              {
+                "type": "command",
+                "command": "python",
+                "args": ["${CLAUDE_PLUGIN_ROOT}/hooks/execute-change-watch.py"]
+              }
+            ]
+          }
+        ],
+        "SubagentStop": [
+          {
+            "hooks": [
+              {
+                "type": "command",
+                "command": "python",
+                "args": ["${CLAUDE_PLUGIN_ROOT}/hooks/execute-change-watch.py"]
+              }
+            ]
+          }
+        ],
+        "Notification": [
+          {
+            "matcher": "permission_prompt|agent_needs_input|idle_prompt",
+            "hooks": [
+              {
+                "type": "command",
+                "command": "python",
+                "args": ["${CLAUDE_PLUGIN_ROOT}/hooks/execute-change-watch.py"]
+              }
+            ]
+          }
+        ]
+      }
     }
   ]
 }

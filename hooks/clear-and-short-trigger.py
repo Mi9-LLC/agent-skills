@@ -20,10 +20,31 @@ STRONG patterns are unambiguously about Claude's own replies and fire on their o
 patterns ("too verbose", "ai tells") are ambiguous -- they read the same way aimed at a
 function or a PR description -- so they fire only when the prompt names no code/document
 target.
+
+The VOICE directive is also the always-on default. On the FIRST prompt of a session that
+matches no pattern at all, the hook emits it once and records the session id in SEEN_PATH,
+so replies are plain from the start without anyone having to type "humanize your
+responses". VOICE and not LENGTH, because a default must not silently drop content the
+user never asked to lose -- plainer wording costs nothing, the length caps cut facts.
+Once per session and not every prompt, for two reasons: re-injecting the same text on
+every turn buys nothing, and it would fight the rest of the session -- after that first
+prompt the hook is quiet again, so a later "be brief" still upgrades to the length rules
+and a later "normal mode" still turns the skill off. A prompt that matches a pattern
+closes out the default as well: it emits its own directive AND records the session, so
+the voice directive can never fire a turn later and tell the model to drop the length
+rules the user just asked for.
 """
 import json
+import os
 import re
 import sys
+import tempfile
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
+
+# session_id -> ISO timestamp of the prompt that got the default VOICE directive.
+SEEN_PATH = Path.home() / ".claude" / ".clear-and-short-sessions.json"
+SEEN_TTL_DAYS = 7
 
 STRONG_LENGTH = [
     r"\bbe (brief|concise|terse)\b",
@@ -139,6 +160,93 @@ def classify(prompt: str) -> str:
     return ""
 
 
+def _load_seen() -> dict:
+    """Read the seen-session map. A missing or malformed file counts as empty.
+
+    Same reasoning as the malformed-payload guard in main(): the seen-file is a
+    convenience, never a reason to interfere with a prompt.
+    """
+    try:
+        with open(SEEN_PATH, encoding="utf-8") as fh:
+            data = json.load(fh)
+    except Exception:
+        return {}
+    if not isinstance(data, dict):
+        return {}
+    return {k: v for k, v in data.items() if isinstance(k, str) and isinstance(v, str)}
+
+
+def _record_seen(session_id: str) -> bool:
+    """Record session_id, dropping entries older than SEEN_TTL_DAYS. True when written.
+
+    The write goes through a temporary file in the same directory plus os.replace, so a
+    reader never sees a half-written map. Any failure -- a missing or unwritable
+    ~/.claude, a full disk -- returns False instead of raising: the prompt must go through
+    either way.
+    """
+    now = datetime.now(timezone.utc)
+    cutoff = now - timedelta(days=SEEN_TTL_DAYS)
+    kept = {}
+    for sid, stamp in _load_seen().items():
+        try:
+            when = datetime.fromisoformat(stamp)
+        except ValueError:
+            continue  # unparseable timestamp: drop it rather than keep it forever
+        if when.tzinfo is None:
+            when = when.replace(tzinfo=timezone.utc)
+        if when >= cutoff:
+            kept[sid] = stamp
+    kept[session_id] = now.isoformat()
+    tmp = None
+    try:
+        SEEN_PATH.parent.mkdir(parents=True, exist_ok=True)
+        fd, tmp = tempfile.mkstemp(
+            dir=str(SEEN_PATH.parent), prefix=".clear-and-short-", suffix=".tmp"
+        )
+        with os.fdopen(fd, "w", encoding="utf-8") as fh:
+            json.dump(kept, fh)
+        os.replace(tmp, SEEN_PATH)
+        return True
+    except Exception:
+        if tmp:
+            try:
+                os.unlink(tmp)
+            except OSError:
+                pass
+        return False
+
+
+def _emit(directive: str) -> None:
+    json.dump(
+        {
+            "hookSpecificOutput": {
+                "hookEventName": "UserPromptSubmit",
+                "additionalContext": directive,
+            }
+        },
+        sys.stdout,
+    )
+
+
+def _voice_default(payload) -> None:
+    """Emit DIRECTIVE_VOICE once, on the first unmatched prompt of a session.
+
+    A session id is required. Without one the hook cannot tell a first prompt from a
+    fiftieth, so it would re-inject the directive on every turn -- a missing or non-string
+    session_id therefore means stay quiet. Same for a seen-file that could not be written:
+    an unrecorded session would fire again on the next prompt, which is the every-prompt
+    behavior this default exists to avoid.
+    """
+    session_id = payload.get("session_id")
+    if not isinstance(session_id, str) or not session_id.strip():
+        return
+    if session_id in _load_seen():
+        return
+    if not _record_seen(session_id):
+        return
+    _emit(DIRECTIVE_VOICE)
+
+
 def main() -> None:
     try:
         payload = json.load(sys.stdin)
@@ -149,21 +257,20 @@ def main() -> None:
         return
     kind = classify(prompt)
     if not kind:
+        _voice_default(payload)
         return
-    directive = {
+    # A matched prompt emits exactly what it always did, on any prompt of the session.
+    _emit({
         "length": DIRECTIVE_LENGTH,
         "voice": DIRECTIVE_VOICE,
         "both": DIRECTIVE_BOTH,
-    }[kind]
-    json.dump(
-        {
-            "hookSpecificOutput": {
-                "hookEventName": "UserPromptSubmit",
-                "additionalContext": directive,
-            }
-        },
-        sys.stdout,
-    )
+    }[kind])
+    # It also closes out the default, so the voice directive can never fire later in this
+    # session and tell the model to drop length rules the user asked for a turn earlier.
+    # Best-effort: the emit above already happened and must never depend on this write.
+    session_id = payload.get("session_id")
+    if isinstance(session_id, str) and session_id.strip():
+        _record_seen(session_id)
 
 
 if __name__ == "__main__":

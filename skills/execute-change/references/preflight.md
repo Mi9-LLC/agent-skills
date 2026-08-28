@@ -148,7 +148,92 @@ defect. The recommended setup for an unattended run:
   `openspec` — and nothing broader. Anything outside the list still
   prompts, which pauses and notifies: exactly the intended behavior.
 
-### Optional hooks (for users who want them — never configured by this skill)
+### Run hooks (shipped with the `execute-change` plugin)
+
+Three hooks ship in the plugin entry `execute-change@mi9-agent-skills`,
+declared inline in that entry in `.claude-plugin/marketplace.json`. They are
+inline because a marketplace entry does not accept a hooks file path, and
+because both entries in this repo share the repo root as their plugin root,
+so a `hooks/hooks.json` sitting there would load into both plugins. The
+scripts themselves — `hooks/execute-change-watch.py` and
+`hooks/sweep-worktree-processes.ps1` — are unchanged and still referenced by
+name. `npx skills add` installs skill files only, so these arrive with the
+plugin or not at all:
+
+| Hook event | What it does |
+|---|---|
+| `SubagentStart` | Appends a `start` line to `<worktree>/.claude/execute-change-run.jsonl` |
+| `SubagentStop` | Appends a `stop` line (agent id, `agent_transcript_path`, `stop_hook_active`); when replaying the log shows no subagent still running and the platform is Windows, also runs the process sweep |
+| `Notification` | Appends a `notify` line — permission prompts, agent-needs-input, idle |
+
+All three fire in the **parent (lead) session**, not inside the subagent, so
+one script wired to all three sees the whole run from one place. The JSONL
+log is what the lead's stall watcher reads (SKILL.md, "Heartbeat and stall
+handling"). Every append is one short write of one JSON object and nothing
+shares a mutable document, so parallel step-6 groups cannot corrupt each
+other's writes. A `stop` line says nothing about whether the subagent
+succeeded — `SubagentStop` has no such field — but its
+`agent_transcript_path` is where that subagent's transcript can be read,
+which is the fastest way to see what a failed or stalled one actually did.
+
+Install:
+
+```bash
+claude plugin marketplace add Mi9-LLC/agent-skills
+claude plugin install execute-change@mi9-agent-skills
+```
+
+**A run works without them, degraded:** there is no heartbeat log to watch
+and no automatic process sweep, so a stalled subagent is caught only by the
+pause-and-notify rules at the end of SKILL.md, and leftover processes
+survive in the worktree until the close-out sweep is run by hand.
+
+**Pass-through rule.** The hooks are installed per machine, so they run in
+every session, including every session that has nothing to do with this
+skill. They do nothing at all unless `<cwd>/.claude/execute-change-run.json`
+exists AND names the current `session_id`; absent, unreadable, malformed, or
+another session's run file all mean the same thing — write nothing and
+return. This is the same inert-when-not-a-run rule the optional `Stop` hook
+below needs.
+
+**Always exit 0.** Exit code 2 on `SubagentStop` tells Claude Code to block
+the subagent from stopping and hand it the hook's stderr, which is the
+opposite of what a watchdog should do. A watchdog that can wedge the run it
+is watching is worse than no watchdog, so every path — malformed payload,
+unreadable log, crashed sweep — returns normally.
+
+**The sweep** (`hooks/sweep-worktree-processes.ps1`; Windows only;
+parameters `-Worktree <path>`, `-Since <ISO timestamp>`, `-WhatIf`) kills a
+process only when all three of these hold:
+
+1. its command line contains the worktree path, OR it descends from the
+   current `claude` process through the `ParentProcessId` chain;
+2. it started at or after `-Since`, so nothing older than that timestamp is
+   ever touched. The value differs by caller. The automatic sweep passes
+   the start of the batch of subagents that just finished — the moment the
+   running set last went from empty to non-empty — so a process that
+   predates that batch is never a candidate. The case that matters is Step
+   0's background dependency install and baseline gate run: it is a
+   descendant of `claude`, it runs allowlisted executables (`bash`, `npm`,
+   `node`), and it is still working while steps 1–5 run their subagents, so
+   a sweep armed with the run's start time would kill it mid-flight. The
+   close-out sweep does pass the run's `started_at`, which is correct
+   there because every subagent has finished by then;
+3. its executable name is in the fixed allowlist: `node`, `npm`, `npx`,
+   `pnpm`, `yarn`, `bun`, `biome`, `eslint`, `tsc`, `vitest`, `jest`,
+   `esbuild`, `dotnet`, `bash`, `sh`, `pwsh`.
+
+It kills with `taskkill /PID <n> /T /F` and prints one summary line per
+kill; `-WhatIf` lists the matches without killing any of them. On a
+non-Windows platform it exits 0 with a note and kills nothing.
+
+**Known blind spot.** A process started as `node script.js` with its
+working directory set to the worktree carries no worktree path on its
+command line, so only the parent-chain rule catches it. `Win32_Process`
+exposes no working-directory field, so there is no cheap way to close that
+gap.
+
+### Still optional (for users who want them — never configured by this skill)
 
 - **Notification hook — a Windows alert when the run is waiting.** A
   Notification hook fires when Claude Code waits for input (an open

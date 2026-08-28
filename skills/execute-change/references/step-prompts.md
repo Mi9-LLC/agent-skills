@@ -44,6 +44,13 @@ Standing instructions, non-negotiable:
 - Your final report is machine-processed by the coordinating session:
   state exactly what you produced (paths), what you verified, and what
   remains open. Never claim something is done that you did not verify.
+- Any prose you write for people to read -- proposal.md, design.md, spec
+  deltas, tasks.md, CONTEXT.md, an ADR, a commit message body -- must be
+  free of AI writing tells. Invoke the unslop skill on that prose before
+  you report, or write to its rules directly: no puffery, no "not just X,
+  but Y", no forced groups of three, no em dashes, no title-case headings,
+  no filler or hedging, plain words over AI vocabulary. Never change a
+  fact, a number, or a technical term to satisfy this.
 ```
 
 ## Retry wrapper

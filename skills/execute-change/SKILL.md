@@ -247,8 +247,28 @@ Run the checks in this order:
    on. The main working tree is never touched (it may stay dirty; the user
    can keep working in it), and the run's only writes outside the worktree
    are the ledger and, on a design-first run, the brief it drafted — side
-   by side in the main tree. Finally, launch the worktree preparation as
-   a BACKGROUND task, off the critical path (steps 1–5 don't need it):
+   by side in the main tree. Then write the run's metadata file,
+   `.claude/execute-change-run.json` — the `.claude/` **inside the
+   worktree**, since the worktree is the run's working directory and that
+   is where the hooks look:
+
+   ```json
+   {
+     "session_id": "<this lead session's id>",
+     "worktree": "<absolute path of the worktree created above>",
+     "branch": "agent/execute-change/<run name>",
+     "ledger": "<plan path>.ledger.md",
+     "started_at": "<run start, ISO-8601 UTC>"
+   }
+   ```
+
+   The ledger path is the file check 8 will create: `<plan path>.ledger.md`
+   is deterministic from the brief path, so writing it here, before check 8
+   runs, is safe. This file is what the three `execute-change` hooks read
+   (`references/preflight.md` describes them) — it is written once, never
+   modified afterwards, and close-out deletes it. Finally, launch the
+   worktree preparation as a BACKGROUND task, off the critical path
+   (steps 1–5 don't need it):
    the project's dependency install (e.g. `npm ci`) followed by one run
    of the project's quality gates on the untouched worktree — the
    **baseline**. Record per-gate pass/fail (with any failing output) in
@@ -355,6 +375,156 @@ pin propagating into a subagent. Step 6 groups run on the model their
 `tasks.md` row names, passed as
 the Agent tool's `model` option — a missing or unmappable model name means
 Opus, never a more expensive tier (catalog constraint: never pin Fable).
+
+## Heartbeat and stall handling
+
+A subagent that hangs — waiting on a permission prompt, stuck on a
+question it cannot ask, or simply dead — costs the run hours of silence,
+because the lead deliberately does not watch subagents work. Immediately
+after launching any subagent, arm one background watcher with
+`Bash(run_in_background: true)`: an `until` loop that re-reads
+`.claude/execute-change-run.jsonl` — the heartbeat log the three
+`execute-change` hooks append to, described in
+[`references/preflight.md`](references/preflight.md) — every 180 seconds
+and exits, which notifies you, on the first of these:
+
+- the newest `start` event for a still-running agent has had no `stop` and
+  no `notify` event for 3 consecutive checks (a 9-minute silence, detected
+  at most 3 minutes late);
+- a `notify` event of type `permission_prompt`, `agent_needs_input`, or
+  `idle_prompt` arrived.
+
+A `stop` event carries no success or failure signal — `SubagentStop`'s
+payload has no field for one — so the watcher uses it only to take that
+agent out of the running set. A failed step is caught where it always was:
+by your own acceptance check after the subagent returns (the table in the
+previous section). That check is the gate; the watcher only tells you when
+to go and look. When a check does fail, the `stop` event's
+`agent_transcript_path` points straight at that subagent's transcript,
+which is the quickest way to see what it actually did.
+
+It also prints one line every 30 minutes — `alive: N agents running,
+oldest <age>` — so silence never means "unknown". That cadence is the
+point: this is a check every 3 minutes that speaks only on trouble, not a
+status line every 3 minutes. A persistent monitor at that rate can be
+auto-stopped for volume, and every line it prints costs you the context
+this skill's whole subagent design exists to protect.
+
+```bash
+# Arm this right after launching a subagent, with Bash(run_in_background: true).
+# It stays quiet until you need to act, then exits — which notifies you.
+LOG=".claude/execute-change-run.jsonl"
+SINCE=$(date -u +%Y-%m-%dT%H:%M:%SZ)   # the arm time: older events are not fresh activity
+silent=0; checks=0; prev_last=""; verdict=""
+until [ -n "$verdict" ]; do
+  sleep 180
+  checks=$((checks + 1))
+  status=$(python - "$LOG" "$SINCE" <<'PY'
+import datetime, json, sys
+log, since = sys.argv[1], sys.argv[2]
+iso = lambda s: datetime.datetime.fromisoformat(s.replace("Z", "+00:00"))
+now = datetime.datetime.now(datetime.timezone.utc)
+cut = iso(since)
+try:
+    lines = open(log, encoding="utf-8").read().splitlines()
+except OSError:
+    print("NOLOG"); raise SystemExit
+running, last, trouble = {}, cut, ""
+for line in lines:
+    try:
+        e = json.loads(line)
+        at, kind = iso(e["at"]), e.get("kind")
+    except Exception:
+        continue
+    # The running set is rebuilt from the WHOLE log: every start adds and every
+    # stop removes, whatever their timestamps. cut is a separate question.
+    if kind == "start":
+        running[e.get("agent_id")] = at
+        continue
+    if kind == "stop":
+        running.pop(e.get("agent_id"), None)   # a stop carries no pass/fail signal
+    elif kind != "notify":
+        continue
+    if at < cut:
+        continue          # predates this watcher: not fresh activity, not trouble
+    last = max(last, at)
+    if kind == "notify" and e.get("notification_type") in (
+            "permission_prompt", "agent_needs_input", "idle_prompt"):
+        trouble = "%s: %s" % (
+            e.get("notification_type"), e.get("notification_text"))
+if trouble:
+    print("TROUBLE " + trouble)
+elif not running:
+    print("IDLE")
+else:
+    age = int((now - min(running.values())).total_seconds())
+    print("RUN %d %d %s" % (len(running), age, last.isoformat()))
+PY
+)
+  case "$status" in
+    NOLOG*)   verdict="NOLOG - no heartbeat log; the execute-change hooks are not installed" ;;
+    TROUBLE*) verdict="$status" ;;
+    IDLE*)    verdict="IDLE - all subagents stopped" ;;
+    RUN*)     set -- $status
+              if [ "$4" = "$prev_last" ]; then
+                silent=$((silent + 1))
+              else
+                silent=0; prev_last="$4"
+              fi
+              if [ "$silent" -ge 3 ]; then
+                verdict="STALL - $2 agent(s) running, no stop or notify event for 9 minutes"
+              elif [ $((checks % 10)) -eq 0 ]; then
+                echo "alive: $2 agents running, oldest $(($3 / 60))m"
+              fi ;;
+    *)        verdict="WATCHER ERROR - unexpected output: $status" ;;
+  esac
+done
+echo "$verdict"
+```
+
+**The watcher also exits when the batch is done.** `IDLE` means every
+subagent has stopped, and that exit is the normal end of a watcher's life,
+not a finding — you already have the subagent's return value and are back
+in control. Arm a fresh watcher at the next launch. One watcher per launch
+that exits with its batch is the whole design; a watcher left running past
+its batch would wait forever for trouble that can no longer arrive.
+
+A watcher can also vanish without printing anything. The `SubagentStop`
+sweep runs at batch end and may kill the watcher's own shell before its
+next 180-second check. A watcher that disappears at the end of a step is
+normal either way.
+
+**A STALL verdict means the log has been quiet for 9 minutes — not that
+the subagent is stuck.** `SubagentStart` fires once and nothing else is
+emitted until `SubagentStop`, so a step-6 implementer working normally for
+20 minutes looks exactly like a stalled one from the log alone. The
+9-minute trigger is the cheap signal to go and look; `ListAgents` is what
+tells you what is actually happening. Call it first and read the agent's
+row:
+
+- still running or busy → it is working, not stalled: re-arm the watcher
+  and carry on, and send the subagent nothing. **This is the expected
+  common outcome** — a STALL line followed by a busy row is the watcher
+  doing its job, not a failure, and repeated ones are not repeated
+  failures.
+- idle while its `stop` event has not arrived → a real stall, and only
+  then does the ladder start: send it a status request with `SendMessage`;
+  still idle at the next check → `TaskStop` it and relaunch it once using
+  the retry wrapper in
+  [`references/step-prompts.md`](references/step-prompts.md); still stuck
+  after that → pause and ask the user.
+
+Write the `ListAgents` check and its outcome to the ledger, the same as
+every other step.
+
+**A `permission_prompt` notification is not a stall.** Only a human can
+answer it, so there is nothing to retry: report it to the user at once and
+wait.
+
+**When the hooks are not installed**, no JSONL file ever appears and the
+watcher exits on its first check with `NOLOG`. Say so once — in the Step 0
+readiness line or in the step log — and fall back to the pause-and-notify
+rules at the end of this file; never loop on a file that will not arrive.
 
 ## Step 1 — Author the OpenSpec change
 
@@ -507,8 +677,28 @@ simplification changes by pathspec.
    lead's one permitted source edit — and commit that reconciliation by
    pathspec.
 2. `openspec validate <id> --strict` as a read-only final check.
-3. **STOP.** Report to the user: verdicts per step, decisions taken, the
-   commit list, the worktree path, and the remaining manual steps verbatim:
+3. Run the process sweep once over the worktree — the `SubagentStop` hook
+   already sweeps when the last subagent of a step stops, so this is the
+   final guarantee, not the only one:
+
+   ```bash
+   SWEEP=$(ls ~/.claude/plugins/cache/*/execute-change/*/hooks/sweep-worktree-processes.ps1 2>/dev/null | head -1)
+   [ -n "$SWEEP" ] && pwsh -NoProfile -File "$SWEEP" \
+     -Worktree "<worktree path>" -Since "<the run's started_at>"
+   ```
+
+   The path is resolved at run time on purpose: the plugin cache directory
+   carries a commit sha that changes on every `claude plugin marketplace
+   update`, so a literal path written into this file would go stale. An
+   empty `$SWEEP` means the plugin is not installed → skip the sweep and
+   say so in the report. Otherwise list what it killed. Then delete the
+   run's
+   `.claude/execute-change-run.json` and `.claude/execute-change-run.jsonl`
+   — the run is over, and removing the metadata file is what makes the
+   hooks inert again.
+4. **STOP.** Report to the user: verdicts per step, decisions taken, the
+   commit list, leftover processes killed, the worktree path, and the
+   remaining manual steps verbatim:
    deploy to the dev environment and smoke-test, update the work-folder
    CLAUDE.md files, delete the plan brief and the ledger, `opsx:archive`
    the change, open the PR, and after the PR remove the run's worktree
