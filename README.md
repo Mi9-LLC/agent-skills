@@ -66,6 +66,7 @@ Install either skill this way **instead of** `npx skills add`, not as well: both
 | [`execute-change`](#execute-change) | Autonomous end-to-end execution of a plan brief — or a free-text idea, which first gets a design interview (in rounds, until no decision is open; repo facts looked up, not asked; project terms sharpened against `CONTEXT.md`, ADRs offered sparingly) and a user-approved brief — in an OpenSpec-managed repo: one lead session drives author-change → review gate → apply changes → implement → audit → simplify via fresh per-step subagents, pauses with a phone push only when it needs the user (a decision, or a failure it may not resolve alone), commits per checkpoint on the branch and in the run root you pick at a blocking preflight question — the current branch and checkout (recommended), the run's own branch in that checkout, or a dedicated git worktree (only the worktree leaves your main working tree untouched and lets several plans run concurrently on one repo), and stops after the local commits — never deploys, never opens a PR. Installed as a plugin it also gets a heartbeat: three hooks log every subagent start, stop, and notification to `.claude/` in the directory you started the session in, a background watcher reads that log and speaks only when it goes quiet or a subagent asks for permission, and a Windows-only process sweep kills the build and test processes a finished subagent left behind. **Manual-only** (`/execute-change`). |
 | [`clear-and-short`](#clear-and-short) | Behavioral mode that cuts the word count of Claude's replies and keeps them in simple English — drops preamble, tool-call narration, restated questions, repeated facts, option surveys, and closing summaries; prefers the common word, short sentences, and no idioms; keeps full sentences, articles, negations, numbers, and code verbatim; asks questions with numbered options so the user can answer with one number. A second entry point takes the voice-only asks ("humanize your responses", "remove the AI tells", "your replies sound like ChatGPT"): the AI-tells and simple-English rules switch on and the length caps stay off, because that request is for a different voice, not for less content. Steps back to full prose for security warnings, destructive-action confirmations, and hand-followed step lists. Produces no files. |
 | [`unslop`](#unslop) | Edits human-facing prose (docs, READMEs, posts, emails, PR descriptions) to remove 31 catalogued AI-writing patterns — puffery, AI vocabulary, "not just X, but Y", forced groups of three, em-dash/colon/bold overuse, title-case headings, chatbot phrases, filler, hedging, abstract metaphor nouns, passive voice, feeling-words in place of facts. Keeps meaning, facts, numbers, and technical terms. Not for code, comments, commit messages, or chat replies (the length, wording, and AI tells of a reply belong to `clear-and-short`). Produces no files of its own; edits the text it is given. |
+| [`delegation-prompt`](#delegation-prompt) | Writes a paste-ready prompt that briefs a different session, agent, or teammate to do a follow-up job on work this session just finished (review the PR, test it under load, port the fix to a sibling repo). Picks a mode first: **checking** withholds this session's conclusions so the reviewer verifies instead of agreeing; **extending** hands over everything already settled. Every fact traced to its source or marked unknown; environment traps and ground rules always included; never a secret. Produces no files. |
 
 ## Recommended workflow — from idea to verified code
 
@@ -1082,6 +1083,53 @@ npx skills add https://github.com/Mi9-LLC/agent-skills --skill unslop
 **Origin.** Adapted from the `unslop` skill in [`cursor/plugins`](https://github.com/cursor/plugins/tree/main/pstack/skills/unslop) (`pstack`, MIT, © 2026 Lauren Tan). The 31-pattern list is kept as-is. Upstream's "Adding soul" section (have opinions, use "I", let some mess in) and its "must always apply" trigger are dropped: the first conflicts with the plain-facts style used across this catalog, the second would fire on every turn including code and chat.
 
 **Full definition:** [`skills/unslop/SKILL.md`](skills/unslop/SKILL.md).
+
+---
+
+## `delegation-prompt`
+
+**What it does.** Writes the prompt you paste into a *different* Claude Code session, agent, or teammate's chat so that session does the next job on work this one just finished: review the pull request, test the change on another machine or under load, port the same fix to a sibling repository, audit what was built. It writes the brief; it does not do the job. Output is one fenced code block with the whole prompt and nothing else, preceded by one to three lines naming the mode it chose and why. Before writing a word it decides the mode. **Checking mode** (the receiving session will review, audit, verify, or test): this session's conclusions are withheld, risk areas are written as questions with no answers attached ("does the run order survive?", never "the run order survives"), and things that look like defects but are claimed deliberate are framed as claims to judge, because a reviewer handed the answer confirms it instead of verifying it. **Extending mode** (the receiving session will continue, implement, port, or build on the work): every settled decision is stated plainly so nothing is re-derived. A task that is both is split into a checking section and an extending section inside the single block. In both modes the prompt names concrete identifiers (PR number and URL, repo, branch, paths, the exact tool or MCP server, the installed skill to invoke), states the provenance ("written by an AI session; treat claims in commit messages as claims to verify"), lists environment traps with what the failure looks like (the stale install, the cache that fakes a pass, the service that must be running), states ground rules (read-only, do not push), and says where the output goes and in what shape.
+
+**Requirements.** None. Behavioral: it changes what Claude writes into the chat.
+
+**How to run.** Auto-triggers on a "write me a prompt for another session" ask, or run `/delegation-prompt`. Declares no `allowed-tools`/`disallowed-tools`. It does not write the prompt to a file unless asked.
+
+**Use it for.** Handing a review, a load test, an audit, a port, or any follow-up to someone who was not in this conversation, without leaking the answer key to a reviewer or making an implementer redo settled work.
+
+**Triggers on phrases like.** "write me a prompt for another session", "give me something to paste into a fresh session", "write a prompt to review this", "brief another agent to test / port / audit this", or just "generate the prompt" / "write it up for the reviewer" after a piece of work is done.
+
+**What it does not do.** Save context so the *same* work can continue after a pause or a full context window (that is `session-handoff`). Perform the follow-up task itself. Invent detail to fill a gap: every number, filename, version, command, or decision in the prompt must trace to the user's words, a file it read, or a command it ran, otherwise it is cut or marked unknown ("the author did not say which other files changed; establish that yourself"), because an invented fact in a delegation prompt reaches a session that cannot contradict it. Put a token, password, API key, or connection string in the prompt; it names where the credential lives instead.
+
+**What it produces.** No files. One fenced code block in the chat.
+
+**Example.**
+
+```
+You: we're done with PR #114. Generate the prompt for the session that reviews it.
+Claude: Checking mode: the other session reviews this one's work, so my
+  conclusions stay out and the risk areas are questions, not reassurances.
+
+    Review pull request #114 in acme/billing-service (branch
+    feature/BIL-401-invoice-rounding, opened against develop):
+    https://github.com/acme/billing-service/pull/114
+
+    Read + comment only. Do not push, merge, or edit code.
+    ...
+    ## Repo facts you need
+    Run `npm run fixtures:build` before the integration tests. Without it they
+    fail with an ENOENT that looks like a code bug.
+    ...
+```
+
+**Install.**
+
+```
+npx skills add https://github.com/Mi9-LLC/agent-skills --skill delegation-prompt
+```
+
+**Origin.** Written at Mi9 with `skill-creator`; the "carry over only what you can trace to a source" rule was added after the skill's own eval runs showed prompts inventing an incident timing profile, a load-scenario description, and a "the only file changed" claim that were in nobody's message (those runs used an earlier eval set, since replaced). Eval fixtures live under [`evals/delegation-prompt/`](evals/delegation-prompt/).
+
+**Full definition:** [`skills/delegation-prompt/SKILL.md`](skills/delegation-prompt/SKILL.md).
 
 ---
 
