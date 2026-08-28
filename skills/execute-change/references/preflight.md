@@ -119,11 +119,29 @@ vary by CLI version (e.g. `openspec-propose` vs `openspec-propose-change`)
 missing, `openspec update` regenerates them — not `npx skills add` — with
 the same session-restart warning as above.
 
-## Worktree notes
+## Run root notes
 
-Each run creates its own git worktree (SKILL.md check 6 has the command),
-so several runs with different plans can execute on one repo at once. Three
-practical points:
+The **run root** is the directory the run works in, and SKILL.md check 6
+asks the user which directory that is: the current checkout (reusing its
+branch, or with a new branch created there), or a dedicated git worktree
+the check creates. The recommended answer is the current checkout; the
+worktree is what buys concurrency and an untouched main tree, and check 6
+states that trade-off in the question.
+
+**When the run root is the current checkout:**
+
+- Dependencies are already installed and build caches are warm, so the
+  background baseline run is usually just the gates.
+- No `git worktree add`, `remove`, or `prune` runs at any point, and
+  close-out has no worktree-removal step.
+- One run at a time on this repo. Nothing enforces that, so two
+  simultaneous runs of different plans in one checkout would edit each
+  other's files; a worktree is what makes concurrent runs safe.
+- The user cannot work in the repo while the run executes, and a
+  pre-existing dirty tree is judged by every gate run — check 6 surfaces
+  both before the answer is given.
+
+**When the run root is a dedicated worktree:**
 
 - **Per-run setup cost.** A fresh worktree has no installed dependencies —
   run the project's install step (e.g. `npm ci`) there before the gates
@@ -179,7 +197,8 @@ defect. The recommended setup for an unattended run:
   `settings.local.json`) covering the exact commands the routine uses, so
   the routine ones never prompt. Typical entries: the repo's own quality
   gates (build / typecheck / lint / test commands), `git status`,
-  `git add`, `git commit`, `git worktree`, `git diff`, `git log`,
+  `git add`, `git commit`, `git worktree` (needed only when check 6
+  creates a worktree), `git diff`, `git log`,
   `openspec` — and nothing broader. Anything outside the list still
   prompts, which pauses and notifies: exactly the intended behavior.
 
@@ -197,7 +216,7 @@ plugin or not at all:
 
 | Hook event | What it does |
 |---|---|
-| `SubagentStart` | Appends a `start` line to `<worktree>/.claude/execute-change-run.jsonl` |
+| `SubagentStart` | Appends a `start` line to `<run root>/.claude/execute-change-run.jsonl` |
 | `SubagentStop` | Appends a `stop` line (agent id, `agent_transcript_path`, `stop_hook_active`); when replaying the log shows no subagent still running and the platform is Windows, also runs the process sweep |
 | `Notification` | Appends a `notify` line — permission prompts, agent-needs-input, idle |
 
@@ -221,7 +240,7 @@ claude plugin install execute-change@mi9-agent-skills
 **A run works without them, degraded:** there is no heartbeat log to watch
 and no automatic process sweep, so a stalled subagent is caught only by the
 pause-and-notify rules at the end of SKILL.md, and leftover processes
-survive in the worktree until the close-out sweep is run by hand.
+survive in the run root until the close-out sweep is run by hand.
 
 **Pass-through rule.** The hooks are installed per machine, so they run in
 every session, including every session that has nothing to do with this
@@ -239,9 +258,11 @@ unreadable log, crashed sweep — returns normally.
 
 **The sweep** (`hooks/sweep-worktree-processes.ps1`; Windows only;
 parameters `-Worktree <path>`, `-Since <ISO timestamp>`, `-WhatIf`) kills a
-process only when all three of these hold:
+process only when all three of these hold. The `-Worktree` parameter keeps
+its name; the path passed to it is the run root, which is a worktree only
+when check 6 created one:
 
-1. its command line contains the worktree path, OR it descends from the
+1. its command line contains the run root path, OR it descends from the
    current `claude` process through the `ParentProcessId` chain;
 2. it started at or after `-Since`, so nothing older than that timestamp is
    ever touched. The value differs by caller. The automatic sweep passes
@@ -263,10 +284,18 @@ kill; `-WhatIf` lists the matches without killing any of them. On a
 non-Windows platform it exits 0 with a note and kills nothing.
 
 **Known blind spot.** A process started as `node script.js` with its
-working directory set to the worktree carries no worktree path on its
+working directory set to the run root carries no path at all on its
 command line, so only the parent-chain rule catches it. `Win32_Process`
 exposes no working-directory field, so there is no cheap way to close that
 gap.
+
+**When the run root is the user's own checkout, the sweep can reach the
+user's own processes.** A dev server or test watcher they started in that
+directory after the run's `-Since` timestamp, running one of the
+allowlisted executables, matches all three conditions. Nothing older than
+`-Since` is ever touched, which is what keeps this narrow — but list what
+the close-out sweep killed, and run it with `-WhatIf` first when the user
+is still working in that directory.
 
 ### Still optional (for users who want them — never configured by this skill)
 

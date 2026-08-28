@@ -78,10 +78,14 @@ Hooks for the `execute-change` skill, shipped as the second plugin entry,
 
 `execute-change-watch.py` is one Python script handling three events: `SubagentStart`,
 `SubagentStop`, and `Notification`. All three fire in the parent session, not inside the
-subagent. The script reads `<repo>/.claude/execute-change-run.json`, written once by the
+subagent. The script reads `<run root>/.claude/execute-change-run.json`, written once by the
 `execute-change` lead session, and appends one JSON line per event to
-`<repo>/.claude/execute-change-run.jsonl`. If that metadata file is absent, or its
-`session_id` does not match the payload's, the hook exits 0 and writes nothing. That
+`<run root>/.claude/execute-change-run.jsonl`. The run root is the directory the run works
+in: the checkout the run was started from, or a dedicated worktree, chosen by a question at
+preflight. The metadata file names it under the key `run_root`; the hook falls back to the
+older key `worktree` so a run already in flight keeps working. If that metadata file is
+absent, or its `session_id` does not match the payload's, the hook exits 0 and writes
+nothing. That
 pass-through rule is what keeps it inert in every session that is not an `execute-change`
 run. It always exits 0: exit code 2 on `SubagentStop` would block the subagent from
 stopping.
@@ -102,12 +106,13 @@ table is the gate; the watcher only says when to go and look.
 
 `sweep-worktree-processes.ps1` is Windows-only cleanup of processes a finished subagent left
 running -- `node`, test runners, shells. A process is selected only when its command line
-contains the worktree path or it descends from the current `claude` process, AND it started
+contains the run root path or it descends from the current `claude` process, AND it started
 at or after the run start, AND its executable is in a fixed allowlist. Selected processes
-are killed with `taskkill /PID <n> /T /F`. `-WhatIf` lists them without killing. One blind
-spot: `node script.js` launched with its working directory set to the worktree shows no
-worktree path on its command line, so only the parent-chain rule catches it. `Win32_Process`
-has no working-directory field.
+are killed with `taskkill /PID <n> /T /F`. `-WhatIf` lists them without killing. The run
+root is passed in the `-Worktree` parameter, whose name predates the run-root choice and
+is unchanged. One blind spot: `node script.js` launched with its working directory set to the
+run root shows no run root path on its command line, so only the parent-chain rule catches
+it. `Win32_Process` has no working-directory field.
 
 ## Installing
 

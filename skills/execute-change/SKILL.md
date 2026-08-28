@@ -5,8 +5,9 @@ description: >-
   one lead session drives the whole feature routine — author the OpenSpec
   change, engineering review gate, apply the required changes, implement task
   group by task group, adversarial audit, simplification pass — each
-  pipeline step running in fresh subagents, committing per checkpoint on a
-  dedicated branch in the run's own git worktree (several plans can run
+  pipeline step running in fresh subagents, committing per checkpoint in
+  the directory preflight asks the user to pick (the current checkout, or
+  a dedicated git worktree and branch so several plans can run
   concurrently on one repo), and stopping after the local commits. Accepts
   a finished plan brief or a free-text idea — an idea first goes through a
   design interview and a user-approved brief before anything executes.
@@ -27,11 +28,15 @@ pause for the user only on genuine human decisions (the question reaches
 their phone via Remote Control push), and stop after a local commit — the
 user deploys, archives, and opens the PR by hand.
 
-Each run works in its **own git worktree**, created at preflight: the
-pipeline never touches the main working tree (a design-first run writes
-only the brief there), and several runs with different plans can execute
-on one repo at once — each has its own worktree and branch, and git
-refuses to check one branch out twice.
+Where the run works is **the user's choice at preflight** (Step 0 check
+6): the current checkout, or a dedicated git worktree. Whichever they
+pick is the run's **run root** — the directory the pipeline treats as the
+repository root from Step 0 to close-out. A worktree is what keeps the
+main working tree untouched (a design-first run writes only the brief
+there) and what lets several runs with different plans execute on one
+repo at once, since each has its own worktree and branch and git refuses
+to check one branch out twice; reusing the current checkout gives those
+up, and check 6 says so in the question.
 
 The argument (`$ARGUMENTS`) is either a plan-brief path or a free-text
 idea: if it resolves to an existing file, it is the brief — go straight to
@@ -91,10 +96,10 @@ non-OpenSpec repo fails before the interview, not after it; and scan
 `docs/up next/*.ledger.md` — an existing ledger whose brief matches this
 idea is an interrupted run: offer resume instead of a new interview.
 
-This phase runs **before Step 0**: no branch, worktree, or ledger exists
-yet, everything happens in the main tree, and an interruption here simply
-restarts the entry. The locked decisions are recorded in the brief
-itself, which the step-1 author reads.
+This phase runs **before Step 0**: no branch or ledger exists yet and the
+run root has not been chosen, everything happens in the main tree, and an
+interruption here simply restarts the entry. The locked decisions are
+recorded in the brief itself, which the step-1 author reads.
 
 1. **Research.** Launch a fresh research subagent (prompt in
    [`references/step-prompts.md`](references/step-prompts.md)) — the idea
@@ -181,21 +186,34 @@ Run the checks in this order:
    user for the path — repos may keep briefs elsewhere.)
 2. **Resume check — before anything is created.** If the brief's ledger
    (check 8 defines its exact name) already exists, this is a resume:
-   re-read the recorded branch, worktree path, change ID, base branch, and
-   last completed step; if the worktree directory no longer exists, run
-   `git worktree prune` first (a hand-deleted folder leaves a stale
+   re-read the recorded branch, run root, run-root option, change ID, base
+   branch, and last completed step. What happens next depends on which
+   option the ledger records.
+
+   *Recorded as a worktree:* if the worktree directory no longer exists,
+   run `git worktree prune` first (a hand-deleted folder leaves a stale
    registration that makes the add fail), then recreate it
    (`git worktree add <recorded path> <recorded branch>` — the branch
    still exists) and re-run the project's dependency install in it
-   (a recreated worktree is a bare checkout; the gates need it). If the
-   worktree survived, `git status` it: uncommitted changes, or a ledger
-   that disagrees with the branch (e.g. a committed group with no ledger
-   summary), → surface to the user before continuing — never build on
-   unexplained edits. Then re-run
+   (a recreated worktree is a bare checkout; the gates need it).
+
+   *Recorded as the current checkout:* nothing is created or recreated —
+   the run root is a directory the user already owns. Verify instead that
+   the recorded branch is the one checked out there
+   (`git rev-parse --abbrev-ref HEAD`). A different branch is a
+   stop-and-ask, never something to fix silently by checking the recorded
+   branch out over whatever the user is now doing.
+
+   Either way, `git status` the run root before continuing: uncommitted
+   changes, or a ledger that disagrees with the branch (e.g. a committed
+   group with no ledger summary), → surface to the user — never build on
+   unexplained edits. (In a reused checkout a dirty tree may simply be the
+   user's own work, which is exactly why it goes to them rather than being
+   assumed either way.) Then re-run
    checks 3–5 (the environment can drift between runs), skip checks 6–8 —
-   the branch, worktree, and ledger already exist — and continue
+   the branch, run root, and ledger already exist — and continue
    the pipeline from the ledger. Never
-   create a second branch, worktree, or ledger for the same plan.
+   create a second branch, run root, or ledger for the same plan.
 3. **OpenSpec-managed repo.** `openspec/config.yaml` at the repo root
    confirms it. If absent, run `openspec context` — a non-zero exit means
    the repo is not OpenSpec-managed (a repo without a local `openspec/`
@@ -213,7 +231,7 @@ Run the checks in this order:
    - **Stop the run and work without OpenSpec** — recommend this one.
      The pipeline has no change to author, review, or validate here, so
      it cannot run at all. Hand the plan brief back and continue in this
-     session as ordinary work: no worktree, no checkpoint commits, and
+     session as ordinary work: no run branch, no checkpoint commits, and
      none of the review or audit gates.
    - **Run `openspec init` here, then continue the run.** This writes an
      `openspec/` directory and Claude command files into the repo, so it
@@ -256,37 +274,89 @@ Run the checks in this order:
    confirm the repo's own OpenSpec flows exist (`.claude/commands/opsx/` or
    `.claude/skills/openspec-*` files — steps 1 and 4 invoke them); missing
    → `openspec update` regenerates them (restart warning again).
-6. **Worktree and branch.** Identify the default branch; `git fetch`
-   first so the branch is created from a current base (a fetch failure is
-   not fatal — note it and continue from the local base). Build the run
-   name `<timestamp>-<plan name>`: `<timestamp>` is the current date-time
+6. **Run root and branch — a blocking question.** Identify the default
+   branch; `git fetch` first so a branch created here starts from a
+   current base (a fetch failure is not fatal — note it and continue from
+   the local base). Build the run name
+   `<timestamp>-<plan name>`: `<timestamp>` is the current date-time
    at run start (e.g. `20260813-1054`) — never a date taken from the
    brief's filename, which may be days old; `<plan name>` is the brief's
    filename without its extension and with any date-time stamp the
    filename itself carries stripped out, sanitized for git (spaces →
-   hyphens). Then, from the main repo root (the path below is relative to
-   it), create the run's dedicated worktree and branch in one command:
+   hyphens).
 
-   ```bash
-   git worktree add "../<repo folder name>.worktrees/<run name>" \
-     -b agent/execute-change/<run name> <default branch>
-   ```
+   **The run root** is the directory the whole run works in: every
+   subagent, every lead command, every commit, and every acceptance check
+   treats it as the repository root from here on. Which directory that is
+   is the user's decision, and it is a blocking AskUserQuestion asked
+   before anything is created. Read the two facts the question needs
+   first: the branch checked out right now (`git rev-parse --abbrev-ref
+   HEAD`) and whether the tree is dirty (`git status --porcelain`).
 
-   The entire run — every subagent, every lead command, every commit —
-   happens inside that worktree; treat it as the repository root from here
-   on. The main working tree is never touched (it may stay dirty; the user
-   can keep working in it), and the run's only writes outside the worktree
-   are the ledger and, on a design-first run, the brief it drafted — side
-   by side in the main tree. Then write the run's metadata file,
-   `.claude/execute-change-run.json` — the `.claude/` **inside the
-   worktree**, since the worktree is the run's working directory and that
-   is where the hooks look:
+   - **Reuse the current branch and this checkout** — recommend this one.
+     Commits go onto the branch that is checked out now, in this
+     directory. No branch is created, no directory is created, and the
+     run root is this checkout.
+   - **Create the run's branch in this checkout.**
+     `git checkout -b agent/execute-change/<run name> <default branch>`
+     here: the run gets its own branch, but the run root is still this
+     one directory.
+   - **Create a dedicated worktree and branch.** A separate checkout of
+     its own, created from the main repo root (the path is relative to
+     it), and the run root is that new directory:
+
+     ```bash
+     git worktree add "../<repo folder name>.worktrees/<run name>" \
+       -b agent/execute-change/<run name> <default branch>
+     ```
+
+   Put these facts in the question itself — they are what makes the answer
+   an informed one, not decoration:
+
+   - **The first two options give up three things the third provides.**
+     The run root is then the user's own working tree, so "the run never
+     touches your main working tree" stops being true; the user cannot
+     keep working in the repo while the run executes, since subagents
+     edit files under them for hours; and a concurrent run of a different
+     plan on this repo is not supported — a separate worktree is what
+     makes that possible, because git refuses to check one branch out
+     twice.
+   - **The first option while the default branch is checked out.** When
+     HEAD is the default branch (`main`, `master`, whatever this check
+     resolved), say so plainly in the question text: reusing it commits an
+     hours-long autonomous change straight onto the default branch. Do not
+     block it — the answer is the user's — but never let it pass unstated.
+   - **The first two options with a dirty tree.** When
+     `git status --porcelain` is non-empty, name that in the question.
+     Commits stage explicit pathspecs, so unrelated modified files are
+     never committed; but the baseline gate run and every later gate run
+     execute against those changes, so a failure they cause can be blamed
+     on the implementation. Committing or stashing first is the clean
+     path.
+
+   Record the answer in the ledger's Decisions block, and the chosen
+   option in the ledger's Run root field (check 8) — a resume has to know
+   whether a worktree exists.
+
+   **Reusing this checkout means no worktree commands, ever.** Under
+   either of the first two options, `git worktree add`, `git worktree
+   remove`, and `git worktree prune` are not run at any point of the run:
+   not here, not on resume (check 2), not at close-out — and the final
+   report must not tell the user to remove a worktree that does not
+   exist.
+
+   Whichever option was taken, the main tree keeps the ledger and, on a
+   design-first run, the brief; under the worktree option those two are
+   the run's only writes outside the run root. Then write the run's
+   metadata file, `.claude/execute-change-run.json` — the `.claude/`
+   **inside the run root**, since the run root is the run's working
+   directory and that is where the hooks look:
 
    ```json
    {
      "session_id": "<this lead session's id>",
-     "worktree": "<absolute path of the worktree created above>",
-     "branch": "agent/execute-change/<run name>",
+     "run_root": "<absolute path of the run root chosen above>",
+     "branch": "<the branch reused, or agent/execute-change/<run name>>",
      "ledger": "<plan path>.ledger.md",
      "started_at": "<run start, ISO-8601 UTC>"
    }
@@ -297,30 +367,37 @@ Run the checks in this order:
    runs, is safe. This file is what the three `execute-change` hooks read
    (`references/preflight.md` describes them) — it is written once, never
    modified afterwards, and close-out deletes it. Finally, launch the
-   worktree preparation as a BACKGROUND task, off the critical path
+   run-root preparation as a BACKGROUND task, off the critical path
    (steps 1–5 don't need it):
    the project's dependency install (e.g. `npm ci`) followed by one run
-   of the project's quality gates on the untouched worktree — the
-   **baseline**. Record per-gate pass/fail (with any failing output) in
+   of the project's quality gates on the untouched run root — the
+   **baseline**. A fresh worktree always needs that install; a reused
+   checkout usually already has its dependencies, so run the install
+   there only if the gates fail for missing ones — a reinstall in the
+   user's own directory is a change they did not ask for. Record
+   per-gate pass/fail (with any failing output) in
    the ledger's Baseline field when it finishes. Before the first step-6
    group launches: confirm the task completed, and surface a red baseline
    to the user — it means pre-existing failures that must never be
    attributed to the implementation.
 7. **Readiness line — printed, never asked.** There is no approval
    question here. The manual invocation IS the authorization: this skill
-   is invoke-only, it commits solely to its own branch inside its own
-   worktree, and it never pushes. Concurrency is decided mechanically at
+   is invoke-only, it commits by explicit pathspec on the branch check 6
+   settled, and it never pushes. Concurrency is decided mechanically at
    step 6 (disjoint `tasks.md` file lists, serialize otherwise) — at this
    point `tasks.md` does not exist yet, so there is nothing to approve.
    Print one line stating the run's shape before the user walks away:
-   plan brief, branch, base branch, worktree path, and the notification
-   state — read `agentPushNotifEnabled` and `hasUsedRemoteControl` from
-   `~/.claude.json`; either one false or absent → say plainly that pauses
+   plan brief, branch, base branch, the run root with the option that
+   produced it (reused checkout, new branch here, or worktree), and the
+   notification state — read `agentPushNotifEnabled` and
+   `hasUsedRemoteControl` from `~/.claude.json`; either one false or
+   absent → say plainly that pauses
    will wait in this terminal only. Neither flag records the per-session
    `/remote-control` toggle, so this is a notice, not a claim that the
-   phone push is confirmed working. The only Step-0 questions are the
-   conditional ones: a missing brief path (check 1), unexplained
-   worktree edits on resume (check 2), the not-OpenSpec-managed fork
+   phone push is confirmed working. The Step-0 questions are check 6's
+   run-root fork, which is always asked, plus the conditional ones: a
+   missing brief path (check 1), unexplained edits in the run root on
+   resume (check 2), the not-OpenSpec-managed fork
    (check 3), and the install/update offers in checks 4–5.
 8. **Ledger.** Create `<plan path>.ledger.md` next to the plan brief —
    literally append `.ledger.md` to the brief's full filename (e.g.
@@ -329,14 +406,14 @@ Run the checks in this order:
 
    ```markdown
    # execute-change ledger — <plan brief filename>
-   - Branch: agent/execute-change/<run name>
-   - Worktree: <absolute path of the worktree created in check 6>
+   - Branch: <the branch check 6 settled on>
+   - Run root: <absolute path> (reused-checkout | new-branch-here | worktree)
    - Base branch: <the default branch identified in check 6>
    - Change ID: (set after step 1)
    - Last completed step: 0
    - Parallel groups: allowed when tasks.md file lists are disjoint
    - Fix cycles used: 0 of 2
-   - Baseline gates: (set when the background worktree prep finishes)
+   - Baseline gates: (set when the background run-root prep finishes)
    ## Step log        <!-- per step: subagent outcome + acceptance-check result -->
    ## Decisions       <!-- every user answer, verbatim -->
    ## Open questions
@@ -357,10 +434,10 @@ verbatim from
 step's template from that file immediately before each fill — never fill
 one from memory; compaction corrupts verbatim-ness silently)**, with the
 placeholders filled from the ledger: the change ID, the change folder
-`openspec/changes/<id>/` inside the worktree, the branch, the base branch,
-and the worktree path. Every acceptance-check command you run below —
+`openspec/changes/<id>/` inside the run root, the branch, the base branch,
+and the run root path. Every acceptance-check command you run below —
 `openspec validate`, the diffs, the commits, the gates — runs inside the
-worktree.
+run root.
 
 **Acceptance checks** (run by you, the lead, after each step completes —
 the step's checkpoint commit, where one is defined, happens only AFTER its
@@ -375,7 +452,7 @@ resumes at step 1.
 | 2 | `design.md` contains a review report with a verdict |
 | 3 | Every answered decision is recorded in the ledger |
 | 5 | The landing report says LANDED for every item, with quoted evidence |
-| 6 (each group) | The group's files actually changed in the worktree, matching its report (uncommitted at check time — the commit follows the check) |
+| 6 (each group) | The group's files actually changed in the run root, matching its report (uncommitted at check time — the commit follows the check) |
 | 7 | An audit report with a verdict exists |
 | 8 | The simplify report exists and the project's gates passed |
 
@@ -413,7 +490,8 @@ question it cannot ask, or simply dead — costs the run hours of silence,
 because the lead deliberately does not watch subagents work. Immediately
 after launching any subagent, arm one background watcher with
 `Bash(run_in_background: true)`: an `until` loop that re-reads
-`.claude/execute-change-run.jsonl` — the heartbeat log the three
+`.claude/execute-change-run.jsonl` (the path is relative to the run root,
+which is the loop's working directory) — the heartbeat log the three
 `execute-change` hooks append to, described in
 [`references/preflight.md`](references/preflight.md) — every 180 seconds
 and exits, which notifies you, on the first of these:
@@ -655,7 +733,9 @@ ticks its own checkboxes and never self-verifies.
 Groups marked parallel run concurrently ONLY when their file lists in
 `tasks.md` are disjoint —
 no file lists in `tasks.md` means the condition is unevaluable: serialize.
-Serialized is also the default otherwise: they share one working tree. A
+Serialized is also the default otherwise: a parallel set shares one
+working tree, and when check 6 reused the current checkout that tree is
+the user's own. A
 parallel set runs like this: launch every group in the set from the same
 snapshot (identical branch diff and completed-group summaries), using the
 parallel variant of the step-6 prompt (verify clauses only — no
@@ -669,7 +749,7 @@ retry); a failure spanning groups treats the whole set as the failed unit
 — one retry of the set, then pause and ask.
 
 Before committing a serial group, run the project's gates yourself in the
-worktree — the implementer's own gate run is its iteration loop, not
+run root — the implementer's own gate run is its iteration loop, not
 evidence (a subagent's "done" claim is not evidence; this is the same
 rule). Judge any failure against the ledger's Baseline: a failure already
 present at baseline is pre-existing — report it, never attribute it to
@@ -707,14 +787,16 @@ simplification changes by pathspec.
    lead's one permitted source edit — and commit that reconciliation by
    pathspec.
 2. `openspec validate <id> --strict` as a read-only final check.
-3. Run the process sweep once over the worktree — the `SubagentStop` hook
+3. Run the process sweep once over the run root — the `SubagentStop` hook
    already sweeps when the last subagent of a step stops, so this is the
-   final guarantee, not the only one:
+   final guarantee, not the only one. The script's parameter is named
+   `-Worktree` and keeps that name; the value you pass is the run root,
+   whatever check 6 settled on:
 
    ```bash
    SWEEP=$(ls ~/.claude/plugins/cache/*/execute-change/*/hooks/sweep-worktree-processes.ps1 2>/dev/null | head -1)
    [ -n "$SWEEP" ] && pwsh -NoProfile -File "$SWEEP" \
-     -Worktree "<worktree path>" -Since "<the run's started_at>"
+     -Worktree "<run root path>" -Since "<the run's started_at>"
    ```
 
    The path is resolved at run time on purpose: the plugin cache directory
@@ -727,12 +809,15 @@ simplification changes by pathspec.
    — the run is over, and removing the metadata file is what makes the
    hooks inert again.
 4. **STOP.** Report to the user: verdicts per step, decisions taken, the
-   commit list, leftover processes killed, the worktree path, and the
+   commit list, leftover processes killed, the run root, and the
    remaining manual steps verbatim:
    deploy to the dev environment and smoke-test, update the work-folder
    CLAUDE.md files, delete the plan brief and the ledger, `opsx:archive`
-   the change, open the PR, and after the PR remove the run's worktree
-   (`git worktree remove <path>`).
+   the change, and open the PR. One more manual step follows the PR when
+   the run had its own worktree: remove it with
+   `git worktree remove <path>`. When check 6 reused the current
+   checkout there is no worktree — leave that step out rather than
+   telling the user to remove a directory that does not exist.
 
 ## Pause-and-notify rules (apply at every step)
 

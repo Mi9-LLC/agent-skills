@@ -1,16 +1,17 @@
 #!/usr/bin/env python3
 """SubagentStart / SubagentStop / Notification hook: keep a run log for an execute-change
-run, and sweep leftover build processes out of the run's git worktree once the last
-subagent has stopped.
+run, and sweep leftover build processes out of the run's run root once the last subagent
+has stopped. The run root is whichever directory preflight settled on -- the current
+checkout, or a git worktree created for the run.
 
 WHY this exists. The execute-change skill drives an hours-long run through one fresh
 subagent per step, and the lead session deliberately keeps its own context small -- so the
 lead cannot watch what the subagents do while they do it. Two things then go unnoticed: the
 run stalls on a permission prompt with nobody looking at the terminal, and a step-6
-implementer leaves a test watcher or a dev server holding files open inside the run's
-worktree, which makes the next step's dependency install or the close-out
-`git worktree remove` fail for no visible reason. This hook records both in a file the lead
-can read cheaply, and kills the leftover processes.
+implementer leaves a test watcher or a dev server holding files open inside the run root,
+which makes the next step's dependency install or the close-out `git worktree remove` fail
+for no visible reason. This hook records both in a file the lead can read cheaply, and
+kills the leftover processes.
 
 All three events fire in the PARENT session, not inside the subagent, so one script wired to
 all three sees the whole run from one place.
@@ -114,8 +115,10 @@ def _replay(cwd):
 
 def _sweep(cwd, meta, since) -> None:
     """Run the Windows process sweep and log its summary lines. Never raises."""
-    worktree = meta.get("worktree")
-    if not worktree or not since:
+    # "worktree" is the pre-run-root name of this key: a run started before the rename
+    # still has a metadata file carrying it, and that run must keep sweeping.
+    run_root = meta.get("run_root") or meta.get("worktree")
+    if not run_root or not since:
         return
     script = os.path.join(os.path.dirname(os.path.abspath(__file__)), SWEEP_NAME)
     if not os.path.isfile(script):
@@ -125,7 +128,7 @@ def _sweep(cwd, meta, since) -> None:
             done = subprocess.run(
                 [
                     shell, "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", script,
-                    "-Worktree", str(worktree), "-Since", str(since),
+                    "-Worktree", str(run_root), "-Since", str(since),
                 ],
                 capture_output=True,
                 text=True,
@@ -178,15 +181,15 @@ def main() -> None:
             "stop_hook_active": payload.get("stop_hook_active"),
             "last_message_head": head[:LAST_MESSAGE_HEAD_CHARS],
         })
-        # The last subagent stopping is the only moment when killing worktree processes is
+        # The last subagent stopping is the only moment when killing run-root processes is
         # safe: anything still alive there is a leftover of the batch that just finished.
         #
-        # The window is the BATCH start, not the run start. Step 0 launches the worktree
+        # The window is the BATCH start, not the run start. Step 0 launches the run-root
         # preparation -- the dependency install plus one gate run -- as a background task that
         # keeps going while later steps run their subagents. It is a descendant of claude and
         # its executables (bash, npm, node) are all on the allowlist, so a run-start window
         # would let the first idle moment kill the install mid-flight, leaving the lead with a
-        # half-installed worktree and no baseline. Anything older than the batch is somebody
+        # half-installed run root and no baseline. Anything older than the batch is somebody
         # else's business; anything the just-finished batch spawned is still a candidate.
         running, batch_started_at = _replay(cwd)
         if not running and sys.platform == "win32":
