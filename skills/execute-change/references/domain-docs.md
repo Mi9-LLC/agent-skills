@@ -4,7 +4,7 @@ Read by the step-1 author subagent (its prompt names this file as
 `{{DOMAIN_DOCS}}`). The lead uses the three-condition ADR test below
 during the design interview; it never writes these files itself — the
 interview records terms and decisions in the brief, and step 1 writes
-them into the worktree so they are committed with the change artifacts.
+them into the run root so they are committed with the change artifacts.
 
 ## `CONTEXT.md` — the project glossary
 
