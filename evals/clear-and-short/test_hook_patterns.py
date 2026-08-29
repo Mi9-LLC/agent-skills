@@ -63,6 +63,34 @@ for prompt, expected in CASES:
         fails.append((prompt, expected, got))
     print("%-4s %-12s %-12s %s" % ("ok" if ok else "FAIL", expected or "-", got or "-", prompt))
 
+# --- the unasked-for default: entrypoint and source gates ---
+DEFAULT_CASES = [
+    # (CLAUDE_CODE_ENTRYPOINT or None, payload, expected)
+    (None, {}, True),                        # old version, no variable, no source
+    ("cli", {}, True),                       # interactive terminal
+    ("cli", {"source": "user"}, True),
+    ("cli", {"source": "sdk"}, False),
+    ("sdk-cli", {}, False),                  # claude -p on 2.1.251: no source field
+    ("sdk-cli", {"source": "user"}, False),
+    ("CLI", {}, True),
+]
+for entrypoint, payload, expected in DEFAULT_CASES:
+    saved = os.environ.pop("CLAUDE_CODE_ENTRYPOINT", None)
+    no_default = os.environ.pop("CLEAR_AND_SHORT_NO_DEFAULT", None)
+    if entrypoint is not None:
+        os.environ["CLAUDE_CODE_ENTRYPOINT"] = entrypoint
+    got = hook._default_allowed(payload)
+    os.environ.pop("CLAUDE_CODE_ENTRYPOINT", None)
+    if saved is not None:
+        os.environ["CLAUDE_CODE_ENTRYPOINT"] = saved
+    if no_default is not None:
+        os.environ["CLEAR_AND_SHORT_NO_DEFAULT"] = no_default
+    ok = got == expected
+    if not ok:
+        fails.append(("default entrypoint=%r payload=%r" % (entrypoint, payload), expected, got))
+    print("%-4s default entrypoint=%-9r payload=%r -> %r" % ("ok" if ok else "FAIL", entrypoint, payload, got))
+CASES = CASES + DEFAULT_CASES
+
 print()
 print("%d/%d passed" % (len(CASES) - len(fails), len(CASES)))
 for prompt, expected, got in fails:

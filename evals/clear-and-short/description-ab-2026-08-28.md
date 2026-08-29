@@ -102,7 +102,8 @@ Result 3/6.
    transcript records `promptSource: "sdk"`. `hooks/clear-and-short-trigger.py` fires the default
    when the payload has no `source` field, so the `claude -p` payload apparently carries none. The
    hook's "does not fire in `claude -p`" claim (hooks/README.md, CLAUDE.md) does not hold on Claude
-   Code 2.1.251. Not fixed here.
+   Code 2.1.251. Fixed on 2026-08-29: the hook now also requires the environment variable
+   `CLAUDE_CODE_ENTRYPOINT` to be `cli` or absent (it is `sdk-cli` under `claude -p`).
 3. Two runner mistakes that void a grid: a `claude -p` process inherits the shell loop's stdin and
    reads it as extra input (pass the prompt on stdin explicitly); `--add-dir` takes several
    directories and swallows a following prompt argument.

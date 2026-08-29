@@ -62,11 +62,16 @@ first prompt of a session, the hook prints nothing and records the session id, w
 out the default for the rest of it. Before that, such a prompt got the voice directive on the
 very message asking for the mode to be off.
 
-**The payload's `source` field** gates the default. It fires when `source` is `user`, or when
-`source` is absent -- older payloads keep working. It no longer fires in `claude -p`, SDK
-runs, or automated eval harnesses, where it silently changed output that was being measured
-for something else. A prompt that explicitly matches the skill's patterns is still honored
-whatever the source says.
+**The environment variable `CLAUDE_CODE_ENTRYPOINT`** gates the default. Claude Code sets it
+to `cli` in an interactive terminal and to `sdk-cli` under `claude -p` and SDK runs (observed
+on 2.1.251). The default fires only for `cli`, or when the variable is absent so older
+versions keep working. So it does not fire in `claude -p`, SDK runs, or automated eval
+harnesses, where it silently changed output that was being measured for something else.
+The payload's `source` field is checked as well when present (`user` fires, anything else
+does not), but on 2.1.251 the `claude -p` payload carries no `source` field at all, which is
+how the default was seen firing in a `claude -p` run on 2026-08-28 before the entrypoint
+check existed. A prompt that explicitly matches the skill's patterns is still honored
+whatever the entrypoint or source says.
 
 **The environment variable `CLEAR_AND_SHORT_NO_DEFAULT`**, set to any non-empty value, turns
 the default off. Matched prompts still work. This is the documented opt-out; before it, the

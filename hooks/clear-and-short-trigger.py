@@ -42,11 +42,17 @@ Three things hold the default back, none of which touch a prompt that matches a 
                  check the very prompt asking for the mode off would receive the default.
                  An off-switch prompt emits nothing and records the session, which also
                  stops the default firing later in that session.
-  SOURCE      -- the payload's "source" field says who typed the prompt ("user", "sdk",
-                 "system", ...). The default fires only for "user", or when the field is
-                 absent (older payloads keep working). Otherwise `claude -p`, SDK runs and
-                 eval harnesses would silently get a directive nobody asked for, changing
-                 output that is being measured for something else.
+  ENTRYPOINT  -- the environment variable CLAUDE_CODE_ENTRYPOINT names how Claude Code was
+                 started: "cli" for an interactive terminal, "sdk-cli" for `claude -p` and
+                 SDK runs (observed on Claude Code 2.1.251). The default fires only for "cli",
+                 or when the variable is absent (older versions keep working). Otherwise
+                 `claude -p`, SDK runs and eval harnesses would silently get a directive
+                 nobody asked for, changing output that is being measured for something else.
+  SOURCE      -- the payload's "source" field, when present, says who typed the prompt
+                 ("user", "sdk", "system", ...). The default fires only for "user", or when
+                 the field is absent. On 2.1.251 the `claude -p` payload carries no "source"
+                 at all, which is why the ENTRYPOINT gate above exists; this one stays for
+                 payloads that do carry it.
   OPT-OUT     -- setting the environment variable CLEAR_AND_SHORT_NO_DEFAULT to any
                  non-empty value turns the default off permanently, without uninstalling
                  the hook.
@@ -332,12 +338,19 @@ def _default_allowed(payload) -> bool:
 
     CLEAR_AND_SHORT_NO_DEFAULT set to any non-empty value turns the default off.
 
-    "source" says who typed the prompt: "user", "sdk", "system" and others. Only "user"
-    gets the default, so `claude -p`, SDK callers and eval harnesses are left alone. An
-    ABSENT source is treated as a user prompt, so older payloads keep working; a present
-    but non-user (or non-string) source does not fire.
+    CLAUDE_CODE_ENTRYPOINT is "cli" in an interactive terminal and "sdk-cli" under
+    `claude -p` and SDK runs (Claude Code 2.1.251). Only "cli" gets the default; an ABSENT
+    variable is treated as interactive so older versions keep working.
+
+    "source", when the payload carries it, says who typed the prompt: "user", "sdk",
+    "system" and others. Only "user" gets the default; an ABSENT source is treated as a
+    user prompt. The `claude -p` payload on 2.1.251 has no "source" field, so this check
+    alone let the default fire there -- the entrypoint check is the one that holds.
     """
     if os.environ.get("CLEAR_AND_SHORT_NO_DEFAULT"):
+        return False
+    entrypoint = os.environ.get("CLAUDE_CODE_ENTRYPOINT")
+    if entrypoint is not None and entrypoint.strip().lower() != "cli":
         return False
     if "source" not in payload:
         return True
