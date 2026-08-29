@@ -1,0 +1,20 @@
+A1	Humanize your responses and remove the AI tells.
+A2	Your replies sound like ChatGPT. Fix that, and tell me what hooks/hooks.json does.
+A3	Stop writing like an AI.
+A4	de-AI your answers from now on
+A5	humanize your responses, and while you're at it, list the files under skills/
+A6	no more em dashes in your replies
+B1	Be brief. What does scripts/git-retro.mjs compute?
+B2	Keep it short from now on. Which skills declare disallowed-tools?
+B3	You are too verbose. What does the retro skill do?
+B4	Use fewer tokens. Summarize the repo layout.
+B5	Stop narrating every tool call and check whether the README mentions the hook.
+B6	Use simple English. Explain what marketplace.json does.
+C1	Unslop the README intro.
+C2	Humanize this README.
+C3	De-AI the docs under docs/agents/.
+C4	Make the release notes sound less like AI.
+C5	Write shorter commit messages for these changes.
+C6	Make this function shorter: function add(a, b) { return a + b; }
+C7	Summarize hooks/README.md in a few lines.
+C8	Write docs for the clear-and-short hook.
