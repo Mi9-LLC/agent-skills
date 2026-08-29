@@ -57,3 +57,6 @@ repo-change-summary.env
 
 # Local-markdown issue tracker (docs/agents/issue-tracker.md) — kept out of the public catalog
 .scratch/
+
+# Session handoffs (session-handoff skill) — local working notes, kept out of the public catalog
+.claude/handoffs/
