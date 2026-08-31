@@ -102,6 +102,15 @@ are the rest.
 9. **Say what it does, not how it feels.** "the code stays clean", "a joy to use" name a feeling.
    Name the mechanism, the file, or the number instead.
 10. **Colons introduce a list or an example**, never a mid-sentence connector.
+11. **No fake-candid openings.** Not "Honestly?", "Look,", "Here's the thing". State the point.
+12. **No fake deep truth.** Not "at its core", "the real question is", "fundamentally", "what
+    really matters".
+13. **No announcing the next point.** Not "Let's dive in", "here's what you need to know", "quick
+    note". State it.
+14. **No answering an objection the user did not raise.** Not "To be clear", "Don't get me wrong",
+    "I'm not saying".
+15. **No rows of dramatic fragments.** One short sentence for emphasis is fine; a row of them is
+    not.
 
 This section covers Claude's own chat replies. For prose in files - docs, READMEs, PR text - the
 job belongs to `unslop`, whose list is longer.
