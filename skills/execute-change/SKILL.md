@@ -227,6 +227,11 @@ Run the checks in this order:
       cutoff, so resetting it would spare every process the run started
       before the interruption. Leave the recorded start commit alone — a
       resume re-reads that field from the ledger and never re-derives it.
+      If `.claude/execute-change-run.json.parked` exists instead of the
+      live file, the interrupted run crashed during a lead gate run
+      (Step 6 parks the file for that window): take its values from the
+      `.parked` copy, write the live file, and delete the `.parked` one,
+      so the hooks are armed again.
 
       Then append one **resume boundary event** to the heartbeat log
       `.claude/execute-change-run.jsonl` beside it — a single line:
@@ -381,7 +386,14 @@ Run the checks in this order:
      directory at the end of every subagent batch, and a `vitest` or dev
      server they started in another terminal carries the run root's path
      on its command line, so it is killed too. The sweep runs
-     automatically, with no preview and no confirmation.
+     automatically, with no preview and no confirmation. It also reaches
+     the lead's own gate runs: a gate run in the run root is a child of
+     this `claude` process and names the run root on its command line,
+     so a sweep fired while it runs kills it, and the killed run looks
+     like a real failure (observed twice on 2026-09-01, 50 minutes lost).
+     The mitigation is the parking rule in Step 6: the metadata file is
+     moved aside for every lead gate run, which disarms the hooks for
+     that window.
 
    **Second confirmation — the first option while the default branch is
    checked out.** When the user picks "reuse the current branch and this
@@ -531,8 +543,17 @@ Run the checks in this order:
    began and re-deriving it would shrink the audit's diff to the work
    done after the interruption.
 
-   The ledger and the plan brief are never committed; the user deletes both
-   at manual close-out.
+   Next to the ledger, create the reports folder `<plan path>.reports/`
+   (e.g. `foo-plan.md.reports/`). Every pipeline subagent writes its full
+   report to a file there, named by the lead in its prompt as
+   `{{REPORT_PATH}}` (`step1.md`, `step6-group3.md`, `step7-fix1.md`, and
+   so on), with `OPEN QUESTIONS` as the first section, and returns only
+   the path plus a short summary. Read the file, not the returned text:
+   on 2026-09-01 the returned report reached the lead truncated
+   mid-sentence five times in one run, twice inside `OPEN QUESTIONS`.
+
+   The ledger, the reports folder, and the plan brief are never committed;
+   the user deletes all three at manual close-out.
 
 ## The pipeline — how every step runs
 
@@ -546,8 +567,11 @@ step's template from that file immediately before each fill — never fill
 one from memory; compaction corrupts verbatim-ness silently)**, with the
 placeholders filled from the ledger: the change ID, the change folder
 `openspec/changes/<id>/` inside the run root, the branch, the start commit
-(`{{START_COMMIT}}` — the diff base every template's diff uses), and the
-run root path. The base branch is a ledger field, not a placeholder: no
+(`{{START_COMMIT}}` — the diff base every template's diff uses), the
+run root path, and the report file (`{{REPORT_PATH}}` — one file per
+step or task group under the reports folder check 8 created; the lead
+reads that file, because the returned text can arrive truncated). The
+base branch is a ledger field, not a placeholder: no
 template takes it any more. Every acceptance-check command you run below —
 `openspec validate`, the diffs, the commits, the gates — runs inside the
 run root.
@@ -715,12 +739,47 @@ done
 echo "$verdict"
 ```
 
-**The watcher also exits when the batch is done.** `IDLE` means every
-subagent has stopped, and that exit is the normal end of a watcher's life,
-not a finding — you already have the subagent's return value and are back
-in control. Arm a fresh watcher at the next launch. One watcher per launch
-that exits with its batch is the whole design; a watcher left running past
-its batch would wait forever for trouble that can no longer arrive.
+**The watcher also exits when the batch is done.** `IDLE` means the log
+shows every subagent stopped, and when that is true it is the normal end
+of a watcher's life, not a finding — you already have the subagent's
+return value and are back in control. Arm a fresh watcher at the next
+launch. One watcher per launch that exits with its batch is the whole
+design; a watcher left running past its batch would wait forever for
+trouble that can no longer arrive.
+
+**Confirm an `IDLE` verdict with `ListAgents` before believing it, exactly
+as a `STALL`.** `SubagentStart` is known to miss launches: on 2026-09-01
+it fired for 4 of 8 subagents in one session, and a parallel batch of
+three launched with no `start` line for any of them. The watcher replays
+`start` and `stop` lines to build its running set, so a missing `start`
+leaves the set empty and the watcher prints `IDLE` at its first check
+while the subagent works on for another ten minutes. An `IDLE` that
+arrives before the subagent's return value is suspect on its face. Call
+`ListAgents`: an agent listed as running means the replay is wrong, not
+that the agent finished — re-arm and carry on. A missing `start` also
+means every later `stop` event closes an apparently empty batch, so the
+process sweep fires on every stop instead of once per batch; that is why
+Step 6 parks the metadata file around lead gate runs.
+
+**Fallback timer when the log cannot be trusted.** When `IDLE` has proved
+false once in a run, or the hooks are not installed (`NOLOG`), arm a plain
+timer instead of the log watcher, with `Bash(run_in_background: true)`:
+
+```bash
+sleep 175
+echo "tick $(date -u +%H:%M:%SZ) newest-file: $(find '<run root>' -type f -not -path '*/node_modules/*' -not -path '*/.git/*' -printf '%TY-%Tm-%Td %TH:%TM %p\n' 2>/dev/null | sort | tail -1)"
+```
+
+Its exit re-invokes you: call `ListAgents`, which is authoritative, and
+re-arm. The newest-file line separates "working" (files still changing)
+from "stuck" (nothing changed for two ticks) without waking the agent.
+This costs one line of context every 3 minutes, which is why it is the
+fallback and not the default.
+
+A subagent can finish its work and report while `ListAgents` still shows
+it running. Before a lead gate run starts, `TaskStop` such an agent
+deliberately, so its `stop` event and any sweep land before the gates,
+not during them.
 
 A watcher can also vanish without printing anything. The `SubagentStop`
 sweep runs at batch end and may kill the watcher's own shell before its
@@ -865,22 +924,92 @@ parallel set runs like this: launch every group in the set from the same
 snapshot (identical branch diff and completed-group summaries), using the
 parallel variant of the step-6 prompt (verify clauses only — no
 project-wide gates, they would race in the shared tree); when the whole
-set has returned, run the acceptance checks serially, then the project's
-quality gates once over the still-uncommitted set, and only after the
+set has returned, run the acceptance checks serially, then the gates the
+proportionate rule below picks for the set's combined changed files, once
+over the still-uncommitted set, and only after the
 gates pass make the per-group pathspec commits (the after-the-check
 commit rule holds — nothing red gets committed). A gate failure
 attributable to one group is that group's failed acceptance check (one
 retry); a failure spanning groups treats the whole set as the failed unit
 — one retry of the set, then pause and ask.
 
-Before committing a serial group, run the project's gates yourself in the
+Before committing a serial group, run the gates yourself in the
 run root — the implementer's own gate run is its iteration loop, not
 evidence (a subagent's "done" claim is not evidence; this is the same
-rule). Judge any failure against the ledger's Baseline: a failure already
+rule). The implementer does not run the full suite; your run is the only
+one that counts, so it is not duplicated. Judge any failure against the
+ledger's Baseline: a failure already
 present at baseline is pre-existing — report it, never attribute it to
 the group. Then, after the group passes its acceptance check and your
 gate run: commit the group by pathspec, add a one-paragraph summary to
 the ledger, advance.
+
+**Which gates a group gets — proportionate to what it changed.** A full
+gate run takes minutes (about 8 in one measured repo); five serial
+groups times a full run each is 40 minutes, much of it proving nothing.
+Decide from the group's changed files (`git status --porcelain` in the
+run root):
+
+- **Only documents, comments, or a README changed:** skip the type check
+  and the tests — nothing there can break a test. Run only a gate that
+  reads those files, if the project has one (a markdown lint, a link
+  check).
+- **Any code changed: the type check and the lint, always.** The type
+  check (`tsc --noEmit`, `dotnet build --nologo`, or what the project's
+  CLAUDE.md names) is fast and catches most of what breaks across files:
+  a changed signature, a renamed export, a new required field.
+- **Tests, when the runner has a related-tests mode:** run it over the
+  group's changed source files — `vitest related <files>` or `jest
+  --findRelatedTests <files>`. It runs every test file whose import
+  graph reaches a changed file, so it covers the group's own tests plus
+  tests in other groups' files that depend on the changed code. This is
+  mechanical; it does not depend on reading the diff correctly.
+- **Tests, when there is no such mode (.NET and others):** run the
+  group's own test files, and the full suite when the group changes
+  behavior that tests elsewhere assert on. The signals: a call count,
+  the order of operations, the text of a SQL statement or a log message,
+  state left behind after a run. Worked example: a group added one
+  `probeInstance` call. No type error, and every test in its own file
+  list passed. It broke an integration test in a different group's file
+  that asserted on the exact list of probed names. A group that deletes
+  a database row other tests assert still exists is the same shape, and
+  no import graph catches that one either. This rule depends on your
+  reading of the change: when unsure, run the full suite. It is cheaper
+  than finding the breakage at the pre-audit run with several groups
+  stacked on top.
+- **The full gates once after the last group, before step 7**, whatever
+  the per-group decisions were. A failure found there is located by
+  bisecting the group commits — they are separate commits by pathspec.
+  Steps 7 and 8 re-run the full gates as well.
+
+**Park the metadata file for every lead gate run.** Under the two
+reuse-the-checkout options of check 6, the `SubagentStop` sweep kills any
+allowlisted process that descends from this `claude` process or names
+the run root, started after the batch began — and a gate run you start
+in the run root is both. Nested subagents (an implementer's own
+`Explore` agents) and missed `start` events (see the heartbeat section)
+make the sweep fire far more often than once per batch. So, immediately
+before starting any gate run yourself, move
+`<session project root>/.claude/execute-change-run.json` to
+`execute-change-run.json.parked`, and move it back as soon as the gate
+run has finished — after it ends, not when it is launched. The hooks
+pass through when that file is absent, so the sweep cannot fire in that
+window. Two costs: no `start`, `stop`, or `notify` line is logged while
+the file is parked, so do this only when no subagent is running (the
+serial flow guarantees that; `TaskStop` a subagent that has already
+reported but still shows as running in `ListAgents` before you park);
+and a crash between park and restore leaves the hooks inert — a resume
+(check 2) must look for the `.parked` file and restore it.
+
+**Before believing a gate failure, check that it was a failure.** A
+killed gate run looks exactly like a real one: the block ends in
+`[ELIFECYCLE] Command failed with exit code 1` and names no failing
+test. Grep the gate's own output for a failing-test marker first
+(`FAIL`, `✗`, `×`, `AssertionError`, or the runner's equivalent). None,
+and the block ends in `ELIFECYCLE` → it was killed, not failed: look for
+a `sweep` line containing `killed pid` near that timestamp in
+`.claude/execute-change-run.jsonl`, re-run the gate, and do not
+investigate a bug that does not exist.
 
 ## Step 7 — Audit the implementation
 
@@ -939,8 +1068,8 @@ simplification changes by pathspec.
    commit list, leftover processes killed, the run root, and the
    remaining manual steps verbatim:
    deploy to the dev environment and smoke-test, update the work-folder
-   CLAUDE.md files, delete the plan brief and the ledger, `opsx:archive`
-   the change, and open the PR. One more manual step follows the PR when
+   CLAUDE.md files, delete the plan brief, the ledger, and the reports
+   folder, `opsx:archive` the change, and open the PR. One more manual step follows the PR when
    the run had its own worktree: remove it with
    `git worktree remove <path>`. When check 6 reused the current
    checkout there is no worktree — leave that step out rather than
@@ -948,7 +1077,8 @@ simplification changes by pathspec.
 
 ## Pause-and-notify rules (apply at every step)
 
-- A subagent report containing open questions or forks → batch them into
+- A subagent report (the file at its `{{REPORT_PATH}}`, not the returned
+  summary) containing open questions or forks → batch them into
   one pause for that step (a single AskUserQuestion; consecutive calls in
   the same pause when there are more than 4 forks), update the ledger, and
   wait. With Remote Control on, the question pushes to the phone, waits

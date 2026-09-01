@@ -311,6 +311,20 @@ when check 6 created one:
    a node or dotnet process, while a shell is far more often the lead's own
    tooling, including the stall watcher.
 
+The lead's own gate run passes all three tests. It descends from `claude`,
+it starts after the batch began, and it runs `node` or `dotnet`; under the
+two reuse-the-checkout options of check 6 it also names the run root on
+its command line. On 2026-09-01 the sweep killed two lead gate runs in one
+session, each 2 to 3 seconds after a subagent stopped, and each looked
+like a real failure (`[ELIFECYCLE] Command failed with exit code 1`, no
+failing test). The hook itself is unchanged; the fix is procedural, in
+SKILL.md Step 6: the lead moves `.claude/execute-change-run.json` to
+`.json.parked` before every gate run it starts and moves it back after the
+run ends, which makes every hook pass through for that window. A missed
+`SubagentStart` event (observed for 4 of 8 launches that day) makes this
+more likely, not less: with a `start` missing, the running set is empty at
+every `stop`, so the sweep fires on every stop instead of once per batch.
+
 It kills with `taskkill /PID <n> /T /F` and prints one summary line per
 kill; `-WhatIf` lists the matches without killing any of them. On a
 non-Windows platform it exits 0 with a note and kills nothing.

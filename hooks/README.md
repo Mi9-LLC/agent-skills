@@ -161,6 +161,16 @@ dependency install -- which runs while steps 1 to 5 run their subagents -- is ne
 candidate. The close-out sweep passes the run start, which is correct there because every
 subagent has finished by then.
 
+The lead's own gate run, started in the run root after a batch began, meets all three
+conditions and is killed if a sweep fires while it runs. This happened twice on 2026-09-01,
+and the killed run looked like a real test failure. The hook is unchanged; the lead parks
+the metadata file (`execute-change-run.json` renamed to `.json.parked`) for the duration of
+each gate run it starts, which makes every hook pass through, and restores it afterwards.
+`SKILL.md` Step 6 has the rule. `SubagentStart` has also been seen not to fire (4 of 8
+launches in one session), which empties the replayed running set and makes the sweep fire
+on every `stop`; the lead's watcher therefore confirms an `IDLE` verdict with `ListAgents`
+before believing it.
+
 The run root path is matched in both forms it can appear in on a command line: the Windows
 form (`C:\Temp\...`, compared case-insensitively with `/` and `\` treated alike) and the Git
 Bash form (`/c/temp/...`). The second was added because the lead drives the run through the

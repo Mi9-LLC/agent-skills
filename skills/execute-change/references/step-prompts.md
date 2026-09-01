@@ -29,6 +29,7 @@ Placeholders:
 | `{{REQUIRED_CHANGES}}` | The review report's "Required plan changes" list, verbatim |
 | `{{FINDINGS}}` | The audit's findings being sent to a fix subagent, verbatim |
 | `{{RETRY_FEEDBACK}}` | On a retry only: what the acceptance check found wrong |
+| `{{REPORT_PATH}}` | The file the subagent writes its full report to: `<plan path>.reports/<step label>.md` in the main tree, next to the ledger (`step1.md`, `step2.md`, `step4-required.md`, `step4-decisions.md`, `step5.md`, `step6-group<N>.md`, `step7.md`, `step7-fix<N>.md`, `step8.md`; a retry appends `-retry`). Never committed; the user deletes the folder at close-out. The design-entry research subagent gets the literal word `none` — it runs before any plan brief exists and stays read-only, so it returns its dossier directly |
 
 ## Standing implementer instructions (embedded in every template)
 
@@ -44,6 +45,13 @@ Standing instructions, non-negotiable:
 - Your final report is machine-processed by the coordinating session:
   state exactly what you produced (paths), what you verified, and what
   remains open. Never claim something is done that you did not verify.
+- Report file: {{REPORT_PATH}}. Unless that value is the word "none",
+  write your complete report to that file before you return, with
+  OPEN QUESTIONS as its first section (write "OPEN QUESTIONS: none" when
+  there are none), then return only the file path plus a summary of at
+  most 20 lines. Returned text can reach the coordinating session
+  truncated; the file is what it reads. When the value is "none", return
+  the full report directly.
 - Any prose you write for people to read -- proposal.md, design.md, spec
   deltas, tasks.md, CONTEXT.md, an ADR, a commit message body -- must be
   free of AI writing tells. Invoke the unslop skill on that prose before
@@ -287,26 +295,31 @@ Your task group, verbatim from tasks.md:
 
 Implement exactly this group — nothing from other groups. Follow the
 repo's own CLAUDE.md conventions. As you work, run the type check and the
-single test files you touch often; run the full suite once before you
-report. Run the group's verify clauses and the
-project's quality gates relevant to your changes before reporting. Do NOT
+single test files you touch as often as you need. Before you report, run
+the group's verify clauses. Do not run the full test suite or the
+project-wide quality gates — the coordinating session runs the gates
+this group needs after you report, and its run is the one that counts.
+Do NOT
 tick any checkbox in tasks.md, do not commit, and do not self-declare the
 group verified — the coordinating session checks and commits your work.
 
-Report: the files you changed and why, the gate/verify results verbatim,
-and any OPEN QUESTIONS.
+Report: the files you changed and why, the verify-clause results
+verbatim, and any OPEN QUESTIONS.
 ```
 
 + standing instructions.
 
 **Parallel variant** — when the group is launched as part of a
-parallel set (disjoint file lists), replace the two sentences about
-gates and test runs with:
+parallel set (disjoint file lists), replace the three sentences from "As
+you work, run the type check" through "its run is the one that counts."
+with:
 
 ```
-Run the group's verify clauses only; skip the project-wide quality gates
-and do not run the full suite — the coordinating session runs them once
-after your parallel set completes.
+Run the group's verify clauses only. Do not run the type check, the full
+test suite, or the project-wide quality gates — other groups are editing
+this tree at the same time, so any project-wide run would see their
+half-finished edits; the coordinating session runs the gates once after
+your parallel set completes.
 ```
 
 ## Step 7 — Audit the implementation
