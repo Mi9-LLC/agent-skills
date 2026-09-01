@@ -18,9 +18,20 @@ all three sees the whole run from one place.
 
 INERT BY DEFAULT. The hook is installed per machine, so it runs in every session, including
 every session that has nothing to do with execute-change. It therefore does nothing at all
-unless <cwd>/.claude/execute-change-run.json exists AND names this exact session_id -- the
+unless <root>/.claude/execute-change-run.json exists AND names this exact session_id -- the
 pass-through rule in _load_run below. Absent, unreadable, malformed, or naming a different
 session all mean the same thing: return without writing anything.
+
+WHERE <root> IS. The payload's `cwd` is the Bash tool's current working directory, not the
+session's project root: a `cd` into a subdirectory persists between the lead's commands, and
+a hook that fires while the shell sits there gets that subdirectory as `cwd`. Reading
+<cwd>/.claude/... directly therefore missed every event fired while the shell was inside a
+package directory (observed 2026-09-01: 4 of 8 SubagentStart events absent, and the matching
+SubagentStop events present only because Claude Code had reset the directory by then). So
+_find_root walks up from `cwd` until it finds a directory holding .claude/<META_NAME>, and
+every read and write below uses that directory. The walk stops at the filesystem root; a
+`cwd` outside the project (a worktree under ../<repo>.worktrees/) finds nothing and the hook
+stays inert for that event, which is the pre-existing behavior for that case.
 
 ALWAYS EXIT 0. Exit code 2 on SubagentStop tells Claude Code to block the subagent from
 stopping and hand it the hook's stderr instead -- the opposite of what a watchdog should do.
@@ -48,6 +59,24 @@ def _now() -> str:
     """ISO-8601 UTC timestamp."""
     stamp = datetime.now(timezone.utc).isoformat(timespec="milliseconds")
     return stamp.replace("+00:00", "Z")
+
+
+def _find_root(cwd):
+    """Walk up from cwd to the nearest directory holding .claude/<META_NAME>; None if none."""
+    if not cwd:
+        return None
+    try:
+        here = os.path.abspath(cwd)
+    except Exception:
+        return None
+    for _ in range(64):  # a bound, so a pathological path cannot loop
+        if os.path.isfile(os.path.join(here, ".claude", META_NAME)):
+            return here
+        parent = os.path.dirname(here)
+        if not parent or parent == here:
+            return None
+        here = parent
+    return None
 
 
 def _load_run(cwd, session_id):
@@ -164,7 +193,7 @@ def main() -> None:
         return  # never block on a malformed payload
     if not isinstance(payload, dict):
         return
-    cwd = payload.get("cwd")
+    cwd = _find_root(payload.get("cwd"))  # the project root, not the shell's directory
     meta = _load_run(cwd, payload.get("session_id"))
     if meta is None:
         return

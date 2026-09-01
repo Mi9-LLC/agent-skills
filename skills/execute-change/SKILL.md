@@ -435,9 +435,11 @@ Run the checks in this order:
    outside the run root. Then write the run's
    metadata file, `.claude/execute-change-run.json`, in **the directory
    this session was started in** — the main repo checkout — and not in
-   the run root: the hooks read the payload's `cwd`, which is the
-   session's directory, and that directory is the same one for the whole
-   run whatever the run root is. Under the two reuse-checkout options the
+   the run root: the hooks start from the payload's `cwd` — the Bash
+   tool's current directory, which a `cd` can leave inside a subdirectory
+   — and walk up to the nearest directory holding the metadata file, and
+   the session's project root is the one directory every such walk from
+   inside the project reaches. Under the two reuse-checkout options the
    session's directory and the run root are the same directory anyway, so
    this is one fixed location in all three cases, not worktree-only
    special-casing. The `run_root` field inside the file is what points at
@@ -469,14 +471,29 @@ Run the checks in this order:
    armed. The run then proceeds degraded, exactly as it does on a machine
    where the hooks are not installed.
 
-   **Caution — do not pass the run's worktree as an additional working
-   directory** (`--add-dir`) when starting the lead session. The hooks read
-   the payload's `cwd`, and a `cd` into a directory the session already
-   allows is not reset, so `cwd` can become the worktree and the metadata
-   file sitting in the session's project root is never found. The symptom
-   is no `.claude/execute-change-run.jsonl` appearing at all and the
-   watcher reporting `NOLOG`. This has not been reproduced — treat it as a
-   precaution, not established behavior.
+   **The payload's `cwd` is the shell's directory, not the session's.**
+   Established 2026-09-01: a `cd` into a subdirectory of the project
+   persists between the lead's Bash commands, and a hook that fires while
+   the shell sits there receives that subdirectory as `cwd`. The hook as
+   shipped before that date read `<cwd>/.claude/execute-change-run.json`
+   literally, so every event fired while the shell was inside a package
+   directory was lost — 4 of 8 `SubagentStart` events in one run, each
+   launched right after a command that had changed into a package
+   directory; the matching `SubagentStop` events were logged only because
+   a later command had reset the directory. The hook now walks up from
+   `cwd` to the nearest directory holding the metadata file, so a shell
+   anywhere inside the project finds it. Two rules stay in force anyway,
+   because an installed copy of the older hook has the defect until the
+   plugin is updated and because a walk up from outside the project finds
+   nothing: **never leave the shell in another directory** — run a
+   command in a subdirectory as `(cd <dir> && <command>)`, or use `git -C
+   <dir>`, `pnpm -C <dir>` / `pnpm --filter`, `dotnet <verb> <path>` —
+   and **do not pass the run's worktree as an additional working
+   directory** (`--add-dir`), since a `cd` into it is not reset and the
+   worktree is outside the project tree, so no walk up reaches the
+   metadata file. The symptom of either is a `start` (or every event)
+   missing from `.claude/execute-change-run.jsonl` while `ListAgents`
+   shows the subagent running.
 
    The ledger path is the file check 8 will create: `<plan path>.ledger.md`
    is deterministic from the brief path, so writing it here, before check 8
@@ -748,18 +765,22 @@ design; a watcher left running past its batch would wait forever for
 trouble that can no longer arrive.
 
 **Confirm an `IDLE` verdict with `ListAgents` before believing it, exactly
-as a `STALL`.** `SubagentStart` is known to miss launches: on 2026-09-01
-it fired for 4 of 8 subagents in one session, and a parallel batch of
-three launched with no `start` line for any of them. The watcher replays
-`start` and `stop` lines to build its running set, so a missing `start`
-leaves the set empty and the watcher prints `IDLE` at its first check
-while the subagent works on for another ten minutes. An `IDLE` that
-arrives before the subagent's return value is suspect on its face. Call
-`ListAgents`: an agent listed as running means the replay is wrong, not
-that the agent finished — re-arm and carry on. A missing `start` also
-means every later `stop` event closes an apparently empty batch, so the
-process sweep fires on every stop instead of once per batch; that is why
-Step 6 parks the metadata file around lead gate runs.
+as a `STALL`.** A `start` line can be missing: on 2026-09-01 the log held
+`start` lines for 4 of 8 subagents in one session, and a parallel batch of
+three launched with no `start` line for any of them. The cause is known
+and fixed in the hook (check 6 explains it: the payload's `cwd` is the
+shell's directory, and the hook now walks up from it), but an installed
+copy of the older hook keeps the defect until the plugin is updated, and
+the lead's own `cd` discipline is the other half of the guard. The
+watcher replays `start` and `stop` lines to build its running set, so a
+missing `start` leaves the set empty and the watcher prints `IDLE` at its
+first check while the subagent works on for another ten minutes. An
+`IDLE` that arrives before the subagent's return value is suspect on its
+face. Call `ListAgents`: an agent listed as running means the replay is
+wrong, not that the agent finished — re-arm and carry on. A missing
+`start` also means every later `stop` event closes an apparently empty
+batch, so the process sweep fires on every stop instead of once per
+batch; that is why Step 6 parks the metadata file around lead gate runs.
 
 **Fallback timer when the log cannot be trusted.** When `IDLE` has proved
 false once in a run, or the hooks are not installed (`NOLOG`), arm a plain

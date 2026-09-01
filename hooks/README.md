@@ -111,11 +111,17 @@ run. It always exits 0: exit code 2 on `SubagentStop` would block the subagent f
 stopping.
 
 Both run-state files sit in the directory the session was started in -- the main repo
-checkout -- and not in the run root. The hooks read the payload's `cwd`, which is the
-session's directory, and Claude Code resets the shell's directory back to the project root
-whenever a command leaves it. A worktree lives outside the project, so a metadata file
-written inside the worktree was never found and every hook stayed inert. Under the two
-reuse-checkout options the two directories are the same, so nothing changes there.
+checkout -- and not in the run root. The hooks start from the payload's `cwd` and walk up to
+the nearest directory holding the metadata file. That `cwd` is the Bash tool's current
+directory: a `cd` into a subdirectory of the project persists between the lead's commands,
+and Claude Code resets it only when a command leaves the project. Before 2026-09-01 the hook
+read `<cwd>/.claude/execute-change-run.json` with no walk up, so every event fired while the
+shell sat in a package directory was lost (4 of 8 `SubagentStart` events in one run;
+reproduced the same day by launching a subagent after a `cd` into a subdirectory, which
+logged neither `start` nor `stop`). A worktree lives outside the project, so a metadata file
+written inside the worktree was never found and every hook stayed inert, and a walk up from
+inside the worktree still finds nothing. Under the two reuse-checkout options the two
+directories are the same, so nothing changes there.
 
 The run root is a separate thing: the directory the run works in, which is the checkout the
 run was started from or a dedicated worktree, chosen by a question at preflight. The
@@ -166,10 +172,11 @@ conditions and is killed if a sweep fires while it runs. This happened twice on 
 and the killed run looked like a real test failure. The hook is unchanged; the lead parks
 the metadata file (`execute-change-run.json` renamed to `.json.parked`) for the duration of
 each gate run it starts, which makes every hook pass through, and restores it afterwards.
-`SKILL.md` Step 6 has the rule. `SubagentStart` has also been seen not to fire (4 of 8
-launches in one session), which empties the replayed running set and makes the sweep fire
-on every `stop`; the lead's watcher therefore confirms an `IDLE` verdict with `ListAgents`
-before believing it.
+`SKILL.md` Step 6 has the rule. A missing `start` line (the `cwd` defect above, 4 of 8
+launches in one session before the fix) empties the replayed running set and makes the sweep
+fire on every `stop`; the lead's watcher therefore confirms an `IDLE` verdict with
+`ListAgents` before believing it, and keeps doing so while older installed copies of the hook
+are in use.
 
 The run root path is matched in both forms it can appear in on a command line: the Windows
 form (`C:\Temp\...`, compared case-insensitively with `/` and `\` treated alike) and the Git

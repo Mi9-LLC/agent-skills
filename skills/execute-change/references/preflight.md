@@ -223,22 +223,30 @@ plugin or not at all:
 **Where the run-state files live.** Both `execute-change-run.json` and
 `execute-change-run.jsonl` are written under `.claude/` in the **directory the
 session was started in** — the main repo checkout — and not in the run root.
-The hooks read the payload's `cwd`, which is the session's directory, and
-Claude Code resets the shell's directory back to the project root whenever a
-command leaves it. A worktree lives outside the project, so a metadata file
-written inside the worktree was never found and every hook stayed inert. Under
-the two reuse-checkout options the two directories are the same, so nothing
-changes there. The `run_root` field inside the metadata file is what points at
-the actual run root.
+The hooks start from the payload's `cwd` and walk up to the nearest directory
+holding the metadata file. That `cwd` is the Bash tool's current directory,
+not the session's project root: a `cd` into a subdirectory of the project
+persists between commands, while Claude Code resets the directory only when a
+command leaves the project. A worktree lives outside the project, so a
+metadata file written inside the worktree was never found and every hook
+stayed inert. Under the two reuse-checkout options the project root and the
+run root are the same directory, so nothing changes there. The `run_root`
+field inside the metadata file is what points at the actual run root.
 
-That directory reset happens when the shell leaves the session's allowed
-directories, so **do not start the lead session with the run's worktree passed
-as an additional working directory** (`--add-dir`): a `cd` into an allowed
-directory is not reset, the payload's `cwd` can then be the worktree, and the
-metadata file in the session's project root is never found. The symptom is no
-`execute-change-run.jsonl` appearing at all and the lead's watcher reporting
-`NOLOG`. This has not been reproduced — treat it as a precaution, not
-established behavior.
+Before 2026-09-01 the hook read `<cwd>/.claude/execute-change-run.json`
+literally, with no walk up. Reproduced that day: a subagent launched while the
+shell sat in a subdirectory of the project produced no `start` and no `stop`
+line at all; in the live run that day, 4 of 8 `SubagentStart` events were
+missing, each after a command that had changed into a package directory, and
+their `SubagentStop` events were logged only because a later command had reset
+the directory. The walk up fixes that for any directory inside the project. It
+does not reach a metadata file from a directory outside the project, so **do
+not start the lead session with the run's worktree passed as an additional
+working directory** (`--add-dir`): a `cd` into it is not reset, and no walk up
+from there finds the session's project root. And the lead never leaves the
+shell in another directory in any case — `(cd <dir> && <command>)`, `git -C`,
+`pnpm -C` / `--filter`, `dotnet <verb> <path>` — because an installed copy of
+the older hook keeps the defect until the plugin is updated.
 
 All three fire in the **parent (lead) session**, not inside the subagent, so
 one script wired to all three sees the whole run from one place. The JSONL
@@ -321,9 +329,11 @@ failing test). The hook itself is unchanged; the fix is procedural, in
 SKILL.md Step 6: the lead moves `.claude/execute-change-run.json` to
 `.json.parked` before every gate run it starts and moves it back after the
 run ends, which makes every hook pass through for that window. A missed
-`SubagentStart` event (observed for 4 of 8 launches that day) makes this
-more likely, not less: with a `start` missing, the running set is empty at
-every `stop`, so the sweep fires on every stop instead of once per batch.
+`SubagentStart` event (4 of 8 launches that day, caused by the hook reading
+the shell's directory instead of the project root — fixed by the walk up
+described above) makes this more likely, not less: with a `start` missing,
+the running set is empty at every `stop`, so the sweep fires on every stop
+instead of once per batch.
 
 It kills with `taskkill /PID <n> /T /F` and prints one summary line per
 kill; `-WhatIf` lists the matches without killing any of them. On a
