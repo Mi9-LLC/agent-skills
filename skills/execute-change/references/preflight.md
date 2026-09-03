@@ -126,7 +126,9 @@ asks the user which directory that is: the current checkout (reusing its
 branch, or with a new branch created there), or a dedicated git worktree
 the check creates. The recommended answer is the current checkout; the
 worktree is what buys concurrency and an untouched main tree, and check 6
-states that trade-off in the question.
+states that trade-off in the question. Check 6a's route question (full or
+light) is asked in the same AskUserQuestion call as the run-root question,
+so Step 0 has one pause and not two.
 
 **When the run root is the current checkout:**
 

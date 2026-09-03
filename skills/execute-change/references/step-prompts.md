@@ -27,9 +27,11 @@ Placeholders:
 | `{{COMPLETED_SUMMARIES}}` | The ledger's one-paragraph summaries of completed groups |
 | `{{DECISIONS}}` | The ledger's Decisions section, verbatim |
 | `{{REQUIRED_CHANGES}}` | The review report's "Required plan changes" list, verbatim |
-| `{{FINDINGS}}` | The audit's findings being sent to a fix subagent, verbatim |
-| `{{RETRY_FEEDBACK}}` | On a retry only: what the acceptance check found wrong |
-| `{{REPORT_PATH}}` | The file the subagent writes its full report to: `<plan path>.reports/<step label>.md` in the main tree, next to the ledger (`step1.md`, `step2.md`, `step4-required.md`, `step4-decisions.md`, `step5.md`, `step6-group<N>.md`, `step7.md`, `step7-fix<N>.md`, `step8.md`; a retry appends `-retry`). Never committed; the user deletes the folder at close-out. The design-entry research subagent gets the literal word `none` — it runs before any plan brief exists and stays read-only, so it returns its dossier directly |
+| `{{FINDINGS}}` | The audit's findings being sent to a fix subagent, verbatim. In the step 6 set-failure variant: the failing gate output, verbatim |
+| `{{SET_FILES}}` | Step 6 set-failure variant only: the union of the failed parallel set's `tasks.md` file lists, one path per line |
+| `{{RETRY_FEEDBACK}}` | On a retry only: what the acceptance check found wrong. On a stall-ladder relaunch with no progress file: the stall itself ("the previous attempt stalled: no report file and no progress file after N minutes; any half-finished edits it left are in the working tree, see `git status --porcelain`") |
+| `{{REPORT_PATH}}` | The file the subagent writes its full report to: `<plan path>.reports/<step label>.md` in the main tree, next to the ledger (`step1.md`, `step2.md`, `step4.md`, `step5-reader.md`, `step5-review.md`, `step6-group<N>.md`, `step6-set<N>-fix.md`, `step7.md`, `step7-fix<N>.md`, `step8.md`; a retry appends `-retry`, a death relaunch appends `-relaunch`, and the second pass through steps 3–5 after a re-review appends `-2` to its step 4 and step 5 files). Never committed; the user deletes the folder at close-out. The design-entry research subagent gets the literal word `none` — it runs before any plan brief exists and stays read-only, so it returns its dossier directly |
+| `{{PROGRESS_PATH}}` | The subagent's progress file: `{{REPORT_PATH}}` with its `.md` ending replaced by `.progress.md` (`step1.progress.md`, `step6-group3.progress.md`, and so on), in the same reports folder. The subagent appends one line per finished file to it while working; the death-relaunch wrapper reads it. A relaunch keeps the ORIGINAL subagent's progress path (no `-relaunch` suffix) so the relaunched subagent appends to the same list. The literal word `none` when `{{REPORT_PATH}}` is `none` |
 
 ## Standing implementer instructions (embedded in every template)
 
@@ -52,6 +54,15 @@ Standing instructions, non-negotiable:
   most 20 lines. Returned text can reach the coordinating session
   truncated; the file is what it reads. When the value is "none", return
   the full report directly.
+- Progress file: {{PROGRESS_PATH}}. Unless that value is the word "none",
+  append ONE line naming each file you have finished (its path, and
+  "new", "edited", or "deleted") to that file as soon as you finish it --
+  not at the end. If the file already lists paths when you start, a
+  previous attempt wrote them and they are on disk; do not redo them
+  unless the task text tells you to. This file is what lets the
+  coordinating session relaunch you after an API failure without losing
+  finished work. It is not your report: the report file above is written
+  once, at the end, OPEN QUESTIONS first.
 - Any prose you write for people to read -- proposal.md, design.md, spec
   deltas, tasks.md, CONTEXT.md, an ADR, a commit message body -- must be
   free of AI writing tells. Invoke the unslop skill on that prose before
@@ -70,6 +81,32 @@ to the fresh subagent's prompt (never reuse the failed subagent):
 A previous attempt at this exact task failed its acceptance check.
 What was found wrong: {{RETRY_FEEDBACK}}
 Fix that specifically, then complete the task as specified below.
+```
+
+## Death-relaunch wrapper
+
+On the single automatic relaunch after an API or transport death (SKILL.md
+ground rule 2: the Agent tool returned an error or a synthetic last
+message such as "529 Overloaded", and no report file exists at the
+subagent's `{{REPORT_PATH}}`), prepend this to the fresh subagent's prompt
+when the dead subagent's progress file exists and is non-empty. When it
+does not exist or is empty, relaunch with the plain template and no
+wrapper — there is nothing to continue from, and no acceptance check has
+found anything to feed back. The stall ladder's single relaunch uses this
+wrapper under the same condition (a non-empty progress file); with no
+progress file it uses the retry wrapper instead, its `{{RETRY_FEEDBACK}}`
+filled with the stall itself, as the placeholder table says — a stalled
+subagent, unlike a dead one, was told to stop and may have left half-done
+work the fresh one should know about.
+
+```
+A previous attempt at this exact task died mid-task on an API failure. Its
+progress file is at {{PROGRESS_PATH}}; every file it lists is on disk in
+the state that attempt left it. Continue from there: do not redo the files
+it lists, read them where your remaining work depends on them, and keep
+appending to that same progress file. The step's acceptance check still
+covers those files, so if one of them is incomplete or wrong, fix it and
+say so in your report.
 ```
 
 ## Design entry — research subagent
@@ -162,6 +199,18 @@ batch of call sites migrated to the new form, each batch passing on its
 own because the old form still exists; a final group removes the old
 form, blocked by every migration batch.
 
+Content rules (there is no line cap; these decide what goes in):
+- design.md holds only the decisions the brief leaves open, one per
+  heading, with the option taken and why. It restates neither the brief,
+  nor the problem (that is proposal.md), nor the code (the implementer
+  reads the code itself).
+- tasks.md has one line per task naming the file and the change. No
+  rationale, no code, nothing design.md or the brief already says. File
+  lists and verify clauses are never shortened: the coordinating session's
+  concurrency gate and the final audit read them.
+- proposal.md is the brief's why and what, short. It does not repeat the
+  brief's technical approach.
+
 Then write the brief's domain sections into files, using the formats in
 {{DOMAIN_DOCS}} exactly: each entry under "## Glossary updates" goes into
 CONTEXT.md at the repo root (create it only if it does not exist and
@@ -174,6 +223,78 @@ reads "none" or is absent writes nothing. Do not commit.
 
 Report: the change ID, the full list of files created or modified
 (CONTEXT.md and docs/adr/ files listed separately), and any OPEN
+QUESTIONS the brief left unanswered.
+```
+
++ standing instructions.
+
+## Step 1 (light) — Author the OpenSpec change without a design document
+
+Used only when the ledger's `Route` is `light` (SKILL.md check 6a and the
+`## Light route` section). Same placeholders as the full step 1.
+
+```
+You are authoring an OpenSpec change on the light route: no design
+document, no engineering review follows, and the brief is the plan. Work
+exclusively inside {{RUN_ROOT}} — the repo checkout for this run; treat it
+as the repository root for every file you read or write and every command
+you run. One exception: the plan brief at {{PLAN_PATH}} is the one file
+you may read from outside {{RUN_ROOT}}. Read the brief fully first. Then,
+if they exist, read CONTEXT.md at the repo root (the project glossary) and
+every file under docs/adr/ (architecture decision records): use the
+glossary's canonical words in everything you write, and do not contradict
+an ADR — a brief requirement that conflicts with one is an OPEN QUESTION,
+not a call for you to make.
+
+Do NOT invoke the repo's OpenSpec propose skill (/opsx:propose or its
+generated name): it writes every artifact of the schema, design.md
+included, and would re-plan a brief that is already the plan. Instead run
+`openspec new change <id>` for the scaffold, with <id> a short kebab-case
+name derived from the brief's title (if the change directory already
+exists, because a previous attempt created it, skip the scaffold and
+continue with the files), and then write these files by hand in the
+change directory:
+
+1. proposal.md — the brief's why and what, short. Do not repeat the
+   brief's technical approach.
+2. Spec deltas under specs/<capability>/spec.md — one requirement per
+   behavior the brief changes, in SHALL/MUST wording, following the delta
+   format of the existing specs under openspec/specs/ (read one first).
+   When the brief changes no observable behavior (a refactor, tooling,
+   documentation), write no delta and instead set `skip_specs: true` in
+   the change's .openspec.yaml, so `openspec validate` accepts a change
+   with an empty specs/ directory.
+3. tasks.md — with the same columns as a full-route change. For every
+   task group: a model (Opus/Sonnet/Haiku, quality-first — Opus is the
+   default and any underestimation signal forces Opus), a parallel-group
+   marking, a blocked-by line (the groups it depends on, or "none"), a
+   file list (the files the group is expected to touch — concurrent
+   execution is gated on these lists being disjoint; mark a file that does
+   not exist yet as new), verify clauses (the commands or checks that prove
+   the group, taken from the brief's test plan), and the standing
+   implementer instructions block. Take the task groups from the brief's
+   own order section; cut a group only where the brief's order leaves one
+   too large for one fresh context window. Each task is one line naming
+   the file and the change: no rationale, no code, nothing the brief
+   already says. File lists and verify clauses are never shortened.
+
+No design.md: the brief's decisions are already taken, and the
+coordinating session does not run the engineering review on this route.
+
+Then write the brief's domain sections into files, using the formats in
+{{DOMAIN_DOCS}} exactly: each entry under "## Glossary updates" goes into
+CONTEXT.md at the repo root (create it only if it does not exist and
+there is at least one entry; otherwise merge into the existing file,
+replacing an entry for the same term); each entry under "## Decisions to
+record as ADRs" becomes docs/adr/NNNN-<slug>.md, where NNNN is the
+highest existing number in docs/adr/ plus one, starting at 0001 (create
+the folder only when there is at least one ADR to write). A section that
+reads "none" or is absent writes nothing. Run `openspec validate <id>
+--strict` before you report and fix what it names. Do not commit.
+
+Report: the change ID, the full list of files created or modified
+(CONTEXT.md and docs/adr/ files listed separately), whether you wrote
+deltas or set skip_specs, the validate output verbatim, and any OPEN
 QUESTIONS the brief left unanswered.
 ```
 
@@ -222,45 +343,73 @@ consequences to the artifacts:
 
 {{DECISIONS}}
 
-Report: each required change and each decision, with the file(s) it
-modified. Anything you could not apply goes under OPEN QUESTIONS with the
-reason — never silently skip an item.
+Apply both lists in one pass; a decision answer that contradicts a
+required change is reconciled in favor of the decision, and the conflict
+is named in your report. When a required change or a decision is one that
+a later reader must not lose — a changed test, a changed file list, a
+changed group order — make sure tasks.md says it, not only design.md.
+
+Report, in this order after OPEN QUESTIONS:
+1. QUOTES — for each required change and each decision, in the order
+   given above: the item, the file you edited for it, and ONE whole line
+   of that file quoted exactly as it stands after ALL your edits,
+   including the unslop pass — copied, not retyped: same leading spaces,
+   same punctuation, the complete line from its first character to its
+   last. Pick the line that proves the item is in place (the changed
+   requirement, the new task line, the changed file list entry), not a
+   heading. Layout, exactly: first a numbered list mapping each item to
+   its file; then ONE fenced code block per file, whose first line is
+   `FILE: <path relative to the change directory>` and whose remaining
+   lines are that file's quoted lines, one per line, with no backticks,
+   list markers, quotation marks, or commentary added around them. The
+   coordinating session cuts each block out mechanically and checks every
+   line against the file with a whole-line search, so a paraphrase, a
+   partial line, or a decorated line fails the step.
+2. TASKS.MD RE-READ — re-read tasks.md end to end after your last edit
+   and list every line that contradicts a change you made (a file list,
+   a group order, a verify clause, a model that no longer matches), or
+   write "none".
+3. Anything you could not apply goes under OPEN QUESTIONS with the reason
+   — never silently skip an item.
 ```
 
 + standing instructions.
 
-**Overlap variants** — when the step-3 overlap rule fired, step 4 is two
-subagents, each getting this template minus the block it doesn't own:
-the one launched during the pause gets only the required-changes block
-(decisions paragraph removed); the decision-folding one, launched after
-the answers arrive, gets only the decisions block (required-changes
-paragraph removed) plus this line: "Required changes were already
-applied by a previous subagent; if a decision answer contradicts one of
-them, reconcile the artifacts to honor the decision and report the
-conflict."
+## Step 5 — conditional tasks.md reader
 
-## Step 5 — Confirm the changes landed
+Step 5 is lead-run (SKILL.md Step 5: a whole-line `grep -F -x` of every
+quote from step 4's `QUOTES` section). This subagent is launched only when
+a required change or a decision edits a `tasks.md` file list, a group
+boundary, or a blocked-by order — the class of change a whole-line grep
+cannot judge. `{{REQUIRED_CHANGES}}` and `{{DECISIONS}}` are filled with
+ONLY those items, not the full lists.
 
 ```
 You are a verification pass with no authoring history. Work exclusively
 inside {{RUN_ROOT}} — the repo checkout for this run. In {{CHANGE_DIR}},
-check that each item below is ACTUALLY present in the artifacts — read the
-files; do not trust any report.
+read tasks.md end to end and check that each item below is ACTUALLY
+reflected in it — the file list, the group boundary, or the blocked-by
+order the item describes, complete and in the right group. Read the file;
+do not trust any report. Where an item names files, also check that every
+listed file exists in {{RUN_ROOT}} or is marked new.
 
-Required changes that were to be applied:
+Required changes to check:
 {{REQUIRED_CHANGES}}
 
-User decisions that were to be folded in:
+User decisions to check:
 {{DECISIONS}}
 
-Report: one line per item — LANDED (with file + quoted evidence) or
+Report: one line per item — PRESENT (with the tasks.md line(s) quoted) or
 MISSING (with what you looked for and where). No third state.
 ```
 
 + standing instructions.
 
-If the step-2 verdict was `NEEDS REVISION`, follow this with one re-run of
-the step-2 template (same non-interactive rules), prepending:
+### Step 5 re-review (only after a NEEDS REVISION verdict)
+
+When the step-2 verdict was `NEEDS REVISION`, one re-run of the step-2
+template (same non-interactive rules) is mandatory and follows the grep
+check, prepending:
 
 ```
 This is a re-review. The previous verdict was NEEDS REVISION; the required
@@ -278,7 +427,9 @@ inside that directory; treat it as the repository root for
 every file you read or write and every command you run.
 
 Read first, in this order:
-1. {{CHANGE_DIR}} — proposal.md, design.md, the spec deltas, and tasks.md.
+1. {{CHANGE_DIR}} — proposal.md, tasks.md, and design.md and the spec
+   deltas if present (a light-route change has no design.md and may have
+   no deltas).
 2. The work this run has already done: git diff --stat
    {{START_COMMIT}}..HEAD first, then full diffs ONLY for the files
    your group's file list touches or depends on — not the whole diff.
@@ -367,6 +518,32 @@ why it needs a human (OPEN QUESTIONS).
 ```
 
 + standing instructions.
+
+**Step 6 set-failure variant** — the single retry of a parallel set whose
+gate run failed across groups (SKILL.md Step 6). Same template, with the
+first paragraph (from "An adversarial audit" through "nothing else:")
+replaced by:
+
+```
+The coordinating session ran the quality gates over a parallel set of
+task groups of the OpenSpec change {{CHANGE_ID}} on branch {{BRANCH}},
+and the run failed in a way that spans groups. Work exclusively inside
+{{RUN_ROOT}} — the repo checkout for this run. The set's edits are
+uncommitted in the working tree: read git status --porcelain and git diff
+first to see them. Edit only files in this list — the set's combined file
+lists — and report any fix that would need a file outside it under OPEN
+QUESTIONS instead of making it:
+
+{{SET_FILES}}
+
+Resolve exactly this failure — nothing else:
+```
+
+"Read {{CHANGE_DIR}} for context and git diff {{START_COMMIT}}..HEAD for
+the current state." replaced by "Read {{CHANGE_DIR}} for context; the
+current state is the working tree, committed and uncommitted together.",
+and "Re-run the gates the findings touch" replaced by "Re-run the type
+check and the single test files the failure names".
 
 ## Step 8 — Simplification pass
 

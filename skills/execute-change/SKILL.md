@@ -5,7 +5,10 @@ description: >-
   one lead session drives the whole feature routine — author the OpenSpec
   change, engineering review gate, apply the required changes, implement task
   group by task group, adversarial audit, simplification pass — each
-  pipeline step running in fresh subagents, committing per checkpoint in
+  pipeline step running in fresh subagents, on one of two routes chosen at
+  preflight (full, or a light route that skips the review and
+  simplification steps for a brief with its own test plan that is
+  engineering-reviewed or shows no risk signal), committing per checkpoint in
   the directory preflight asks the user to pick (the current checkout, or
   a dedicated git worktree and branch so several plans can run
   concurrently on one repo), and stopping after the local commits. Accepts
@@ -63,8 +66,21 @@ These are non-negotiable for every run:
 2. **A subagent's "done" claim is not evidence.** After every step, run the
    acceptance check defined for that step before advancing. A failed check
    gets exactly one retry — a fresh subagent with the failure fed back —
-   then you pause and ask the user. A subagent that dies, or whose skill
-   refuses to run, pauses the run immediately: never guess forward.
+   then you pause and ask the user. A subagent whose skill refuses to run
+   pauses the run immediately: never guess forward. A subagent that dies
+   on the API or the transport — the Agent tool returns an error or a
+   synthetic last message such as "529 Overloaded" or "Internal server
+   error", and no report file exists at its `{{REPORT_PATH}}`; a report
+   file that exists, whatever its contents, means the subagent finished
+   and its work is judged by the acceptance check, a missing `OPEN
+   QUESTIONS` section included — gets exactly one automatic relaunch, using the
+   death-relaunch wrapper in `references/step-prompts.md` when its
+   progress file exists and is non-empty (the files it lists are on disk
+   and are not redone) and the plain template otherwise; a second death pauses the
+   run. That relaunch is one per subagent per step (per subagent inside a
+   parallel set), shared with the stall ladder's single relaunch, and it
+   does not consume the acceptance-check retry. A skill refusal is not a
+   death.
 3. **Human decisions pause the run.** (The design-entry interview is the
    one exception: it deliberately asks one category at a time, before any
    ledger exists.) Open questions and design forks from
@@ -253,11 +269,15 @@ Run the checks in this order:
       **Order matters:** append the boundary event and rewrite the
       metadata file BEFORE arming any watcher, or the first watcher of
       the resumed run replays the stale tail.
-   3. **Skip checks 6–8.** The branch, run root, start commit, and ledger
-      already exist. Never create a second branch, run root, or ledger for
-      the same plan.
+   3. **Skip checks 6, 6a, 7, and 8.** The branch, run root, route, start
+      commit, and ledger already exist. Never create a second branch, run
+      root, or ledger for the same plan, and never re-ask the route.
 
-   Then continue the pipeline from the ledger.
+   Then continue the pipeline from the ledger. The ledger's `Route` line
+   decides which step follows `Last completed step`: a ledger with no
+   `Route` line is a full-route run (older runs resume unchanged); a
+   ledger with `Route: light` and `Last completed step` anywhere from 1
+   to 5 resumes at step 6, because the light route has no steps 2 to 5.
 3. **OpenSpec-managed repo.** `openspec/config.yaml` at the repo root
    confirms it. If absent, run `openspec context` — a non-zero exit means
    the repo is not OpenSpec-managed (a repo without a local `openspec/`
@@ -514,6 +534,50 @@ Run the checks in this order:
    group launches: confirm the task completed, and surface a red baseline
    to the user — it means pre-existing failures that must never be
    attributed to the implementation.
+
+   6a. **Route — asked in the same call as the run-root question.** The
+   run takes one of two routes: **full** (steps 1 to 8 as written below)
+   or **light** (step 1 in a lighter form, then steps 6 and 7; the `##
+   Light route` section defines it). You propose the route from a
+   checklist; the user confirms it as the second question of check 6's
+   AskUserQuestion call, so Step 0 still has one pause. (Check 6's
+   second confirmation for the default branch stays a separate follow-up
+   call, as before.) No subagent: check 1 already made you read the brief
+   fully. Answer six signals from the brief's own text — its file table,
+   its order section, its headings — and print each answer in the
+   question together with the brief line it comes from. A brief that does
+   not say what it touches gets `yes` on the signal it leaves open.
+
+   1. **Shared contract.** The change edits an exported type, function,
+      schema, or API that another package in the repo, or another repo,
+      imports.
+   2. **Infrastructure or data.** Deploy scripts, cloud resources, alert
+      policies, CI config, database migrations, backfills.
+   3. **Sensitive paths.** Auth, permissions, secrets, locks, concurrency,
+      caching.
+   4. **Breadth.** More than one package, or more than 8 files expected to
+      change (8 is `plan-eng-review`'s own hotspot threshold).
+   5. **Test plan present.** The brief names concrete test cases and the
+      commands or gates that prove them.
+   6. **Engineering-reviewed.** The brief carries an `## ENG REVIEW
+      REPORT` section whose verdict is `APPROVED` or `APPROVED WITH
+      CHANGES`, whose closing marker is `NO UNRESOLVED DECISIONS`, and
+      whose required changes are marked addressed. A `## Research
+      dossier` section does not count: the design-first entry interviews
+      the user but runs no engineering review.
+
+   The recommendation rule, printed in the question with the six answers:
+
+   - **Light [REC]** when signals 1 to 4 are all `no` AND 5 is `yes`; or
+     when 5 and 6 are both `yes` (an engineering-reviewed plan with its
+     own test plan — the full route would review it again).
+   - **Full [REC]** otherwise.
+
+   The user's answer is the route, whatever the recommendation was.
+   Record it in the ledger's `Route` field (check 8) and in the Decisions
+   block. There is no switch between routes once the run has started: a
+   user who wants the review after choosing light stops the run, deletes
+   the ledger, and re-runs with full.
 7. **Readiness line — printed, never asked.** There is no approval
    question here. The manual invocation IS the authorization: this skill
    is invoke-only, it commits by explicit pathspec on the branch check 6
@@ -522,14 +586,16 @@ Run the checks in this order:
    point `tasks.md` does not exist yet, so there is nothing to approve.
    Print one line stating the run's shape before the user walks away:
    plan brief, branch, base branch, the run root with the option that
-   produced it (reused checkout, new branch here, or worktree), and the
+   produced it (reused checkout, new branch here, or worktree), the route
+   (full or light, check 6a), and the
    notification state — read `agentPushNotifEnabled` and
    `hasUsedRemoteControl` from `~/.claude.json`; either one false or
    absent → say plainly that pauses
    will wait in this terminal only. Neither flag records the per-session
    `/remote-control` toggle, so this is a notice, not a claim that the
    phone push is confirmed working. The Step-0 questions are check 6's
-   run-root fork, which is always asked, plus the conditional ones: a
+   run-root fork and check 6a's route question, both always asked and
+   asked in one call, plus the conditional ones: a
    missing brief path (check 1), unexplained edits in the run root on
    resume (check 2), the not-OpenSpec-managed fork
    (check 3), and the install/update offers in checks 4–5.
@@ -542,6 +608,7 @@ Run the checks in this order:
    # execute-change ledger — <plan brief filename>
    - Branch: <the branch check 6 settled on>
    - Run root: <absolute path> (reused-checkout | new-branch-here | worktree)
+   - Route: full | light   <!-- check 6a; a ledger without this line means full -->
    - Base branch: <the default branch identified in check 6>
    - Start commit: <full sha>   <!-- the diff base for steps 7 and 8 -->
    - Change ID: (set after step 1)
@@ -563,8 +630,10 @@ Run the checks in this order:
    Next to the ledger, create the reports folder `<plan path>.reports/`
    (e.g. `foo-plan.md.reports/`). Every pipeline subagent writes its full
    report to a file there, named by the lead in its prompt as
-   `{{REPORT_PATH}}` (`step1.md`, `step6-group3.md`, `step7-fix1.md`, and
-   so on), with `OPEN QUESTIONS` as the first section, and returns only
+   `{{REPORT_PATH}}` (`step1.md`, `step4.md`, `step5-reader.md`,
+   `step5-review.md`, `step6-group3.md`, `step7-fix1.md`, and so on — the
+   placeholder table in `references/step-prompts.md` is the full list),
+   with `OPEN QUESTIONS` as the first section, and returns only
    the path plus a short summary. Read the file, not the returned text:
    on 2026-09-01 the returned report reached the lead truncated
    mid-sentence five times in one run, twice inside `OPEN QUESTIONS`.
@@ -576,9 +645,13 @@ Run the checks in this order:
 
 Steps 1–8 run through **fresh subagents** — normally one per step, with
 the exceptions their sections define: step 3 is lead-run (no subagent),
-step 6 launches one per task group, and steps 5, 7, and 8 may launch a
-bounded follow-up (re-review / fix subagent). Every prompt is taken
-verbatim from
+step 5 is lead-run except for its conditional `tasks.md` reader and the
+re-review it launches under `NEEDS REVISION`, step 6 launches one per
+task group, and steps 7 and 8 may launch a bounded follow-up (fix
+subagent). On the light route (check 6a) only steps 1, 6, and 7 run —
+the `## Light route` section below defines the differences; everything
+in this section applies to both routes unless it says otherwise. Every
+prompt is taken verbatim from
 [`references/step-prompts.md`](references/step-prompts.md) **(re-read the
 step's template from that file immediately before each fill — never fill
 one from memory; compaction corrupts verbatim-ness silently)**, with the
@@ -600,12 +673,33 @@ advancing: set "Last completed step" to that step and record the outcome
 in the Step log — this field is the resume key; left unwritten, a crash
 resumes at step 1.
 
+**The lead writes less.** A Step log entry is at most 5 lines: the
+subagent's outcome, the acceptance-check result, the report file's path,
+and at most two lines of what matters for the next step. Detail lives in
+the report files, which the ledger names; do not copy it into the
+ledger. Decisions are the one exception and stay verbatim. Between step
+boundaries you write nothing except the ledger update and the next
+prompt fill — no running commentary, no restatement of a report you have
+already read. Measured on 2026-09-03: the lead alone wrote 235,000
+tokens in one run, a 36 KB ledger among them, and wall time on this
+pipeline equals words written.
+
+**No unplanned fix subagents on planning documents.** A contradiction
+between `proposal.md`, `design.md`, the spec deltas, and `tasks.md` goes
+to the step 4 retry (the one permitted retry, with the contradiction as
+its feedback) or to the user — never to an extra subagent the pipeline
+does not define. On 2026-09-03 two such subagents were launched in step 5
+to reconcile what two step 4 subagents had left; the run now has one
+step 4 subagent, so that class of contradiction should not arise, and
+when it does, it is a failed step 4.
+
 | After step | Evidence required on disk |
 |---|---|
-| 1, 4 | Expected artifacts exist in `openspec/changes/<id>/` AND `openspec validate <id> --strict` passes |
+| 1, 4 | Expected artifacts exist in `openspec/changes/<id>/` AND `openspec validate <id> --strict` passes. Light route, step 1: `proposal.md` and `tasks.md` exist, and either at least one spec delta exists or the change's `.openspec.yaml` has `skip_specs: true`; validate passes; and the three mechanical `tasks.md` checks in `## Light route` pass |
 | 2 | `design.md` contains a review report with a verdict |
 | 3 | Every answered decision is recorded in the ledger |
-| 5 | The landing report says LANDED for every item, with quoted evidence |
+| 4, quotes | Every line step 4 quoted is found by the lead's `grep -F -x` in the file it names (the step 5 check) |
+| 5 | Under `NEEDS REVISION`: `design.md` holds a re-review report with a verdict. When the conditional reader ran: its report says PRESENT for every item it was given |
 | 6 (each group) | The group's files actually changed in the run root, matching its report (uncommitted at check time — the commit follows the check) |
 | 7 | An audit report with a verdict exists |
 | 8 | The simplify report exists and the project's gates passed |
@@ -615,9 +709,12 @@ close-out commit, so a crash is resumable from the last checkpoint and the
 step-7 audit gets a real diff from the run's start commit. You commit by
 explicit pathspec:
 
-- after step 5: the OpenSpec change artifacts (`openspec/changes/<id>/`)
-  plus any `CONTEXT.md` / `docs/adr/` files step 1 created or updated
-  (the step-1 report lists them);
+- after the change artifacts pass their last planning check — step 5 on
+  the full route (or step 2 when the verdict was `APPROVED` with nothing
+  to apply, since steps 4 and 5 are then skipped), step 1 on the light
+  route: the OpenSpec change artifacts
+  (`openspec/changes/<id>/`) plus any `CONTEXT.md` / `docs/adr/` files
+  step 1 created or updated (the step-1 report lists them);
 - after each step-6 group: that group's changed files;
 - after each step-7 fix cycle: the fix subagent's changed files, committed
   BEFORE the re-audit — the audit diffs committed state only, so an
@@ -629,13 +726,49 @@ explicit pathspec:
 that is how the skill already works, and the feature branch is not shared.
 The ledger and the plan brief are excluded from every commit.
 
-**Models.** Steps 1, 2, 4, 5, 7, and 8 run on Opus, and so does the
+**Models.** Steps 1, 2, 4, 7, and 8 run on Opus, and so do step 5's
+conditional `tasks.md` reader and its re-review, step 6's set-failure fix
+subagent, step 7's fix subagent, and the
 design-entry research subagent — pass the model explicitly on step 7 too;
 do not rely on `verify-implementation`'s own
 pin propagating into a subagent. Step 6 groups run on the model their
 `tasks.md` row names, passed as
 the Agent tool's `model` option — a missing or unmappable model name means
 Opus, never a more expensive tier (catalog constraint: never pin Fable).
+
+## Light route
+
+Chosen at check 6a. Full-route step numbers are kept, so `Last completed
+step` and a resume keep their meaning: a light run's ledger goes 0, 1, 6,
+7. Everything not named in this table runs exactly as on the full route.
+
+| Step | Light route |
+|---|---|
+| 0 | As on the full route, plus check 6a. The baseline prep runs as before; the first step 6 group waits for it, as before. |
+| 1 | **Light author** — Opus subagent on the `Step 1 (light)` template in `references/step-prompts.md`. It does NOT invoke the `/opsx:propose` flow, which writes every artifact of the schema, `design.md` included, and would re-plan the brief. It runs `openspec new change <id>` for the scaffold, then writes by hand: `proposal.md` (the brief's why and what, short); spec deltas under `specs/<capability>/spec.md`, one requirement per behavior the brief changes, in SHALL/MUST wording; `tasks.md` with the same columns as the full route (model, parallel group, blocked by, file list, verify clauses, the standing implementer instructions), its task groups taken from the brief's own order section. When the brief changes no observable behavior (a refactor, tooling, docs) it sets `skip_specs: true` in the change's `.openspec.yaml` and writes no delta. No `design.md`. The step 1 content rules apply. It also writes the brief's glossary and ADR sections to `CONTEXT.md` and `docs/adr/`, as the full-route author does. |
+| 1, acceptance | The files exist (`proposal.md`, `tasks.md`, and either at least one delta or `skip_specs: true`); `openspec validate <id> --strict` passes; and you, the lead, run three mechanical checks on `tasks.md`: every group has a model, a blocked-by line, and at least one verify clause; the file lists of groups sharing a parallel group are disjoint; every listed file exists in the run root or is marked new. As on the full route, record the change ID in the ledger when the author returns, before these checks. A failed check is a failed step 1 (one retry with the failure fed back, then pause). Then the first checkpoint commit: the change artifacts plus step 1's `CONTEXT.md` / `docs/adr/` files. |
+| 2 to 5 | Skipped. The Step log records one line: `Steps 2-5: skipped (light route)`. `Last completed step` goes from 1 straight to 6. |
+| 6 | As on the full route. The step 6 template's read list names `design.md` and the spec deltas "if present", on both routes. |
+| 7 | As on the full route: `verify-implementation` against `git diff <start commit>..HEAD`, at most 2 fix cycles. |
+| 8 | Skipped. The Step log records `Step 8: skipped (light route)`. |
+| Close-out | As on the full route. |
+
+Pauses on the light route work as on the full route. There is no switch
+to the full route mid-run: the full route's
+step 2 needs a `design.md` the light author never writes, and a switch
+would need a `design.md` author for a path nobody expects to take. A
+user who wants the review stops the run, deletes the ledger, and re-runs
+with full.
+
+**What the light route gives up.** `verify-implementation` works from the
+diff and the claims made about it. It cannot catch what `plan-eng-review`
+catches before code exists: a changed path with no regression test asked
+for, over-build inside the claim, silent-failure gaps, architecture and
+performance findings, and a wrong `tasks.md` decomposition. The route
+rule in check 6a sends every brief without a test plan to the full route
+for this reason, and every brief with a risk signal too, unless an
+engineering review has already been run on it (signal 6), in which case
+`plan-eng-review` has already had its chance to catch those.
 
 ## Heartbeat and stall handling
 
@@ -822,10 +955,18 @@ row:
   failures.
 - idle while its `stop` event has not arrived → a real stall, and only
   then does the ladder start: send it a status request with `SendMessage`;
-  still idle at the next check → `TaskStop` it and relaunch it once using
-  the retry wrapper in
-  [`references/step-prompts.md`](references/step-prompts.md); still stuck
-  after that → pause and ask the user.
+  still idle at the next check → `TaskStop` it and relaunch it once —
+  with the death-relaunch wrapper in
+  [`references/step-prompts.md`](references/step-prompts.md) when the
+  subagent's progress file exists and is non-empty (so the files it
+  already finished are not redone), and with the retry wrapper otherwise,
+  its `{{RETRY_FEEDBACK}}` filled with the stall itself ("the previous
+  attempt stalled: no report file and no progress file after N minutes;
+  any half-finished edits it left are in the working tree, see `git
+  status --porcelain`"); still stuck after
+  that → pause and ask the user. This relaunch is the same single
+  relaunch ground rule 2 allows for an API death: one per subagent per
+  step, whichever of the two spends it.
 
 Write the `ListAgents` check and its outcome to the ledger, the same as
 every other step.
@@ -867,8 +1008,21 @@ as ADRs` sections into `CONTEXT.md` (repo root) and `docs/adr/NNNN-slug.md`
 using the formats in
 [`references/domain-docs.md`](references/domain-docs.md) — files created
 only when there is something to write, so they are committed with the
-change artifacts at the first checkpoint. When it
-returns, record the change ID in the ledger, then run the acceptance check.
+change artifacts at the first checkpoint.
+
+**Content rules, not line caps** (both routes; the step 1 templates
+carry them): `design.md` holds only the decisions the brief leaves open,
+one per heading, and restates neither the brief, nor the problem (that is
+`proposal.md`), nor the code (the implementer reads it). `tasks.md` has
+one line per task naming the file and the change — no rationale, no
+code, nothing `design.md` or the brief already says; file lists and
+verify clauses are never shortened, because the step 6 concurrency gate
+and step 7 read them. On 2026-09-03 a 10 KB brief produced 154 KB of
+artifacts (`design.md` 78 KB, `tasks.md` 58 KB), and wall time equals
+words written. When the author returns, print `wc -l` of `design.md`
+(full route) and `tasks.md` in the Step log — information only, no
+threshold — record the change ID in the ledger, then run the acceptance
+check.
 
 ## Step 2 — Engineering review of the change
 
@@ -885,13 +1039,17 @@ setup — the run may have been unattended for a while). AskUserQuestion
 takes at most 4 questions per call — more forks than that means
 consecutive calls in the same pause, never dropped or merged-beyond-
 recognition questions. Record every answer in the ledger's Decisions
-section. No unresolved decisions → skip to step 4.
+section. No unresolved decisions → skip to step 4, but still set `Last
+completed step` to 3 and log `Step 3: no unresolved decisions`, so a
+resume never wonders whether step 3 ran.
 
-Overlap rule: if the review produced Required plan changes AS WELL AS
-unresolved decisions, launch step 4's required-changes subagent at the
-same moment the question goes out — the required changes are
-unconditional, so they apply while the user answers (that pause can span
-hours). Only the decision-folding waits for the answers.
+Step 4 waits for the answers. Nothing is launched while the question is
+out: the required changes and the decisions are applied by one subagent
+in one pass, after the user has answered. The cost is up to about 16
+minutes of subagent work that could have run during the pause; when the
+user is away for hours the wait dominates anyway, and two subagents
+editing `design.md` and `tasks.md` in sequence left contradictions on
+2026-09-03 that took two more subagents to repair.
 
 ## Step 4 — Apply the review's required changes
 
@@ -901,28 +1059,65 @@ artifacts plus step 1's `CONTEXT.md` / `docs/adr/` files) now. Otherwise: subage
 plan changes via the repo's
 OpenSpec update skill (the `/opsx:update` flow; generated name varies by
 CLI version, e.g. `openspec-update-change`) AND folds the user's answered
-decisions into the report's Decisions block. When the overlap rule fired,
-this is two subagents instead: the required-changes one launched during
-the step-3 pause, then a decision-folding one once the answers arrive
-(`references/step-prompts.md` defines both prompt variants). A decision
-answer that contradicts an already-applied change is the folding
-subagent's to reconcile — step 5 verifies both lists either way.
+decisions into the report's Decisions block — always one subagent, one
+pass, launched after the step 3 answers are in (or at once, when step 3
+had nothing to ask). Its report ends with a
+`QUOTES` section: per required change and per decision, the file it
+edited and ONE whole line quoted exactly as it stands after all edits,
+the unslop pass included; and a `TASKS.MD RE-READ` section listing any
+line of `tasks.md` that contradicts a change it made (or `none`). Those
+quotes are what step 5 checks.
 
-## Step 5 — Confirm the changes landed
+## Step 5 — Check that the changes are in the artifacts
 
-Fresh subagent (Opus) — deliberately not the step-4 author — checks that
-each required change and each answered decision is actually present in the
-artifacts, with per-item evidence in its report. Any MISSING item means
-step 4 failed, not step 5: re-run step 4 with only the missing items as
-its inputs, then step 5 again — once; still MISSING → pause and ask. If
-the step-2 verdict was
-`NEEDS REVISION`, one re-run of `plan-eng-review` follows (decisions carried
-forward). Re-review outcomes: `APPROVED` → proceed; `APPROVED WITH CHANGES`
-with new required changes, or new `UNRESOLVED DECISIONS` → loop back through
-steps 3–5 exactly once; still `NEEDS REVISION`, or anything unresolved after
-that one loop → pause and ask the user. Once the check passes, commit the
-change artifacts and step 1's `CONTEXT.md` / `docs/adr/` files (first
-checkpoint commit).
+**Lead-run, mechanical.** Step 4's `QUOTES` section is one fenced block
+per file, opened by a `FILE: <path>` line, the quoted lines verbatim
+below it (the step 4 template fixes that layout). Cut each block out of
+the report file with `awk`, never by retyping, then check each quote
+against the artifact as a whole line, carriage returns stripped from both
+sides (the artifacts may be CRLF):
+
+```bash
+# once per file step 4 quoted: extract that file's block from the report
+awk -v f="<file>" '/^```/{inb=!inb; if(!inb){want=0}; next} inb && $0=="FILE: "f {want=1; next} inb && want' "<report path>" > "$QUOTES"
+tr -d '\r' < "$QUOTES" > /tmp/q.txt
+tr -d '\r' < "<run root>/openspec/changes/<id>/<file>" > /tmp/t.txt
+while IFS= read -r line; do
+  grep -F -x -q -- "$line" /tmp/t.txt || echo "MISSING: $line"
+done < /tmp/q.txt
+```
+
+A quote reported `MISSING`, or a non-empty `TASKS.MD RE-READ` section,
+means step 4 failed, not step 5: re-run step 4 with only the missing or
+contradicted items as its inputs (the one permitted retry, with the
+`MISSING` lines as its feedback), then this check again; still missing →
+pause and ask. The check runs under `APPROVED WITH CHANGES` and under
+`NEEDS REVISION` alike: `plan-eng-review`'s re-run re-verifies the prior
+Required plan changes itself, but it only carries decisions forward, so
+without this check the decisions would go unverified.
+
+**One conditional reader.** When a required change or a decision edits a
+`tasks.md` file list, a group boundary, or a blocked-by order, a fresh
+Opus subagent (the `Step 5 — conditional tasks.md reader` template)
+checks only those items and reports PRESENT or MISSING per item. A file
+count is the class of change a whole-line grep cannot judge (the one real
+step 5 catch on 2026-09-03 was a file list of 12 where 14 were touched).
+A `MISSING` from the reader is handled exactly like a `MISSING` quote.
+No item of that class → no reader.
+
+**Re-review under `NEEDS REVISION`.** When the step 2 verdict was `NEEDS
+REVISION`, the re-run of `plan-eng-review` is mandatory and launches
+right after the grep check (and the reader, when one ran) passes —
+decisions carried forward, using the re-review prefix in
+`references/step-prompts.md`. Re-review outcomes: `APPROVED` → proceed;
+`APPROVED WITH CHANGES` with new required changes, or new `UNRESOLVED
+DECISIONS` → loop back through steps 3–5 exactly once; still `NEEDS
+REVISION`, or anything unresolved after that one loop → pause and ask the
+user. Under `APPROVED WITH CHANGES` there is no re-review: step 5 is the
+grep check, plus the conditional reader when an item of its class exists
+(the reader's trigger is the class of change, not the verdict). Once
+step 5 passes, commit the change artifacts
+and step 1's `CONTEXT.md` / `docs/adr/` files (first checkpoint commit).
 
 ## Step 6 — Implement, task group by task group
 
@@ -953,6 +1148,25 @@ commit rule holds — nothing red gets committed). A gate failure
 attributable to one group is that group's failed acceptance check (one
 retry); a failure spanning groups treats the whole set as the failed unit
 — one retry of the set, then pause and ask.
+
+**The retry of a set is one fix subagent, not a relaunch of every
+group.** A failure that spans groups is an interaction between them (one
+group changed a signature, another still calls the old one), and
+relaunching each group in parallel gives every subagent half the picture
+while they edit one shared tree. So: keep the set's uncommitted edits in
+place, launch one Opus subagent on the step 7 fix template in its
+set-failure variant (`references/step-prompts.md`), with the failing gate
+output as its `{{FINDINGS}}`, the union of the set's `tasks.md` file
+lists as its file scope, and `step6-set<N>-fix.md` as its report file
+(`<N>` is the parallel group number). When it returns, run the set's
+acceptance checks and gates once more. The acceptance check after a set
+fix is: `git status --porcelain` matches the union of the group reports'
+file lists plus the fix report's file list, and every file in the fix
+report is in some group's `tasks.md` file list. Green → the per-group
+pathspec commits as usual: every file the fix touched belongs to some
+group's list, and goes in that group's commit. Red, or a file changed outside the
+set's lists → pause and ask. This fix subagent is the set's single retry;
+it does not count toward step 7's 2 fix cycles.
 
 Before committing a serial group, run the gates yourself in the
 run root — the implementer's own gate run is its iteration loop, not
@@ -1108,7 +1322,18 @@ simplification changes by pathspec.
   notifies. This is why the skill does not demand `bypassPermissions`;
   `references/preflight.md` documents the recommended per-repo allowlist
   and `acceptEdits` mode so routine commands don't prompt.
-- Hard failure (a subagent dies or its skill refuses) → pause and ask,
-  never guess forward. Soft failure (a "done" claim that fails your
-  acceptance check) → one retry with the failure fed back, then pause
-  and ask.
+- API or transport death (an Agent tool error or a synthetic last
+  message such as "529 Overloaded" or "Internal server error", with no
+  report file at the subagent's `{{REPORT_PATH}}`; an existing report
+  file, whatever its contents, means the subagent finished and the
+  acceptance check judges it) → one automatic relaunch: with the death-relaunch
+  wrapper from `references/step-prompts.md` when the subagent's progress
+  file (`<report label>.progress.md` in the reports folder) exists and is
+  non-empty, with the plain template when it does not. A second death of the same
+  subagent → pause and ask. The relaunch does not consume the
+  acceptance-check retry; it shares its budget with the stall ladder's
+  relaunch (one per subagent per step, per subagent in a parallel set).
+- Hard failure (a subagent's skill refuses to run — not a death) → pause
+  and ask, never guess forward. Soft failure (a "done" claim that fails
+  your acceptance check) → one retry with the failure fed back, then
+  pause and ask.
