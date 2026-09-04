@@ -7,8 +7,9 @@ skill only points the user at — it never configures any of it itself.
 ## Resume (check 2)
 
 Read this section when SKILL.md check 2 finds the brief's ledger already
-on disk. Re-read the recorded branch, run root, run-root option, route,
-change ID, base branch, start commit, and last completed step; what
+on disk. Re-read the recorded branch, run root, run-root option, skill
+dir, route, change ID, base branch, start commit, and last completed
+step; what
 happens next depends on which option the ledger records.
 
 *Recorded as a worktree:* if the worktree directory no longer exists,
@@ -429,6 +430,13 @@ The recommendation rule, printed in the question with the six answers:
   when 5 and 6 are both `yes` (an engineering-reviewed plan with its
   own test plan — the full route would review it again).
 - **Full [REC]** otherwise.
+
+When the recommendation is Full, the question also states what the light
+route gives up, so the user overrides it knowingly: `plan-eng-review`'s
+catches before any code exists, which are a changed path with no
+regression test asked for, over-build inside the claim, silent-failure
+gaps, architecture and performance findings, and a wrong `tasks.md`
+decomposition.
 
 ## One-time machine setup (documented only — the skill never configures this)
 

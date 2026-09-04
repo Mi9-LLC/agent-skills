@@ -2,7 +2,7 @@
 
 Read this file when the argument is an idea, not a file. Before the
 interview, two guards: run Step 0 check 3 (OpenSpec-managed?) now, using
-the `## OpenSpec` section of [`preflight.md`](preflight.md) — one command,
+the `## OpenSpec: detect, install, update` section of [`preflight.md`](preflight.md) — one command,
 so a non-OpenSpec repo fails before the interview, not after it; and scan
 `docs/up next/*.ledger.md` for an interrupted run of the same idea — an
 existing ledger whose brief matches this idea is an interrupted run: offer

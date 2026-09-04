@@ -100,9 +100,9 @@ never-rules above are workflow discipline, not a tool-pool restriction.
 
 ## Design-first entry — from idea to approved brief
 
-Only when the argument is an idea, not a file. The whole phase — the
+Only when the argument is an idea, not a file. The whole phase (the
 research subagent, the categorized interview run in rounds, the brief
-draft, and the approval gate — is in
+draft, and the approval gate) is in
 [`references/design-entry.md`](references/design-entry.md) **(read it now,
 before anything else, when the argument is an idea)**. It runs before Step
 0: no branch, run root, or ledger exists yet, and only an approved brief
@@ -138,7 +138,7 @@ Run the checks in this order:
    re-ask the route. Which fields those are, and the whole procedure down
    to which checks are re-run and which are skipped, is the `## Resume
    (check 2)` section of
-   [`references/preflight.md`](references/preflight.md) — read it before
+   [`references/preflight.md`](references/preflight.md); read it before
    carrying any of it out.
 3. **OpenSpec-managed repo.** `openspec/config.yaml` at the repo root
    confirms it; if absent, `openspec context` decides, and a missing CLI
@@ -152,7 +152,8 @@ Run the checks in this order:
 4. **OpenSpec CLI installed and current.** Ask (AskUserQuestion) before
    installing or updating anything. The commands, the version-comparison
    rule, and the session-restart warning a regenerated `opsx` flow triggers
-   are in that same `## OpenSpec` section of `references/preflight.md`.
+   are in that same `## OpenSpec: detect, install, update` section of
+   `references/preflight.md`.
 5. **Companion skills.** The run depends on `plan-eng-review` (step 2 and
    the step-5 re-run) and `verify-implementation` (step 7) being installed,
    and on the repo's own OpenSpec propose and update flows existing. Either
@@ -226,9 +227,9 @@ Run the checks in this order:
    (reused checkout, new branch here, or worktree), the route (check 6a),
    and the notification state — read `agentPushNotifEnabled` and
    `hasUsedRemoteControl` from `~/.claude.json` (the opening paragraph of
-   the `## One-time machine setup` section of `references/preflight.md`
-   explains both keys); either one false or absent → say plainly that
-   pauses will wait in this terminal only.
+   the section of `references/preflight.md` whose heading starts
+   `## One-time machine setup` explains both keys); either one false or
+   absent → say plainly that pauses will wait in this terminal only.
 8. **Ledger.** Create `<plan path>.ledger.md` next to the plan brief —
    literally append `.ledger.md` to the brief's full filename (e.g.
    `foo-plan.md` → `foo-plan.md.ledger.md`); this exact name is the resume
@@ -767,6 +768,10 @@ green: commit the simplification changes by pathspec.
      -Worktree "<run root path>" -Since "<the run's started_at>"
    ```
 
+   Under an `npx skills add` install (`Skill dir` is
+   `~/.claude/skills/execute-change`) skip the sweep without testing that
+   path: `../..` then resolves to `~/.claude/`, whose `hooks/` folder, if
+   one exists, holds the user's own hooks, not this plugin's.
    A missing script file means the sweep is not installed (an `npx skills
    add` install ships no `hooks/` folder) → skip the sweep and say so in
    the report. Otherwise list what it killed. Then delete the run's
