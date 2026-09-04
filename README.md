@@ -998,7 +998,7 @@ claude plugin install execute-change@mi9-agent-skills
 
 `npx skills add https://github.com/Mi9-LLC/agent-skills --skill execute-change` still installs the skill, but without the three hooks: no subagent log, so no stall watcher, and no process sweep. Pick one or the other — installing both registers two copies under the same name.
 
-**Full definition:** [`skills/execute-change/SKILL.md`](skills/execute-change/SKILL.md) (plus the preflight/one-time-setup guide, the verbatim step-prompt templates, and the `CONTEXT.md`/ADR formats in `domain-docs.md` under `references/`). The three hooks and the process sweep are documented in [`hooks/README.md`](hooks/README.md). The source-per-claim, research-dossier-in-brief, expand–contract, and serial-vs-parallel test-running rules are adapted from [`mattpocock/skills`](https://github.com/mattpocock/skills) `research`, `implement`, and `to-tickets` (MIT, © 2026 Matt Pocock).
+**Full definition:** [`skills/execute-change/SKILL.md`](skills/execute-change/SKILL.md) (plus the preflight/one-time-setup guide, the design-first entry guide in `design-entry.md`, the verbatim step-prompt templates, and the `CONTEXT.md`/ADR formats in `domain-docs.md` under `references/`, and the heartbeat-log stall watcher in `scripts/stall-watcher.sh`). The three hooks and the process sweep are documented in [`hooks/README.md`](hooks/README.md). The source-per-claim, research-dossier-in-brief, expand–contract, and serial-vs-parallel test-running rules are adapted from [`mattpocock/skills`](https://github.com/mattpocock/skills) `research`, `implement`, and `to-tickets` (MIT, © 2026 Matt Pocock).
 
 ---
 
