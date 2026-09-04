@@ -67,6 +67,7 @@ Install either skill this way **instead of** `npx skills add`, not as well: both
 | [`clear-and-short`](#clear-and-short) | Behavioral mode that cuts the word count of Claude's replies and keeps them in simple English — drops preamble, tool-call narration, restated questions, repeated facts, option surveys, and closing summaries; prefers the common word, short sentences, and no idioms; keeps full sentences, articles, negations, numbers, and code verbatim; asks questions with numbered options so the user can answer with one number. A second entry point takes the voice-only asks ("humanize your responses", "remove the AI tells", "your replies sound like ChatGPT"): the AI-tells and simple-English rules switch on and the length caps stay off, because that request is for a different voice, not for less content. Steps back to full prose for security warnings, destructive-action confirmations, and hand-followed step lists. Produces no files. |
 | [`unslop`](#unslop) | Edits human-facing prose (docs, READMEs, posts, emails, PR descriptions) to remove 41 catalogued AI-writing patterns — puffery, AI vocabulary, "not just X, but Y", forced groups of three, em-dash/colon/bold overuse, title-case headings, chatbot phrases, filler, hedging, abstract metaphor nouns, passive voice, feeling-words in place of facts, fake deep truth ("at its core", "the real question is"), fake-candid openings ("Honestly?", "Here's the thing"), objections nobody raised, rejected fake alternatives, and rows of dramatic fragments. A "what not to flag" list keeps it off writing that was never machine-written (one em dash, curly quotes from a word processor, one short sentence for emphasis, a watched phrase inside a quotation). Keeps meaning, facts, numbers, and technical terms. Not for code, comments, commit messages, or chat replies (the length, wording, and AI tells of a reply belong to `clear-and-short`). Produces no files of its own; edits the text it is given. |
 | [`delegation-prompt`](#delegation-prompt) | Writes a paste-ready prompt that briefs a different session, agent, or teammate to do a follow-up job on work this session just finished (review the PR, test it under load, port the fix to a sibling repo). Picks a mode first: **checking** withholds this session's conclusions so the reviewer verifies instead of agreeing; **extending** hands over everything already settled. Every fact traced to its source or marked unknown; environment traps and ground rules always included; never a secret. Produces no files. |
+| [`session-cleanup`](#session-cleanup) | Deletes the branches, plan documents, spec artifacts, scratch files, and background processes a finished session created, and nothing else. Two questions decide every deletion: is it mine, and is it recoverable. Content beats ancestry after a squash merge (`git branch -d` refuses a branch whose work already shipped); a commit on no remote branch is treated as load-bearing; anything this session did not create is reported, not removed. Behavioral only. |
 
 ## Recommended workflow — from idea to verified code
 
@@ -76,13 +77,14 @@ This is one workflow, not a mandate: a way the catalog's planning and verificati
 OpenSpec repos    /execute-change "<idea or brief>" — design interview → review gate → implement → audit → simplify, unattended
 all other repos   new-feature → plan mode → plan-eng-review → convert-plan-to-feature → implement → verify-implementation → /simplify
                     (design)     (the plan)  (pre-code gate)      (decomposition)                    (post-code gate)        (cleanup)
+both              session-cleanup — delete the branches, plan briefs, spec artifacts, scratch files and processes the run created
 ```
 
 ### The automated path — OpenSpec-managed repos (start here)
 
 One command runs the journey end to end. [`/execute-change "add CSV import to the orders page"`](#execute-change) starts from the raw idea: it runs its own design interview (research dossier first, then categorized questions with `[REC]`-marked defaults, asked in rounds until no decision is open — facts from the repo are looked up, not asked), drafts the plan brief with its glossary and ADR sections, and waits for your approval — nothing executes on an unapproved brief. Already have a plan? Hand it the brief instead — `/execute-change "docs/up next/<name>-plan.md"` — written however you like, including via manual steps 1–2 below.
 
-From the approved brief on, everything is agent-driven: it authors the OpenSpec change (the change's `tasks.md` is the decomposition — the OpenSpec counterpart of `convert-plan-to-feature`), runs `plan-eng-review` inside itself against the change artifacts (the gate is not skipped — it moves inside the automation), puts open decisions to you as batched questions (phone push via Remote Control), implements task group by task group, audits with `verify-implementation`, runs a simplification pass, and commits per checkpoint on the branch and in the directory you pick at a blocking preflight question — the current branch and checkout (recommended), the run's own branch there, or a dedicated git worktree. It stops after the local commits — deploy, archive, and PR remain yours.
+From the approved brief on, everything is agent-driven: it authors the OpenSpec change (the change's `tasks.md` is the decomposition — the OpenSpec counterpart of `convert-plan-to-feature`), runs `plan-eng-review` inside itself against the change artifacts (the gate is not skipped — it moves inside the automation), puts open decisions to you as batched questions (phone push via Remote Control), implements task group by task group, audits with `verify-implementation`, runs a simplification pass, and commits per checkpoint on the branch and in the directory you pick at a blocking preflight question — the current branch and checkout (recommended), the run's own branch there, or a dedicated git worktree. It stops after the local commits — deploy, archive, and PR remain yours, and so does what the run leaves on disk: the ledger, the reports folder, the plan brief, and the run branch or worktree. [`session-cleanup`](#session-cleanup) removes those, and reports anything it finds that the run did not create.
 
 ### The manual path — repos without OpenSpec, or when you drive each stage yourself
 
@@ -117,6 +119,7 @@ From the approved brief on, everything is agent-driven: it authors the OpenSpec 
    (No need to specify a review model — `verify-implementation` pins Opus 5 itself.)
 6. [`verify-implementation`](#verify-implementation) adversarially verifies each claim of doneness against the code and fixes what it finds. In the chain, the step-5 prompt launches it per feature; standalone, point it at any claim of doneness — a PR, a ticket marked complete, an agent's report. The feature files from step 4 are its highest-preference input — their acceptance criteria are exactly what it verifies against.
 7. **`/simplify`** (built into Claude Code, not part of this catalog) cleans up the verified code — reuse, simplification, efficiency. In the chain, the step-5 prompt runs it at the end; it also works anytime on its own. Re-run your quality gates after it edits.
+8. [`session-cleanup`](#session-cleanup) removes what the work left behind — the branch, the plan or feature files if your repository's convention is to delete them once implemented, scratch files, and any process an agent started. It deletes only what the session created; a stale branch or a plan document belonging to someone else is reported instead, and a commit that exists on no remote branch is never deleted. Run it once the code is merged.
 
 The two gates are deliberate counterparts: `plan-eng-review` catches problems while they are still words; `verify-implementation` catches them once they are code — on the manual path you run each yourself; on the automated path `execute-change` runs both for you.
 
@@ -1139,6 +1142,53 @@ npx skills add https://github.com/Mi9-LLC/agent-skills --skill delegation-prompt
 **Origin.** Written at Mi9 with `skill-creator`; the "carry over only what you can trace to a source" rule was added after the skill's own eval runs showed prompts inventing an incident timing profile, a load-scenario description, and a "the only file changed" claim that were in nobody's message (those runs used an earlier eval set, since replaced). Eval fixtures live under [`evals/delegation-prompt/`](evals/delegation-prompt/).
 
 **Full definition:** [`skills/delegation-prompt/SKILL.md`](skills/delegation-prompt/SKILL.md).
+
+---
+
+## `session-cleanup`
+
+**What it does.** Runs the cleanup phase after a piece of work is finished, merged, or deployed: deletes the branches, plan documents, spec artifacts, scratch files, and background processes the session itself created, and leaves everything else in place with a note saying why. Two separate questions decide every deletion, and the skill's core claim is that conflating them is how a careful session does damage. **Is it mine?** — the ownership test, run before any git check: list what this session created, and treat anything else as belonging to a teammate, another agent session in the same checkout, or the state the repository was in on arrival. A branch can be stale, merged, and obviously finished and still not be yours to delete; when you are unsure whether you created something, you did not. **Is it recoverable?** — checked before the delete, not after: `git ls-remote --heads origin` and `git branch -r --contains <sha>` decide whether the work exists anywhere but this one local ref. Beyond that it covers what a squash merge does to ancestry (`git branch -d` refuses a branch whose content shipped an hour ago, so `git diff --stat <branch> <target>` settles it and the report says which check was used), plan documents (a file reading *"Status: not started"* is queued work, not finished work), spec artifacts (where the workflow archives a change, the archive is the record and archiving *is* the cleanup), processes (identify by what they are doing, not by name — a `gcloud` or `node` process may be the user's), and shared checkouts (the branch can change between two commands, so re-check `git branch --show-current` before committing, and message the other session before moving anything). The report is structured as removed / kept and why / at risk, because the exceptions are the part the user has to act on.
+
+**Requirements.** A git repository, for the branch checks. Everything else works anywhere.
+
+**How to run.** Auto-triggers on "clean up", "tidy up", "remove the branches", "delete the temp files", "kill the processes you started", or a question about what is left over after a merge — and is meant to fire whenever a deletion of a branch, plan file, or spec change is about to happen, even without the word "cleanup". Or run `/session-cleanup`. Declares no `allowed-tools`/`disallowed-tools`: the never-rules are workflow discipline, not a tool restriction.
+
+**Use it for.** The end of a finished task, especially in a checkout that teammates or other agent sessions share. Also as a pre-flight check on any single deletion you are unsure about.
+
+**Triggers on phrases like.** "clean up after yourself", "tidy up the branches", "what's left over", "delete the plan file now it's done", "kill the background processes", "remove the scratch files".
+
+**What it does not do.** Delete anything it did not create — a stale branch, an implemented-looking plan, someone else's scratch file are all reported instead. Use `git add -A` or `git add .` (staging is by explicit path, because in a shared checkout a sweep picks up work nobody has read). Commit or discard uncommitted changes that belong to someone else. Trust `git branch -d` about a squash-merged branch. Delete a commit that exists on no remote branch.
+
+**What it produces.** No files. A cleanup report in the chat: what was removed, what was kept and why, and anything at risk — including a mistake that was made and reversed, because a cleanup that quietly deleted and restored something looks identical to one that never erred.
+
+**Example.**
+
+```
+You: we're done — clean up
+Claude: Removed: agent/csv-import (squash-merged in #10 — `git branch -d`
+  refused it, but `git diff --stat` against develop is empty), 3 scratch
+  files under .scratch/csv-import/, the vitest watcher I started.
+
+  Kept: feature/legacy-rounding — fully contained in develop and looks
+  finished, but this session did not create it. Delete it with
+  `git branch -d feature/legacy-rounding` if you want it gone.
+
+  At risk: agent/notify-admin holds fafd2c2, which `git branch -r
+  --contains` places on no remote. Deleting that branch destroys those
+  246 lines, so I left it.
+```
+
+**Pairs with.** [`execute-change`](#execute-change), which stops after its local commits and leaves a ledger, a reports folder, a plan brief, and a run branch or worktree behind for you to remove. [`session-handoff`](#session-handoff), when the work is pausing rather than finished — hand it over before cleaning up, not after.
+
+**Install.**
+
+```
+npx skills add https://github.com/Mi9-LLC/agent-skills --skill session-cleanup
+```
+
+**Origin.** Written at Mi9 from one real session's cleanup phase on 2026-09-04, including its two mistakes: a branch deleted because it was merged rather than because it was ours, and a plan document deleted while it still read "Status: not started". Not adapted from an external project. **Untested** — no eval runs have checked that it changes behaviour, and the `description` has not been through `skill-creator`'s trigger-optimization loop. Both are open follow-ups.
+
+**Full definition:** [`skills/session-cleanup/SKILL.md`](skills/session-cleanup/SKILL.md).
 
 ---
 
