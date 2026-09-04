@@ -72,11 +72,61 @@ actually change before concluding anything — a branch that is merely *behind*
 the target will list nothing, while a branch carrying one real commit will show
 it.
 
+`git branch -d` is not the backstop it looks like in the other direction
+either. It accepts a branch merged into `HEAD` **or** into its own upstream, so
+a branch that is level with `origin/<branch>` but was never merged to the target
+deletes cleanly, with only a warning:
+
+```
+warning: deleting branch 'feature' that has been merged to
+         'refs/remotes/origin/feature', but not yet merged to HEAD
+Deleted branch feature (was d621331).
+```
+
+That branch's work is not in `develop`. A successful `-d` did not say it was.
+Test the property you actually care about, naming the target branch:
+
+```bash
+git merge-base --is-ancestor refs/heads/<branch> <target>   # exit 0 = content is in target
+```
+
 When ancestry and content disagree, content wins. Say which one you used:
 
 > `agent/my-work` reports "not fully merged" because pull request #10 was
 > squashed, but `git diff --stat` against `develop` is empty — the content is
 > there. Deleting.
+
+## Branches that are never candidates
+
+Some branches are excluded before the ownership test runs, because deleting one
+is never the right outcome however it scores:
+
+- The repository's actual default branch, whatever it is called. Read it, do
+  not assume `main`: `git symbolic-ref --short refs/remotes/origin/HEAD`.
+- The branch currently checked out.
+- Long-lived integration and environment branches: `main`, `master`, `develop`,
+  `dev`, `staging`, `production`, `qa`, `uat`, and anything under `release/` or
+  `hotfix/`.
+
+Exclude them from the analysis, but still report one that is carrying unpushed
+commits. Excluded from deletion is not the same as absent from the report, and a
+`staging` branch holding work nobody has pushed is exactly what the user needs
+to hear about.
+
+## Branch names can run commands
+
+Git's rules for refnames forbid spaces, but they permit `$`, backticks, `;` and
+`&`. All four of these are legal branch names, confirmed against git directly:
+
+```
+wip/$(id)      wip/`id`      wip/a;b      wip/a&b
+```
+
+So a branch name read out of `git branch` and dropped unquoted into a shell is a
+command substitution waiting to run: `git branch -D $(id)` executes `id` before
+git sees an argument. Single-quote every branch name and every path in a shell
+command. Double quotes do not help, because `"$(id)"` still substitutes. A name
+containing a single quote ends the quoting around it: `'wip/it'\''s'`.
 
 ## Check recoverability before you delete, not after
 
@@ -130,9 +180,14 @@ git worktree prune                   # clears entries whose directory is already
 ```
 
 `rm -rf` on the directory leaves the registration in place, and git then
-refuses to check that branch out anywhere else until you prune. A `git worktree
-remove` that refuses because the tree is dirty is the check doing its job: read
-what is uncommitted there before you reach for `--force`. The branch the
+refuses to check that branch out anywhere else until you prune.
+
+A `git worktree remove` that refuses because the tree is dirty is the check
+doing its job, and `--force` is not the answer to it. Uncommitted changes in a
+worktree exist nowhere else, so removing it destroys them outright. List what is
+there, show it to the user, and remove that worktree only after they have
+acknowledged losing those specific files. Never batch a dirty worktree in with
+clean ones under a single confirmation. The branch the
 worktree held is a separate question, answered by the two sections above.
 
 **Plan documents and design briefs.** Many repositories delete a plan once it is
