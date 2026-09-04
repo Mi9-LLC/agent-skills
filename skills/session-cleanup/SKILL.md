@@ -105,10 +105,35 @@ git branch <name> <sha>
 git branch --set-upstream-to=origin/<name> <name>
 ```
 
+That restore only works because the commit was somewhere else. So never delete
+the remote copy. `git push origin --delete <branch>` is not the bigger version
+of the local delete; it removes the one thing that made the local delete
+reversible, and it takes the branch away from everyone else at the same time.
+Cleanup deletes local refs. If the remote branch should go too, say so and let
+the user run it, or let the merge platform delete it when the pull request
+closes.
+
 ## The rest of the sweep
 
 Branches get the most attention because they are the most dangerous, but the
 same two questions govern everything else.
+
+**Worktrees.** A run that worked in its own checkout under
+`../<repo>.worktrees/<name>` leaves two things behind: the directory, and a
+registration inside `.git/worktrees`. Remove it with git rather than with the
+filesystem:
+
+```bash
+git worktree list                    # what exists, and which branch each one holds
+git worktree remove <path>           # refuses while the tree is dirty
+git worktree prune                   # clears entries whose directory is already gone
+```
+
+`rm -rf` on the directory leaves the registration in place, and git then
+refuses to check that branch out anywhere else until you prune. A `git worktree
+remove` that refuses because the tree is dirty is the check doing its job: read
+what is uncommitted there before you reach for `--force`. The branch the
+worktree held is a separate question, answered by the two sections above.
 
 **Plan documents and design briefs.** Many repositories delete a plan once it is
 implemented. Two traps: a document that says *"Status: not started"* is queued
