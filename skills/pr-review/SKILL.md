@@ -67,7 +67,7 @@ skill loads; a bare `scripts/…` path resolves against the session's working di
 be found.
 
 - `scripts/pin-pr-head.sh` — clones a throwaway checkout pinned to the pull request head and prints
-  the head hash, the merge base and the numstat. Used in Step 2.
+  the head hash, the merge base and the numstat. Used in Step 3.
 - `scripts/shellcheck-safe.sh` — runs `bash -n` and `shellcheck` on files that may have CRLF line
   endings, without the SC1017 noise that buries real findings. Used in Step 6.
 - `references/report-template.md` — the report skeleton, with a worked example per severity. Read it
@@ -109,13 +109,36 @@ These tool slugs are verified to exist. Do not invent others:
    - `values[].new.path` is null for a deleted file. Fall back to `values[].old.path` so deletions
      are not dropped from the list.
 3. `BITBUCKET_GET_PULL_REQUEST_DIFF` for the unified diff. Check `response.data.truncated`. If it is
-   true the diff you received is incomplete, so do not review it: use the pinned checkout from Step 2
+   true the diff you received is incomplete, so do not review it: use the pinned checkout from Step 3
    and run `git diff <merge-base>..<head>` there instead, and say in the report that the diff came
    from the local checkout.
 
 Record the file count and the total added and removed lines. Step 7 and Step 8 both need them.
 
-## Step 2 — Pin a checkout
+## Step 2 — Skip conditions
+
+Check whether any of the following is true. Do this yourself; none of it needs a subagent. Do it
+before pinning a checkout: the pin is a clone, and a skipped pull request should not cost one.
+
+- The pull request state is not `OPEN`, that is, it is `MERGED`, `DECLINED` or otherwise closed. Step
+  1 already fetched the state.
+- The pull request is a draft. Step 1 already fetched the draft flag.
+- The change does not need review: an automated pull request, or a change that is trivially and
+  obviously correct. This one is your judgement.
+- This procedure has already posted its review. One
+  `BITBUCKET_GET_REPOSITORIES_PULLREQUESTS_COMMENTS` call answers this: look for a top-level comment
+  whose first line is exactly `Code review by pr-review`, the marker Step 8 puts on every comment it
+  posts. Nothing else counts. A review comment from anyone else, including an AI review the author
+  posted under their own account, is not a skip condition: it was not produced by this procedure, and
+  its statements are claims for Step 6 like any other. Two pull requests checked on 2026-09-16 each
+  carried such an author-posted review, one in this procedure's old shape and one in another; the
+  marker is what makes the check the same in both cases.
+
+If any condition is true, stop and do not go on. Say which condition stopped you.
+
+A pull request written by Claude still gets reviewed. Being AI-generated is not a skip condition.
+
+## Step 3 — Pin a checkout
 
 The working directory you started in may be shared with other sessions, and its checked-out branch
 can move while you work. Never review from it, and never run `git checkout` in it. Line numbers
@@ -161,23 +184,6 @@ Record both full hashes; they go in the report header. All file reading and ever
 and 6 runs against the pinned checkout, using absolute paths. Tell every subagent to use the pinned
 path.
 
-## Step 3 — Skip conditions
-
-Check whether any of the following is true. Do this yourself; none of it needs a subagent.
-
-- The pull request state is not `OPEN`, that is, it is `MERGED`, `DECLINED` or otherwise closed. Step
-  1 already fetched the state.
-- The pull request is a draft. Step 1 already fetched the draft flag.
-- The change does not need review: an automated pull request, or a change that is trivially and
-  obviously correct. This one is your judgement.
-- A review comment has already been posted. One
-  `BITBUCKET_GET_REPOSITORIES_PULLREQUESTS_COMMENTS` call answers this: look for a top-level comment
-  this procedure produced.
-
-If any condition is true, stop and do not go on. Say which condition stopped you.
-
-A pull request written by Claude still gets reviewed. Being AI-generated is not a skip condition.
-
 ## Step 4 — Collect the CLAUDE.md scope
 
 Collect a list of file paths, not their contents. Glob answers this; no subagent is needed.
@@ -193,7 +199,7 @@ in `libs/core/`. The root `CLAUDE.md` and the files in `.claude/rules/` apply to
 ## Step 5 — The parallel diff pass
 
 Give every agent in this step the pull request title and description, so it knows what the author
-intended, and the path of the pinned checkout from Step 2. Read `references/severity-rubric.md`
+intended, and the path of the pinned checkout from Step 3. Read `references/severity-rubric.md`
 first; its "what to flag" and "what not to flag" lists go into the prompt of every agent here.
 
 ### 5a. Four agents in parallel
@@ -276,10 +282,19 @@ finds most of what matters. Do not drop this step and do not merge it into Step 
    checkout, and check the change against every contribution rule it states, for example a rule that
    a change of a given kind must add a changelog entry.
 
-   **Install dependencies in the pinned checkout first.** It is a fresh clone, so it has no
-   `node_modules` and no restored packages. Without this every gate fails on a missing dependency
-   and the report says "could not run" for all of them, which reads as a tooling problem rather
-   than as the clean result it actually is.
+   **Install dependencies in the pinned checkout first, with the install command the repository's
+   own CI configuration runs**, flags and config file included: read `bitbucket-pipelines.yml` or the
+   equivalent and copy its install line (for example `npm ci --prefer-offline
+   --userconfig=.bin/npm/.npmrc`). A plain `npm ci` can fail where CI's does not: on 2026-09-16 a
+   lockfile was in sync only under the `legacy-peer-deps=true` that CI's config file set, and the
+   same file mapped a private registry scope. The checkout is a fresh clone with no `node_modules`
+   and no restored packages; without the install every gate fails on a missing dependency and the
+   report says "could not run" for all of them, which reads as a tooling problem rather than as the
+   clean result it actually is.
+
+   A gate may write inside the pinned checkout: a test runner rewrites snapshot files, a bundler
+   leaves a cache. That is harmless in a throwaway clone. Say in the report that it happened, and
+   never read the `git status` noise it leaves as a finding against the pull request.
 
    Where `CLAUDE.md` names no gates, or the repository has no `CLAUDE.md` at all, run whichever of
    these exist:
@@ -309,7 +324,7 @@ Where the report goes depends on whether the pull request is in the repository y
   `docs/reviews/pr-review-{repo}-{pr_number}.md` there, creating `docs/reviews/` if it does not
   exist. If that repository's own `CLAUDE.md` names a different place for review or audit documents,
   that place wins.
-- **The pull request is in another repository**, which is exactly the case where Step 2 needed its
+- **The pull request is in another repository**, which is exactly the case where Step 3 needed its
   fourth argument. Write the report to `<scratchpad>/pr-<number>/pr-review-{repo}-{pr_number}.md`
   instead. Never write it into the current checkout: that repository has nothing to do with the
   change under review, and Hard rule 2 allows one report in the repository being reviewed, not a
@@ -333,7 +348,9 @@ fixing the gaps hides whether the pass ran at all.
 ## Step 8 — Post the summary comment
 
 1. **If `--no-comment` was given, stop after Step 7.** Post nothing, and ask no question.
-2. **Build the comment.** One top-level comment containing:
+2. **Build the comment.** One top-level comment whose first line is exactly
+   `Code review by pr-review`, on a line of its own. Step 2 of a later run looks for that line, so
+   it is what stops this procedure posting twice on one pull request. Then:
 
    - The pull request overview: what it does, its size, the number of files changed.
    - The findings-count table by severity.
@@ -345,8 +362,8 @@ fixing the gaps hides whether the pass ran at all.
    **No snippet links. No download links. No external URLs of any kind.** The comment is
    self-contained. It may name the report's path as plain text, not as a link.
 
-   If no issues were found, the comment reads: "Code review: no issues found. Checked for bugs,
-   CLAUDE.md compliance, and the claims made in the commit messages and description."
+   If no issues were found, the comment reads, after the marker line: "No issues found. Checked for
+   bugs, CLAUDE.md compliance, and the claims made in the commit messages and description."
 
    Where a bug is found, describe the exact fix in the comment. Do not push code.
 3. **Show the user the comment's exact full text, then ask once with `AskUserQuestion` whether to

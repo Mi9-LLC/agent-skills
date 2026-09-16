@@ -71,6 +71,9 @@ A short prose block, not a list of tool names. It covers:
   was written by the same author as the code, so it is part of the change under review and its
   quotations are claims rather than support.
 - Which stage produced which findings, so a reader can tell diff-reading from claim-checking.
+- Whether any gate wrote inside the pinned checkout (test snapshots, a bundler cache). A throwaway
+  clone makes that harmless, but say so, and never read the `git status` noise it leaves as a
+  finding.
 
 ## 1. Overview
 

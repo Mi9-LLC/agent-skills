@@ -33,7 +33,7 @@
 # caller can confirm it is the repository the pull request lives in.
 #
 # Exit codes: 0 ok, 1 bad arguments or an unsafe target directory, 2 the clone
-# failed or the commit or branch could not be found.
+# failed, the checkout is incomplete, or the commit or branch could not be found.
 # =============================================================================
 
 set -euo pipefail
@@ -63,7 +63,11 @@ if [[ ! -d "${SOURCE_REPO}" ]] && [[ "${SOURCE_REPO}" != *://* ]] && [[ "${SOURC
 fi
 
 rm -rf "${TARGET_DIR}"
-if ! git clone --no-checkout --quiet "${SOURCE_REPO}" "${TARGET_DIR}"; then
+# core.longpaths: on Windows, git skips any file whose path is over 260
+# characters with "Filename too long" and the initial checkout still exits 0,
+# leaving a clone that silently lacks files. Setting it on the clone is harmless
+# elsewhere.
+if ! git clone -c core.longpaths=true --no-checkout --quiet "${SOURCE_REPO}" "${TARGET_DIR}"; then
   echo "ERROR: could not clone '${SOURCE_REPO}'." >&2
   exit 2
 fi
@@ -109,6 +113,16 @@ if ! git cat-file -e "${HEAD_SHA}^{commit}" 2>/dev/null; then
 fi
 
 git checkout --quiet "${HEAD_SHA}"
+
+# A file the checkout could not create is listed as deleted, and git exits 0
+# anyway on the initial checkout. Refuse to hand back an incomplete tree: line
+# numbers and gate results taken from it would be wrong in ways nobody sees.
+MISSING="$(git status --porcelain | grep -c '^ D' || true)"
+if [[ "${MISSING}" -gt 0 ]]; then
+  echo "ERROR: checkout incomplete: ${MISSING} file(s) could not be created. First few:" >&2
+  git status --porcelain | grep '^ D' | head -5 >&2
+  exit 2
+fi
 
 # Prefer the remote-tracking ref: the local branch may be stale or absent.
 git fetch --quiet origin "${DEST_BRANCH}" 2>/dev/null || true
