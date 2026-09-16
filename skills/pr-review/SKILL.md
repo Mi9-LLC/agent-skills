@@ -5,13 +5,15 @@ description: >-
   head commit, run the parallel diff pass and the claim-verification pass, write the full report to
   docs/reviews/, and post one self-contained summary comment once the user approves it. Reads and
   comments only: it never pushes, never merges, and never edits the pull request branch. Use this
-  whenever a pull request
-  review is asked for in any wording, including "review PR 29", "review this pull request", "can you
-  review the PR", "review pull request 12 in <workspace>/<repo>", a pasted
-  bitbucket.org/.../pull-requests/<n> URL, or a request for a PR review report or a review comment
-  on a PR. Bitbucket only, through the Composio MCP tools; it does not use gh and does not work on
-  GitHub pull requests.
+  whenever a Bitbucket pull request review is asked for in any wording, including "review PR 29",
+  "review this pull request", "can you review the PR", "review pull request 12 in
+  <workspace>/<repo>", a pasted bitbucket.org/.../pull-requests/<n> URL, or a request for a PR
+  review report or a review comment on a PR. Bitbucket only, through the Composio MCP tools. Do NOT
+  use it for a GitHub pull request, which needs gh or a general code-review skill; for reviewing
+  uncommitted or local changes with no pull request behind them; or for a code review of a branch or
+  a diff that was never opened as a pull request.
 model: claude-opus-5
+disallowed-tools: Edit, NotebookEdit
 ---
 
 # Reviewing a Bitbucket pull request
@@ -42,9 +44,12 @@ These three are the ones that have been broken before, so they come first.
 
 Never put an API key, token, password or connection string into the report or the comment.
 
-This skill declares no `allowed-tools` and no `disallowed-tools`. The Bitbucket tools it needs are
-the user's own Composio MCP registration, so the rules above are workflow discipline, not a
-restriction on the tool pool.
+This skill declares no `allowed-tools`, because the Bitbucket tools it needs are the user's own
+Composio MCP registration and cannot be listed here. It does declare
+`disallowed-tools: Edit, NotebookEdit`: the only file it ever writes is the report, and `Write`
+covers that, so dropping `Edit` while the skill is active costs it nothing and takes away the tool
+that would break Hard rule 1. The guard is per-turn and covers this session only, not the subagents
+Step 5 launches, so Hard rules 1 and 2 remain workflow discipline as well.
 
 ## Assumptions for you and for every subagent you launch
 
@@ -128,6 +133,12 @@ repository as the fourth argument: a local clone path, or a clone URL such as
 `https://bitbucket.org/<workspace>/<repo>.git`. Without it the script clones the current directory,
 which is the wrong repository, and the run fails.
 
+Cloning a local checkout would normally leave that local path as the new clone's origin, so every
+fetch would read the checkout instead of Bitbucket, and a branch the checkout holds only as
+`origin/<name>` would be reported as missing. The script repoints origin at the source checkout's
+own origin to prevent that. If the source checkout has no origin remote, the script says so: the
+clone can then only see what that checkout had already fetched.
+
 It prints `ORIGIN=`, `PINNED_CHECKOUT=`, `HEAD=`, `MERGE_BASE=`, the `git diff --numstat` for that
 range, and the commits in the range. Confirm `ORIGIN=` is the repository the pull request lives in
 before trusting anything else the script printed.
@@ -136,6 +147,15 @@ Then cross-check its numstat against the diffstat from Step 1: the same file lis
 per-file counts. If they differ, stop and report the difference. It means the pull request moved while
 you were reading it, or the destination branch advanced, and every line number in the review would be
 wrong.
+
+Two differences are formatting, not movement, and must not stop the run:
+
+- **A binary file.** `git diff --numstat` prints `-` for both counts where Bitbucket reports a
+  number. Match on the path and treat the counts as agreeing.
+- **A rename.** `git diff --numstat` can print the path as `{old => new}/name` on one line where
+  Bitbucket lists the old and new paths separately. Resolve it to the new path before comparing.
+
+Anything else that differs is real. Stop on it.
 
 Record both full hashes; they go in the report header. All file reading and every command in Steps 5
 and 6 runs against the pinned checkout, using absolute paths. Tell every subagent to use the pinned
@@ -160,7 +180,7 @@ A pull request written by Claude still gets reviewed. Being AI-generated is not 
 
 ## Step 4 — Collect the CLAUDE.md scope
 
-Launch a Haiku agent to return a list of file paths, not their contents:
+Collect a list of file paths, not their contents. Glob answers this; no subagent is needed.
 
 - The root `CLAUDE.md`, if it exists.
 - Every `CLAUDE.md` in a directory that contains a file changed by this pull request.
@@ -197,8 +217,10 @@ False positives lose trust and waste reviewer time.
 
 ### 5b. One validation subagent per issue
 
-For each issue returned by Agent 3 and Agent 4, launch a subagent to validate it. Run them in
-parallel. Give each one the pull request title and description and the description of the single
+For each issue returned by any of the four agents, launch a subagent to validate it. Run them in
+parallel. All four, not only the bug agents: Step 5c drops everything that was not validated here, so
+leaving the two compliance agents out of this step would discard every `CLAUDE.md` finding they
+produced. Give each one the pull request title and description and the description of the single
 issue. Its job is to check that the stated issue is truly an issue, with high confidence. If the
 issue was "variable is not defined", the subagent confirms that this is actually true in the code.
 For a `CLAUDE.md` issue, the subagent confirms both that the rule is scoped to that file and that it
@@ -206,9 +228,15 @@ is actually violated.
 
 Use Opus subagents for bugs and logic issues. Use Sonnet subagents for `CLAUDE.md` violations.
 
-At most 12 validation subagents in one run. Pick the highest-signal issues first, ordered by the
-rubric's "what to flag" list. If more candidate issues came back than that, the report says how many
-were not validated, and those issues are dropped rather than reported unvalidated.
+At most 12 validation subagents in one run. Rank the candidates by which bullet of the rubric's
+"what to flag" list they match, taking the bullets in the order they are written: a compile or parse
+failure first, then code that produces wrong results regardless of input, then a `CLAUDE.md`
+violation. Inside one bullet, keep the candidate whose file comes first in the diffstat. The
+rubric's fourth bullet, a claim the repository contradicts, cannot appear here: Step 6 produces
+those and it runs after this step.
+
+If more candidates came back than the cap, the report says how many were not validated, and those
+are dropped rather than reported unvalidated.
 
 ### 5c. Filter
 
@@ -246,11 +274,23 @@ finds most of what matters. Do not drop this step and do not merge it into Step 
 5. **Run the repository's own gates.** The target repository's `CLAUDE.md` is the source of truth for
    its quality gates and its contribution rules. Read it, run the gates it names, in the pinned
    checkout, and check the change against every contribution rule it states, for example a rule that
-   a change of a given kind must add a changelog entry. Where `CLAUDE.md` names no gates, fall back
-   to what the repository's own manifest exposes: the scripts block of a `package.json`, a
-   `Directory.Packages.props` or a `*.csproj` for .NET, a `pyproject.toml`. The report says which
-   gates were run and which were not available. If a gate cannot run, say so in the report rather
-   than leaving it looking like it passed.
+   a change of a given kind must add a changelog entry.
+
+   **Install dependencies in the pinned checkout first.** It is a fresh clone, so it has no
+   `node_modules` and no restored packages. Without this every gate fails on a missing dependency
+   and the report says "could not run" for all of them, which reads as a tooling problem rather
+   than as the clean result it actually is.
+
+   Where `CLAUDE.md` names no gates, or the repository has no `CLAUDE.md` at all, run whichever of
+   these exist:
+
+   - `package.json`: the `lint`, `typecheck` and `test` scripts it defines, with the package manager
+     its lockfile names, plus `build` when the change touches source rather than only tests.
+   - .NET: `dotnet build --nologo`, then `dotnet test` when the project has test projects.
+   - Python: the linter `pyproject.toml` configures, and `pytest` if the repository has tests.
+
+   Name in the report the exact commands you ran, not the category. A gate that cannot run is
+   reported as not run, with the reason, rather than left looking like it passed.
 
 Merge the findings from this step with the validated findings from Step 5 into one list. Label each
 finding with the stage that produced it, "diff pass" or "verification pass", so a reader can tell
@@ -263,10 +303,20 @@ before assigning any severity. The template holds the section list, the field li
 a worked example at each severity; the rubric holds the four definitions and the rules that decide
 between two adjacent levels.
 
-Write to `docs/reviews/pr-review-{repo}-{pr_number}.md` in the primary working directory. Create
-`docs/reviews/` if it does not exist. If the repository's own `CLAUDE.md` names a different place for
-review or audit documents, that place wins. Say the report's path in your terminal reply either way.
-Do not modify any other file, and do not modify an existing report for a different pull request.
+Where the report goes depends on whether the pull request is in the repository you are standing in.
+
+- **The pull request is in the current checkout.** Write
+  `docs/reviews/pr-review-{repo}-{pr_number}.md` there, creating `docs/reviews/` if it does not
+  exist. If that repository's own `CLAUDE.md` names a different place for review or audit documents,
+  that place wins.
+- **The pull request is in another repository**, which is exactly the case where Step 2 needed its
+  fourth argument. Write the report to `<scratchpad>/pr-<number>/pr-review-{repo}-{pr_number}.md`
+  instead. Never write it into the current checkout: that repository has nothing to do with the
+  change under review, and Hard rule 2 allows one report in the repository being reviewed, not a
+  file dropped into an unrelated one.
+
+Say the report's path in your terminal reply either way. Do not modify any other file, and do not
+modify an existing report for a different pull request.
 
 This file is the primary output of the review. It has to be complete enough that a separate
 remediation agent can implement every fix without re-reading the codebase or the diff.
@@ -305,6 +355,14 @@ fixing the gaps hides whether the pass ran at all.
 4. **Only a clear yes posts the comment**, with `BITBUCKET_CREATE_PULL_REQUEST_COMMENT`. A question
    that is declined or left unanswered means nothing is posted: say in your terminal reply that the
    comment was not posted, and name the report's path so the user can post it themselves.
+5. **When `AskUserQuestion` is not available, treat the question as unanswered and post nothing.**
+   It is unavailable in a `claude -p` run, and a subagent has no user to ask. Silence is not consent
+   here: posting a comment onto a pull request notifies its author and is visible to the whole team,
+   so the safe reading of "nobody could be asked" is "do not post". Write the report, return its
+   path, and say plainly that the comment was not posted and why.
+
+   Running as a subagent, the report is the run's return value. Do not rely on chat text reaching
+   the session that launched you.
 
 ## When a finding turns out to be wrong
 

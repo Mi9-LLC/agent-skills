@@ -417,7 +417,7 @@ External source read directly, at tag `v3.6.2.Final`:
 
 ## Self-review before declaring the report done
 
-`CLAUDE.md` requires this pass and requires reporting what it found. Re-read the report cold, as if
+This skill requires this pass and requires reporting what it found. Re-read the report cold, as if
 acting on it for the first time rather than from memory, and check:
 
 - Why, what, and blast radius are all stated.
