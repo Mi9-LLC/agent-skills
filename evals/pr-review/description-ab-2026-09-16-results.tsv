@@ -1,0 +1,14 @@
+N1	gh	FIRED	ok	2	"skill":"pr-review" 	claude-opus-5
+N2	gh	quiet	ERR	1	-	claude-opus-5
+N3	bb	quiet	ok	1	-	claude-opus-5
+N4	bb	quiet	ERR	1	-	claude-opus-5
+N5	bb	quiet	ok	1	-	claude-opus-5
+N6	bb	quiet	ok	2	"skill":"retro" 	claude-opus-5
+N7	bb	quiet	ERR	2	"skill":"plan-eng-review" 	claude-opus-5
+N8	bb	quiet	ok	1	-	claude-opus-5
+P1	bb	FIRED	ERR	2	"skill":"pr-review" 	claude-opus-5
+P2	bb	FIRED	ERR	2	"skill":"pr-review" 	claude-opus-5
+P3	bb	FIRED	ERR	2	"skill":"pr-review" 	claude-opus-5
+P4	bb	FIRED	ERR	2	"skill":"pr-review" 	claude-opus-5
+P5	bb	FIRED	ERR	2	"skill":"pr-review" 	claude-opus-5
+P6	bb	FIRED	ERR	2	"skill":"pr-review" 	claude-opus-5
