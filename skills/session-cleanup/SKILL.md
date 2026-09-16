@@ -1,6 +1,17 @@
 ---
 name: session-cleanup
-description: Use when a piece of work is finished, merged, or deployed and its leftovers need removing: "clean up", "tidy up", "clean up after yourself", "remove the merged branches", "delete the temp files", "delete the scratch files", "kill the processes you started", "what is left over", "delete the plan file now it's done". Also use before deleting a branch, a plan document, or a spec change once its work is merged, because a squash merge makes `git branch -d` report a safe branch as unmerged, and a commit that exists on no remote branch is destroyed for good. It deletes only what the session itself created; a branch, file, or process belonging to a teammate or another agent session is reported, not removed. Do NOT use to delete a named file or dead code the user points at, to run `git clean` or `rm -rf node_modules`, to save context so the same work can continue later (session-handoff), to summarize what was shipped (retro), or to tidy up the code itself (/simplify).
+description: >-
+  Use when a piece of work is finished, merged, or deployed and its leftovers need removing: "clean
+  up", "tidy up", "clean up after yourself", "remove the merged branches", "delete the temp files",
+  "delete the scratch files", "kill the processes you started", "what is left over", "delete the
+  plan file now it's done". Also use before deleting a branch, a plan document, or a spec change
+  once its work is merged, because a squash merge makes `git branch -d` report a safe branch as
+  unmerged, and a commit that exists on no remote branch is destroyed for good. It deletes only what
+  the session itself created; a branch, file, or process belonging to a teammate or another agent
+  session is reported, not removed. Do NOT use to delete a named file or dead code the user points
+  at, to run `git clean` or `rm -rf node_modules`, to save context so the same work can continue
+  later (session-handoff), to summarize what was shipped (retro), or to tidy up the code itself
+  (/simplify).
 ---
 
 # Session cleanup
