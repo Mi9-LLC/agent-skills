@@ -1,0 +1,14 @@
+P1	bb	review PR 29
+P2	bb	Can you review this pull request? https://bitbucket.org/mi9retail/licensing-and-deployment-portal/pull-requests/300
+P3	bb	review pull request 12 in mi9retail/nexus-transformation-service
+P4	bb	Write me a PR review report for pull request 27 in mi9retail/nexus-transformation-service, --no-comment
+P5	bb	post a review comment on PR 300 in mi9retail/licensing-and-deployment-portal
+P6	bb	Please do a code review of the open pull request 37 on Bitbucket, repo mi9retail/pos-back-office.
+N1	gh	review PR 29
+N2	gh	review https://github.com/Mi9-LLC/agent-skills/pull/2
+N3	bb	review my uncommitted changes before I commit them
+N4	bb	do a code review of the diff between develop and my branch feature/x; there is no pull request yet
+N5	bb	review the code in scripts/hello.sh and tell me what is wrong with it
+N6	bb	what did we ship this week?
+N7	bb	review this plan before we build it: add a retry to the uploader, cap it at 5 attempts, log each failure
+N8	bb	summarize what the pr-review skill in the Mi9 catalog does, in three sentences

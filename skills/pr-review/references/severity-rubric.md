@@ -162,14 +162,16 @@ being as visible as the findings were.
 
 ## What to flag
 
-Flag an issue where:
+Flag an issue where any of the following holds. **The list is ranked, highest signal first**, and
+Step 5b's cap relies on that order when there are more candidates than validation subagents.
 
-- The code will fail to compile or parse: syntax errors, type errors, missing imports, unresolved
-  references.
-- The code will definitely produce wrong results regardless of inputs: clear logic errors.
-- There is a clear, unambiguous `CLAUDE.md` violation and the exact rule being broken can be quoted.
-- A claim in a commit message, in the pull request description, or in a document the pull request
-  adds is contradicted by the repository or by the upstream source.
+1. The code will fail to compile or parse: syntax errors, type errors, missing imports, unresolved
+   references.
+2. The code will definitely produce wrong results regardless of inputs: clear logic errors.
+3. There is a clear, unambiguous `CLAUDE.md` violation and the exact rule being broken can be quoted.
+4. A claim in a commit message, in the pull request description, or in a document the pull request
+   adds is contradicted by the repository or by the upstream source. Step 6 produces these, after
+   Step 5b has run, so they never compete for a validation subagent.
 
 If you are not certain an issue is real, do not flag it. False positives lose trust and waste
 reviewer time.

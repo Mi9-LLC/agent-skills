@@ -25,10 +25,15 @@
 #                 local clone of the right repository, or a clone URL such as
 #                 https://bitbucket.org/<workspace>/<repo>.git
 #
-# The origin URL of whatever was cloned is printed as ORIGIN= so the caller can
-# confirm the repository is the one the pull request lives in.
+# When source-repo is a local directory, this script repoints the new clone's
+# origin at that checkout's own origin. Without that step git would leave the
+# local path as origin, every fetch would read the local checkout instead of the
+# hosting service, and a branch the checkout only has as origin/<name> would be
+# reported as missing. The origin actually in use is printed as ORIGIN= so the
+# caller can confirm it is the repository the pull request lives in.
 #
-# Exit codes: 0 ok, 1 bad arguments, 2 the commit or branch could not be found.
+# Exit codes: 0 ok, 1 bad arguments or an unsafe target directory, 2 the clone
+# failed, the checkout is incomplete, or the commit or branch could not be found.
 # =============================================================================
 
 set -euo pipefail
@@ -43,9 +48,46 @@ if [[ -z "${HEAD_SHA}" || -z "${DEST_BRANCH}" || -z "${TARGET_DIR}" ]]; then
   exit 1
 fi
 
+# Refuse to delete a target that exists and is not a git clone. TARGET_DIR comes
+# from the caller and this is an rm -rf, so a mistyped path must not be silently
+# destroyed. An existing clone is ours from a previous run and is replaced.
+if [[ -e "${TARGET_DIR}" && ! -d "${TARGET_DIR}/.git" ]]; then
+  echo "ERROR: ${TARGET_DIR} exists and is not a git clone. Refusing to delete it." >&2
+  echo "Pass a target directory that does not exist, or one this script made." >&2
+  exit 1
+fi
+
+if [[ ! -d "${SOURCE_REPO}" ]] && [[ "${SOURCE_REPO}" != *://* ]] && [[ "${SOURCE_REPO}" != *@*:* ]]; then
+  echo "ERROR: source repo '${SOURCE_REPO}' is neither a directory nor a clone URL." >&2
+  exit 1
+fi
+
 rm -rf "${TARGET_DIR}"
-git clone --no-checkout --quiet "${SOURCE_REPO}" "${TARGET_DIR}"
+# core.longpaths: on Windows, git skips any file whose path is over 260
+# characters with "Filename too long" and the initial checkout still exits 0,
+# leaving a clone that silently lacks files. Setting it on the clone is harmless
+# elsewhere.
+if ! git clone -c core.longpaths=true --no-checkout --quiet "${SOURCE_REPO}" "${TARGET_DIR}"; then
+  echo "ERROR: could not clone '${SOURCE_REPO}'." >&2
+  exit 2
+fi
 cd "${TARGET_DIR}"
+
+# Cloning a local path makes THAT PATH the new clone's origin, so every fetch
+# below would read the local checkout and never the hosting service. A branch
+# that exists only as origin/<name> in the source checkout would then be
+# reported as missing. Point origin at the source checkout's own origin; the
+# objects stay hardlinked, so the clone is still fast.
+if [[ -d "${SOURCE_REPO}" ]]; then
+  UPSTREAM_URL="$(git -C "${SOURCE_REPO}" remote get-url origin 2>/dev/null || true)"
+  if [[ -n "${UPSTREAM_URL}" ]]; then
+    git remote set-url origin "${UPSTREAM_URL}"
+  else
+    echo "NOTE: ${SOURCE_REPO} has no origin remote, so this clone can only see" >&2
+    echo "      what that checkout already had. A branch or commit it never" >&2
+    echo "      fetched will be reported as missing below." >&2
+  fi
+fi
 
 # The source repo may not have the PR commit yet if it was pushed from elsewhere.
 if ! git cat-file -e "${HEAD_SHA}^{commit}" 2>/dev/null; then
@@ -60,7 +102,7 @@ if ! git cat-file -e "${HEAD_SHA}^{commit}" 2>/dev/null; then
   echo "Its origin  : ${CLONED_ORIGIN}" >&2
   echo >&2
   echo "Three causes, in the order they are worth checking:" >&2
-  echo "  1. The clone is the WRONG REPOSITORY. This is what happens when the" >&2
+  echo "  1. The origin above is the WRONG REPOSITORY. This happens when the" >&2
   echo "     pull request is in a repository other than the current checkout" >&2
   echo "     and no [source-repo] argument was passed. Re-run with a local" >&2
   echo "     clone of the right repository, or with its clone URL, as the" >&2
@@ -71,6 +113,16 @@ if ! git cat-file -e "${HEAD_SHA}^{commit}" 2>/dev/null; then
 fi
 
 git checkout --quiet "${HEAD_SHA}"
+
+# A file the checkout could not create is listed as deleted, and git exits 0
+# anyway on the initial checkout. Refuse to hand back an incomplete tree: line
+# numbers and gate results taken from it would be wrong in ways nobody sees.
+MISSING="$(git status --porcelain | grep -c '^ D' || true)"
+if [[ "${MISSING}" -gt 0 ]]; then
+  echo "ERROR: checkout incomplete: ${MISSING} file(s) could not be created. First few:" >&2
+  git status --porcelain | grep '^ D' | head -5 >&2
+  exit 2
+fi
 
 # Prefer the remote-tracking ref: the local branch may be stale or absent.
 git fetch --quiet origin "${DEST_BRANCH}" 2>/dev/null || true
