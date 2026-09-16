@@ -209,6 +209,28 @@ freely. Remove the backups, patches, diffs and logs you created. If the user
 names specific categories, remove those and say what remains rather than
 guessing at the rest.
 
+The file that survives this sweep is the one that looks like a work product: a
+review report, a research dossier, a generated summary, written by a skill into
+the scratchpad because the repository was not the right home for it. It reads
+as too valuable to delete and too unfinished to commit, so it is kept, and it
+then sits there until the disk is cleaned by hand. Ask one question of it before
+keeping it: **who will ever open this?** The scratchpad is named after this
+session, nothing indexes it, and no later session or skill looks inside another
+session's folder. If no committed file, memory note or message names the path,
+the answer is nobody, and a file nobody will open is noise whatever it cost to
+produce. The recoverability test does not apply to it: recoverability protects
+work someone can find and reach for, and this file is neither.
+
+So a scratch work product has two exits, and staying put is not one of them.
+Either its facts are already recorded somewhere findable, in which case delete it
+and say so, or they are not and matter, in which case move it to a place with a
+reader, such as the repository's `evals/` or `docs/` folder, and treat that move
+as a change the user approves. On 2026-09-16 a session kept a 20 KB pull-request
+review report in its scratchpad on the reasoning that it was the only full copy
+and could not be regenerated cheaply; both statements were true, and the file
+was still deleted the moment the user asked who would read it, because every
+fact anyone needed from it was already in three committed files.
+
 **Processes.** Kill what you started. Identify processes by what they are doing,
 not by name alone — a `gcloud` or `node` process may belong to another session or
 to the user. If you cannot tell whose it is, leave it and say so. Background jobs
