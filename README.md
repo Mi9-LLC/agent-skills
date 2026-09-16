@@ -975,7 +975,7 @@ You: review PR 29
 npx skills add https://github.com/Mi9-LLC/agent-skills --skill pr-review
 ```
 
-**Full definition:** [`skills/pr-review/SKILL.md`](skills/pr-review/SKILL.md) (plus the report template and the severity rubric under `references/`, and `pin-pr-head.sh` / `shellcheck-safe.sh` under `scripts/`). Written at Mi9 out of a run of real Bitbucket reviews; the rubric's examples are the cases those reviews actually turned on. Not adapted from an external project.
+**Full definition:** [`skills/pr-review/SKILL.md`](skills/pr-review/SKILL.md) (plus the report template and the severity rubric under `references/`, and `pin-pr-head.sh` / `shellcheck-safe.sh` under `scripts/`). Written at Mi9 out of a run of real Bitbucket reviews; the rubric's examples are the cases those reviews actually turned on. Not adapted from an external project. Description trigger sweep on 2026-09-16 under real registration (`evals/pr-review/`): 6/6 Bitbucket positives fired, 7/8 hard negatives quiet; the one miss is a bare "review PR 29" in a GitHub checkout, which the skill body stops by asking for the repository. First live run the same day (PR 300 of `licensing-and-deployment-portal`, `--no-comment`): approve, 0 findings.
 
 ---
 
