@@ -105,13 +105,22 @@ for f in "$@"; do
   if [[ ${HAVE_SHELLCHECK} -eq 1 ]]; then
     # Pass 1: did every `source` actually get followed? SC1091 is info severity,
     # so this pass is the only place it is visible.
-    unfollowed="$(shellcheck -S info -x --source-path="${src_dir}" "${copy}" 2>&1 \
-                  | grep -c 'SC1091' || true)"
+    #
+    # Count and match CARET lines only (^ ... ^ SC1091), never every line holding
+    # the string. The wiki footer names each code once more, so a plain
+    # `grep -c SC1091` returns one caret per unresolved source PLUS one, and
+    # reports 2 for a file with a single bad source.
+    #
+    # Context is -B2, not -A1. shellcheck puts "In <file> line N:" and the source
+    # line BEFORE the caret, and the wiki footer after it, so -A1 dropped the
+    # file and the line number, which is the only part worth printing, and kept
+    # the footer instead.
+    sc_info="$(shellcheck -S info -x --source-path="${src_dir}" "${copy}" 2>&1)"
+    unfollowed="$(printf '%s\n' "${sc_info}" | grep -cE '^ *\^-*\^? *SC1091' || true)"
     if [[ "${unfollowed}" -gt 0 ]]; then
       echo "  sources followed: NO - ${unfollowed} source line(s) could not be resolved:"
       # Bash substitution rather than sed: a path holding | or & breaks a sed pattern.
-      unfollowed_out="$(shellcheck -S info -x --source-path="${src_dir}" "${copy}" 2>&1 \
-                        | grep -A1 'SC1091')"
+      unfollowed_out="$(printf '%s\n' "${sc_info}" | grep -B2 -E '^ *\^-*\^? *SC1091')"
       unfollowed_out="${unfollowed_out//${copy_win}/${f}}"
       printf '%s\n' "${unfollowed_out//${copy}/${f}}" | sed 's/^/    /'
       echo "    A finding that depends on those definitions would not be reported."

@@ -48,7 +48,7 @@ This skill declares no `allowed-tools`, because the Bitbucket tools it needs are
 Composio MCP registration and cannot be listed here. It does declare
 `disallowed-tools: Edit, NotebookEdit`: the only file it ever writes is the report, and `Write`
 covers that, so dropping `Edit` while the skill is active costs it nothing and takes away the tool
-that would break Hard rule 1. The guard is per-turn and covers this session only, not the subagents
+that would break Hard rule 2. The guard is per-turn and covers this session only, not the subagents
 Step 5 launches, so Hard rules 1 and 2 remain workflow discipline as well.
 
 ## Assumptions for you and for every subagent you launch
