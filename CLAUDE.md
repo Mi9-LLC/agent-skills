@@ -55,7 +55,9 @@ The one other top-level directory is `evals/` — skill eval fixtures (e.g. `eva
 
 ## Contributing
 
-1. Create or edit a directory under `skills/<skill-name>/`. Include a `SKILL.md`; put long-form reference docs under `references/`. Skill eval fixtures live under repo-root `evals/<skill-name>/`, never inside the installable skill folder — they are development material `npx skills add` does not install.
+1. Create or edit a directory under `skills/<skill-name>/`. Include a `SKILL.md`; put long-form reference docs under `references/`. **The frontmatter must parse under a strict YAML parser** (`python -c "import yaml,sys; yaml.safe_load(open(sys.argv[1]).read().split('
+---')[0].lstrip('-
+'))" skills/<name>/SKILL.md`): write the `description` as a `>-` block scalar, never as a plain one-line scalar, because a colon followed by a space anywhere in the text (`...need removing: "clean up"...`) is a nested mapping to YAML. Claude Code's own loader tolerates that and registers the skill, so nothing looks wrong locally, but `npx skills add` rejects the file with `YAML parse error: Nested mappings are not allowed in compact mappings` and reports `No matching skills found`, and the skill is unshipped for everyone else. `session-cleanup` was in that state from 2026-09-04 to 2026-09-16. Skill eval fixtures live under repo-root `evals/<skill-name>/`, never inside the installable skill folder — they are development material `npx skills add` does not install.
 2. **When adding (or renaming/removing) a skill, update ALL catalog docs in the same change — this is mandatory, not optional:**
    - `README.md` — add a row to the **Skills at a glance** table *and* a full per-skill section (mirror the existing format: *what it does*, *use it for*, *triggers on*, *what it does not do* / *what it produces*, *install*, *full definition* link). The README is how consumers discover skills — an undocumented skill is effectively unshipped.
    - This `CLAUDE.md` — add a bullet to the **Current skills** list above.
