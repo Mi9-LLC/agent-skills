@@ -1,20 +1,18 @@
 ---
 name: dead-code-removal
 description: >-
-  Take an existing, dated dead-code analysis and its removal plan, re-check every finding against
-  the code as it is today with parallel read-only subagents, write the new verdicts (VALID,
-  CHANGED, INVALID, GONE) into the analysis and the plan, show the checked plan for approval, and
-  then delete the statically proven dead code step by step in a separate git worktree, with the
-  project's own gates after every step and no commit until the user approves it. Use it whenever
-  a dead-code report, an unused-code list, or a dead-code removal plan already exists and the user
-  wants it re-validated, brought up to date, or acted on - "re-check the dead code analysis",
+  Re-check a dated dead-code analysis and its removal plan against today's code with
+  read-only subagents, record new verdicts (VALID, CHANGED, INVALID, GONE) in the plan and a new
+  re-check file, and, once the user approves, delete statically proven dead code step by step in
+  a git worktree, running the gates after each step and committing only on approval. Use it when
+  a dead-code report, unused-code list, or removal plan already exists and the user wants it
+  re-checked or acted on - "re-check the dead code analysis",
   "update the code validity of the dead-code report", "is this dead-code list still accurate",
-  "the analysis is a week old, check it and start removing", "execute the dead-code removal plan",
-  "start Step 1 of the dead code plan in a worktree". Do NOT use it to find dead code from scratch
-  when no analysis exists (produce the analysis first, or run the health skill's dead-code gate);
-  to delete one file or symbol the user names directly; to fix static-analyser smells
-  (sonar-issue-fix); or to remove code that only runtime evidence could prove unused - this skill
-  deletes on static proof only.
+  "the analysis is a week old, check it and start removing", "execute the dead-code removal
+  plan", "start Step 1 of the dead code plan in a worktree". Do NOT use it to find dead code from
+  scratch (write the analysis first, or run the health skill's dead-code gate); to delete one file
+  or symbol the user names; for static-analyser smells (sonar-issue-fix); or for code only runtime
+  evidence could prove unused.
 model: claude-opus-5
 ---
 
@@ -33,7 +31,8 @@ At least 4 of the INVALID items sat in files that no commit had touched since th
 ## Hard rules
 
 1. **The re-check is read-only.** Re-check agents write only their own report file, outside the
-   repository.
+   repository: in the session scratchpad directory, or in a temp folder outside the repository
+   when the harness has no scratchpad.
 2. **Code changes happen only in a dedicated git worktree**, never in the user's own checkout.
    Another session may be working there, and its commits must not mix with these.
 3. **No commit and no push without the user's approval.** Propose the commit message, list the
@@ -49,8 +48,9 @@ At least 4 of the INVALID items sat in files that no commit had touched since th
    production code writes and only tests read): removing it edits a live code path, so record it
    as a follow-up instead of deleting it in a deletion step.
 6. **When a gate fails after a step, revert that step and report it.** Do not fix forward. A
-   failure means the step's premise was wrong, and the step goes back to the re-check. The one
-   exception is the import-order auto-fix described in Step 5, item 4, and only when the user
+   failure means the step's premise was wrong: record the item and the failure, skip the step,
+   and continue with the next one. The item appears under Skipped in the final report. The one
+   exception is the import-order auto-fix described in Step 5, item 5, and only when the user
    approved it in Step 2b.
 
 ## What is in this skill
@@ -82,20 +82,43 @@ Read, before anything else:
    rule files about the subsystems the plan touches.
 2. The analysis and the plan, end to end. Record:
    - the commit the analysis was written at (its header, or `git log --diff-filter=A` on the
-     analysis file), and the current head;
-   - `git log --oneline <analysis-commit>..HEAD` and `git diff --stat <analysis-commit>..HEAD` for
-     the code folders the plan covers;
+     analysis file), and the current head. If neither gives a commit, use the date in the file's
+     own header to find the last commit before it, or ask the user;
    - the plan's open questions and every decision it leaves to a person;
    - the plan's own do-not-delete list and its list of defects, if it has them.
+3. Whether git tracks each document, with `git ls-files` and `git check-ignore`. A worktree holds
+   only the files committed at `<base>`.
+   - Untracked but not ignored: Step 1, item 2 copies it into the worktree, and it is committed
+     with the Step 3 documents.
+   - Tracked, but different from `<base>` (modified, staged, or missing at `<base>`): handled like
+     an untracked document. Check this once the base commit question below is answered, with
+     `git status --porcelain -- <path>` and `git diff --quiet <base> -- <path>`; any output from
+     the first or a non-zero exit from the second means the document differs.
+   - Ignored: Step 3 edits it where it is. It is not code, so Hard rule 2 is not broken. The final
+     report says it could not be committed.
+
+Then ask for the base commit, before Step 1 creates anything. Use one `AskUserQuestion` call with
+the recommended option first: usually the current head of the branch the analysis was written on,
+not the default branch, when that branch has changed the code the plan covers. Step 1 creates the
+worktree at this commit. Record `git log --oneline <analysis-commit>..<base>` and
+`git diff --stat <analysis-commit>..<base>` for the code folders the plan covers.
+
+If the user's message already answers a question (the base commit, the ticket, a decision in the
+plan, how far to go), do not ask it again; state the answer used. This holds for the question here
+and for the questions in Step 2b.
 
 ## Step 1 — Worktree and baseline
 
-1. Create the worktree **detached at the current head** so every agent reads one fixed commit
-   while other sessions keep committing:
-   `git worktree add --detach "<repo>.worktrees/dead-code-removal" HEAD`.
-   Name the branch later, once the user has given the ticket and the base (Step 2).
-2. Install dependencies in the worktree with the project's own command.
-3. Run every gate the project defines (format check, lint, typecheck, build, tests) in the worktree
+1. Create the worktree **detached at the base commit** from Step 0 so every agent reads one fixed
+   commit while other sessions keep committing:
+   `git worktree add --detach "../<repo>.worktrees/dead-code-removal-<YYYY-MM-DD>" <base>`, run
+   from the repository root. The folder sits beside the repository, not inside it. If that path
+   already exists (an earlier run's worktree is left in place), add a suffix such as `-2`.
+   Name the branch later, once the user has given the ticket (Step 2b).
+2. Copy into the worktree, at the same path, every document Step 0, item 3 found untracked or
+   different from `<base>`: the user's version, from the user's checkout.
+3. Install dependencies in the worktree with the project's own command.
+4. Run every gate the project defines (format check, lint, typecheck, build, tests) in the worktree
    and save each exit code and log. These are the baseline. From now on, a gate result counts
    only against the baseline: a failure that was already there is reported as pre-existing, never
    blamed on a deletion, and never silently fixed.
@@ -115,10 +138,12 @@ Run the install and the gates in the background, and start Step 2 at the same ti
 
 ### 2a. Launch the re-check agents
 
-Split the plan by area: one agent per plan step or per package group, 3 to 6 agents. Every file
-belongs to exactly one agent, so two agents never judge the same file differently. Add one extra
-agent for runtime-gated suspects, the do-not-delete list and the defect list, if the plan has them;
-their claims drift too.
+Split the plan by area: one agent per plan step or per package group, 3 to 6 agents.
+Every file belongs to exactly one area agent and every item to exactly one agent, so
+two agents never judge the same item differently. Add one extra agent for runtime-gated
+suspects, the do-not-delete list and the defect list, if the plan has them; their
+claims drift too. Those items belong to the extra agent only: the area agents skip
+them, even when they sit in files an area agent owns.
 
 Every agent gets the brief in `references/recheck-brief.md`, filled in, plus the false-positive
 checklist in `references/false-positives.md`. Each agent re-proves each claim with a search over
@@ -136,16 +161,15 @@ Each agent also reports three things the original plan usually misses:
 - **Cascade items:** code that becomes dead only because this step deletes something else.
 - **Test files and documents** that exist only for, or only mention, the deleted code.
 - **Test-only items:** code whose only references are tests. Keep them as a separate list; the
-  user decides whether a test alone keeps code alive.
+  user decides in Step 4 whether a test alone keeps code alive.
 
 ### 2b. Ask the user while the agents run
 
 Put every question that blocks code changes into one `AskUserQuestion` call, each with a
-recommended option first:
+recommended option first. Leave out a question the user's message already answers (see the end of
+Step 0):
 
 - the ticket ID for the branch name, if the repository's rules need one;
-- the base commit: usually the current head of the branch the analysis was written on, not the
-  default branch, when that branch has changed the code the plan covers;
 - each open question and each "decide before deleting" item in the plan;
 - how far to go in this session (usually: the static-proof steps only);
 - whether dead code that the plan does not list is in scope. A good default: delete it in the
@@ -153,27 +177,32 @@ recommended option first:
   every server API entry point (routes, RPC procedures) even when no client calls it, and list
   those in the final report;
 - if the project's lint sorts imports or members by line length: approval in advance for the
-  import-order auto-fix in Step 5, item 4.
+  import-order auto-fix in Step 5, item 5.
 
 Name the worktree branch from the answers (`git switch -c <name>` inside the worktree).
 
 ### 2c. Keep the agents visible
 
 These rules apply to every agent this skill starts: the re-check agents here, the Step 3 agent,
-and any agent that runs a Step 5 deletion step.
+and any agent that runs a Step 5 deletion step. Start every agent as the general-purpose type,
+because it can write its report file and can be resumed with SendMessage. The built-in Explore
+agent cannot: Write is denied to it, and it returns no agent ID to resume.
 
 Every agent prompt states its step count and requires one `Step N/M:` line after each step, a line
 at least every 3 minutes during a long step, and an immediate return with what it has if a tool
-call is denied or a fact contradicts the brief. It also states three rules that the harness makes
-necessary:
+call is denied or a fact contradicts the brief. It also states three rules about how agents run
+in Claude Code:
 
-- The agent sends every status line with the messaging tool. Its plain text output does not reach
-  the coordinator.
+- The agent sends every status line with the messaging tool (SendMessage). Only its final
+  result reaches the coordinator; its other plain text output does not.
 - The agent never ends its turn to wait for a background command. It checks the command's log
-  file on a timer instead.
-- An agent does not read incoming messages while its turn is running. So an agent that needs a
-  decision sends the question and then ends its turn; the answer starts it again. An agent that
-  keeps working after it asks runs the gates on the wrong state.
+  file on a timer instead. Ending the turn sends the agent's final result to the coordinator
+  before its work is done, and for a foreground agent it also stops the command.
+- An agent reads incoming messages only between tool calls, so an answer can arrive while it has
+  already moved on. So an agent that needs a decision first finishes waiting for any background
+  command it started, checking its log on a timer, then sends the question and ends its turn;
+  the answer resumes it. An agent that keeps working after it asks runs the gates on the wrong
+  state.
 
 Check on running agents on a timer; an agent that has said nothing is not evidence that nothing
 happened. When an agent finishes, give the user its counts and every INVALID and GONE item in a
@@ -181,7 +210,8 @@ few lines.
 
 ## Step 3 — Write the verdicts into the documents
 
-Delegate this to one agent, working in the worktree, with the agents' report files as its input:
+Delegate this to one agent, working in the worktree, with the agents' report files as its input
+(a document git ignores is edited where it is; see Step 0, item 3):
 
 1. Add a new file next to the analysis, `NN-recheck-<YYYY-MM-DD>.md`: the commit range, the method,
    the counts per area, every INVALID, CHANGED and GONE item with its evidence, the cascade items,
@@ -189,7 +219,8 @@ Delegate this to one agent, working in the worktree, with the agents' report fil
 2. Edit the plan: a status line with the re-check date and commit; every line number corrected;
    every INVALID item removed or rewritten; cascade items, test files and documents added to the
    step they belong to, each marked as added by the re-check; the user's answers recorded against
-   the open questions.
+   the open questions. Keep the plan's step numbers: a step the re-check leaves with no items stays
+   in the plan, marked empty, and is not removed or renumbered.
 3. Add one paragraph and one table row to the analysis index, if it has one. Do not rewrite the
    original findings. The original evidence stays as it was; the corrections live in the new file
    and the plan.
@@ -200,12 +231,21 @@ Present the checked deletion steps (use plan mode if the harness has it):
 
 - per step: what is deleted, which barrels, tests and documents change with it, and its gates;
 - the items removed from the plan by the re-check, and why;
+- the test-only items, for the user's decision: delete each one with its tests, or keep it. An
+  item the user does not approve stays in place and is listed under Skipped as "test-only and not
+  approved";
 - the defects found, each marked "needs its own ticket, not deleted", and the follow-ups (state
   written but never read, Hard rule 5);
-- the pre-existing gate failures from the baseline.
+- the pre-existing gate failures from the baseline;
+- the proposed commit for the Step 3 documents (the new re-check file, the plan, the analysis
+  index, and every document Step 1, item 2 copied in; not the documents git ignores): the
+  staged file list and the commit message.
 
-If one step holds more than about 50 items, propose splitting it. Wait for approval. This is the
-first of the two places where the skill stops for the user.
+If one step holds more than about 50 items, propose splitting it. Wait for approval. Make the
+documents commit, once approved, as the first commit of the branch and before Step 5, so that a
+revert in Step 5 cannot discard the Step 3 edits. The skill stops for the user at four points: the
+base-commit question in Step 0, the questions in Step 2b, this approval, and each commit in Step 5
+unless the user approved commits in advance.
 
 ## Step 5 — Delete, one step at a time
 
@@ -238,7 +278,12 @@ For each step:
    marked "added during execution", within the scope the user set in Step 2b. Code that was dead
    before this step and that this step's deletions did not affect is not part of it: list it for
    a later pass, so that each step's diff stays reviewable.
-4. Run the formatter, then every gate, in the project's order. Compare each result to the baseline.
+4. If the step changed a dependency list, refresh the lockfile, reinstall dependencies in the
+   worktree with the project's own command, and include the lockfile in the step.
+5. Run the formatter, then every gate, in the project's order. Compare each result to the baseline.
+   - **Format only the step's files.** Pass the step's paths to the formatter where it accepts
+     them. If it only runs on the whole repository, restore every file outside the step that it
+     changed (`git checkout -- <path>`).
    - **Clean before you build.** Run each package's clean script first. A build that does not
      clean its output folder leaves the deleted module's old `.js` and `.d.ts` files in place, so
      the build still passes for code that imports them, and a "not in the output folder" check
@@ -250,17 +295,20 @@ For each step:
      when a deletion shortens them. If the user approved it in Step 2b, run the lint auto-fix for
      that rule, only in files the step already edits, and check that it changed only the order
      of lines. Any other lint failure is a real failure.
-5. If a gate has a new failure: revert the step (`git checkout -- .` and `git clean` for that
-   step's files only), record the item and the failure, and continue with the next step. Do not
-   fix forward.
-6. If the step changed a dependency list, refresh the lockfile and include it in the step.
+6. If a gate has a new failure: revert the step with `git checkout -- <path>` for each path the
+   step changed and `git clean -f -- <path>` for each path the step created (and reinstall if
+   item 4 refreshed the lockfile), record the item and the failure, skip the step, and continue
+   with the next step. The item appears under Skipped. Do not fix forward. A later step that
+   depends on the reverted one (for example the barrel clean-ups for a reverted whole-file
+   delete) is skipped too, with the reverted step named as the reason.
 7. Add the changelog entry if the repository's rules require one. If the step removes a
    configuration validation rule (for example a check that compares two config fields) together
    with the config it checks, start-up behaviour can change: a configuration that used to fail
    at start-up may now start. Name that in the changelog entry and in the final report.
 8. Show the step's staged file list, the removed test files by name, and the proposed commit
    message. Commit only when the user approves. If the user has approved commits for all steps in
-   advance, commit and go on.
+   advance, commit and go on. Do not start the next step while the current step's commit waits
+   for approval; if the user wants to look before committing, stop after that step and report.
 
 ## Step 6 — Final check and report
 
@@ -278,8 +326,8 @@ Then end with one message that contains:
 
 | Section | Content |
 |---|---|
-| Removed | Per step: files and symbols deleted (items added during execution marked as such), test files deleted, documents edited, commit hash or "not committed". |
-| Skipped | Every item not deleted, with the reason: INVALID, reverted after a gate failure, test-only and not approved, runtime evidence needed, server API entry point kept, dead before the step and left for a later pass. |
+| Removed | Per step: files and symbols deleted (items added during execution marked as such), test files deleted, documents edited, commit hash or "not committed". Also the Step 3 documents commit, and every ignored document edited in place and not committed. |
+| Skipped | Every item not deleted, with the reason: INVALID, reverted after a gate failure, depends on a reverted step, test-only and not approved, runtime evidence needed, server API entry point kept, dead before the step and left for a later pass. |
 | Behaviour | Every change that is not a pure deletion, such as a removed configuration validation rule that changes start-up behaviour. |
 | Gates | Every gate per step and the final check, with pre-existing failures named as such, and every hit from the name search with its classification. |
 | Defects | Every defect and follow-up found, with file and line. None of these was deleted. |
