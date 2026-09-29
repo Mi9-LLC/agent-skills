@@ -38,7 +38,8 @@ At least 4 of the INVALID items sat in files that no commit had touched since th
 3. **No commit and no push without the user's approval.** Propose the commit message, list the
    staged files, and wait. Stage only the files of the current step, each by its explicit path;
    never `git add -A` or `git add .`, because the worktree can hold files that are not part of
-   the step.
+   the step. Never run those two commands in any form, a dry run (`-n`) included; list changes
+   with `git status --short`.
 4. **Delete on static proof only.** An item whose deadness depends on configuration, deploy
    settings or traffic stays in place, whatever the analysis recommends. Deciding those needs
    runtime evidence, which this skill does not collect.
@@ -105,14 +106,24 @@ worktree at this commit. Record `git log --oneline <analysis-commit>..<base>` an
 
 If the user's message already answers a question (the base commit, the ticket, a decision in the
 plan, how far to go), do not ask it again; state the answer used. This holds for the question here
-and for the questions in Step 2b.
+and for the questions in Step 2b, never for the Step 4 approval. Only the user's own words answer
+the base-commit question. The repository's state (a single branch, the current HEAD, the branch
+the analysis was written on) never does.
+
+If `AskUserQuestion` is not available (for example under `claude -p`) or is denied, ask the
+question in the reply and stop there. Never pick the recommended option silently. This holds for
+every question the skill asks: here, in Step 2b, in Step 4 and for each commit in Step 5. Here in
+Step 0, stopping means making no worktree, no install, no gate run and no agent before the answer
+arrives.
 
 ## Step 1 — Worktree and baseline
 
 1. Create the worktree **detached at the base commit** from Step 0 so every agent reads one fixed
    commit while other sessions keep committing:
    `git worktree add --detach "../<repo>.worktrees/dead-code-removal-<YYYY-MM-DD>" <base>`, run
-   from the repository root. The folder sits beside the repository, not inside it. If that path
+   from the repository root. The folder sits beside the repository, not inside it. Use this
+   `git worktree add` command, not the harness's own worktree tool (in Claude Code,
+   `EnterWorktree`), because that tool puts the worktree inside the repository. If that path
    already exists (an earlier run's worktree is left in place), add a suffix such as `-2`.
    Name the branch later, once the user has given the ticket (Step 2b).
 2. Copy into the worktree, at the same path, every document Step 0, item 3 found untracked or
@@ -166,8 +177,8 @@ Each agent also reports three things the original plan usually misses:
 ### 2b. Ask the user while the agents run
 
 Put every question that blocks code changes into one `AskUserQuestion` call, each with a
-recommended option first. Leave out a question the user's message already answers (see the end of
-Step 0):
+recommended option first. Leave out a question the user's message already answers, and ask in
+the reply when the tool is missing (see the last two paragraphs of Step 0):
 
 - the ticket ID for the branch name, if the repository's rules need one;
 - each open question and each "decide before deleting" item in the plan;
@@ -211,19 +222,22 @@ few lines.
 ## Step 3 — Write the verdicts into the documents
 
 Delegate this to one agent, working in the worktree, with the agents' report files as its input
-(a document git ignores is edited where it is; see Step 0, item 3):
+(a document git ignores is edited where it is; see Step 0, item 3). The agent sees only its
+prompt, not this file, so copy items 1 to 3 below into that prompt word for word:
 
 1. Add a new file next to the analysis, `NN-recheck-<YYYY-MM-DD>.md`: the commit range, the method,
    the counts per area, every INVALID, CHANGED and GONE item with its evidence, the cascade items,
-   the missed tests and documents, any new defects, and the per-item tables as an appendix.
+   the missed tests and documents, the test-only items in their own list, any new defects, and
+   the per-item tables as an appendix.
 2. Edit the plan: a status line with the re-check date and commit; every line number corrected;
    every INVALID item removed or rewritten; cascade items, test files and documents added to the
-   step they belong to, each marked as added by the re-check; the user's answers recorded against
-   the open questions. Keep the plan's step numbers: a step the re-check leaves with no items stays
+   step they belong to, each marked as added by the re-check; each test-only item marked as
+   waiting for the user's Step 4 decision; the user's answers recorded against the open
+   questions. Keep the plan's step numbers: a step the re-check leaves with no items stays
    in the plan, marked empty, and is not removed or renumbered.
-3. Add one paragraph and one table row to the analysis index, if it has one. Do not rewrite the
-   original findings. The original evidence stays as it was; the corrections live in the new file
-   and the plan.
+3. Add one paragraph and one table row to the analysis index, if it has one. Add nothing to,
+   remove nothing from and change nothing inside the original findings, not even a status line
+   under a heading. The verdicts and corrections go only in the new re-check file and the plan.
 
 ## Step 4 — Show the checked plan and stop
 
@@ -231,9 +245,10 @@ Present the checked deletion steps (use plan mode if the harness has it):
 
 - per step: what is deleted, which barrels, tests and documents change with it, and its gates;
 - the items removed from the plan by the re-check, and why;
-- the test-only items, for the user's decision: delete each one with its tests, or keep it. An
-  item the user does not approve stays in place and is listed under Skipped as "test-only and not
-  approved";
+- the test-only items, for the user's decision: delete each one with its tests, or keep it. Ask
+  about each one as a question that needs an answer, in the one question call or in the reply;
+  showing it only as a table row is not asking. An item the user does not approve stays in place
+  and is listed under Skipped as "test-only and not approved";
 - the defects found, each marked "needs its own ticket, not deleted", and the follow-ups (state
   written but never read, Hard rule 5);
 - the pre-existing gate failures from the baseline;
@@ -241,11 +256,14 @@ Present the checked deletion steps (use plan mode if the harness has it):
   index, and every document Step 1, item 2 copied in; not the documents git ignores): the
   staged file list and the commit message.
 
-If one step holds more than about 50 items, propose splitting it. Wait for approval. Make the
+If one step holds more than about 50 items, propose splitting it. Wait for approval. The user's
+first message cannot give it, because the checked plan did not exist when that message was
+written. So stop here whatever that message asks for ("and then execute Step 1" included), and go
+on only when the user approves the checked plan after seeing it. Make the
 documents commit, once approved, as the first commit of the branch and before Step 5, so that a
-revert in Step 5 cannot discard the Step 3 edits. The skill stops for the user at four points: the
-base-commit question in Step 0, the questions in Step 2b, this approval, and each commit in Step 5
-unless the user approved commits in advance.
+revert in Step 5 cannot discard the Step 3 edits; pass its message as Step 5, item 8 says. The
+skill stops for the user at four points: the base-commit question in Step 0, the questions in
+Step 2b, this approval, and each commit in Step 5 unless the user approved commits in advance.
 
 ## Step 5 — Delete, one step at a time
 
@@ -295,18 +313,22 @@ For each step:
      when a deletion shortens them. If the user approved it in Step 2b, run the lint auto-fix for
      that rule, only in files the step already edits, and check that it changed only the order
      of lines. Any other lint failure is a real failure.
-6. If a gate has a new failure: revert the step with `git checkout -- <path>` for each path the
-   step changed and `git clean -f -- <path>` for each path the step created (and reinstall if
-   item 4 refreshed the lockfile), record the item and the failure, skip the step, and continue
-   with the next step. The item appears under Skipped. Do not fix forward. A later step that
-   depends on the reverted one (for example the barrel clean-ups for a reverted whole-file
-   delete) is skipped too, with the reverted step named as the reason.
+6. If a gate has a new failure: revert the step with
+   `git restore --source=HEAD --staged --worktree -- <path>` for each path the step changed,
+   deleted, or created and staged, and `git clean -f -- <path>` for each new file the
+   step never staged (and reinstall if item 4 refreshed the lockfile), record the item
+   and the failure, skip the step, and continue with the next step. The item appears
+   under Skipped. Do not fix forward. A later step that depends on the reverted one
+   (for example the barrel clean-ups for a reverted whole-file delete) is skipped too,
+   with the reverted step named as the reason.
 7. Add the changelog entry if the repository's rules require one. If the step removes a
    configuration validation rule (for example a check that compares two config fields) together
    with the config it checks, start-up behaviour can change: a configuration that used to fail
    at start-up may now start. Name that in the changelog entry and in the final report.
 8. Show the step's staged file list, the removed test files by name, and the proposed commit
-   message. Commit only when the user approves. If the user has approved commits for all steps in
+   message. Commit only when the user approves. In a POSIX shell, pass a multi-line commit
+   message with `git commit -F -` and a quoted heredoc (`<<'EOF'`); use PowerShell here-string
+   syntax (`@'...'@`) only in PowerShell. If the user has approved commits for all steps in
    advance, commit and go on. Do not start the next step while the current step's commit waits
    for approval; if the user wants to look before committing, stop after that step and report.
 
