@@ -223,7 +223,9 @@ few lines.
 
 Delegate this to one agent, working in the worktree, with the agents' report files as its input
 (a document git ignores is edited where it is; see Step 0, item 3). The agent sees only its
-prompt, not this file, so copy items 1 to 3 below into that prompt word for word:
+prompt, not this file, so copy items 1 to 3 below into that prompt word for word. Copy this rule
+into it too: the agent writes files only, and runs no git command that changes the index, the
+branch or the working tree; the lead does all staging and committing.
 
 1. Add a new file next to the analysis, `NN-recheck-<YYYY-MM-DD>.md`: the commit range, the method,
    the counts per area, every INVALID, CHANGED and GONE item with its evidence, the cascade items,
@@ -334,6 +336,9 @@ For each step:
 
 ## Step 6 — Final check and report
 
+Run this step whenever the session's work ends: when every step is done, when the scope the user
+set in Step 2b is done, and when every remaining step is blocked.
+
 Before the report, run one check over the whole result:
 
 1. Clean every package, then build and test with the task runner's cache turned off (for example
@@ -349,11 +354,14 @@ Then end with one message that contains:
 | Section | Content |
 |---|---|
 | Removed | Per step: files and symbols deleted (items added during execution marked as such), test files deleted, documents edited, commit hash or "not committed". Also the Step 3 documents commit, and every ignored document edited in place and not committed. |
-| Skipped | Every item not deleted, with the reason: INVALID, reverted after a gate failure, depends on a reverted step, test-only and not approved, runtime evidence needed, server API entry point kept, dead before the step and left for a later pass. |
+| Skipped | Every item not deleted, with the reason: INVALID, reverted after a gate failure, depends on a reverted step, test-only and not approved, runtime evidence needed, server API entry point kept, dead before the step and left for a later pass. Each INVALID item gives the file and line that uses it. Each item reverted after a gate failure names the failing test or gate. |
 | Behaviour | Every change that is not a pure deletion, such as a removed configuration validation rule that changes start-up behaviour. |
 | Gates | Every gate per step and the final check, with pre-existing failures named as such, and every hit from the name search with its classification. |
 | Defects | Every defect and follow-up found, with file and line. None of these was deleted. |
 | Left | The plan steps not done in this run, and what each one needs. |
+
+An open question for the user goes under Left, together with what it blocks. It never replaces
+the report.
 
 Leave the worktree in place. Removing it is the user's decision once the branch is merged.
 
