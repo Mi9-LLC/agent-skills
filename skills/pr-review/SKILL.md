@@ -40,7 +40,9 @@ These three are the ones that have been broken before, so they come first.
    in the repository is created, modified or deleted, including reports for other pull requests.
 3. **The posted comment carries no snippet links, no download links and no external URLs of any
    kind.** Not a Bitbucket link, not a commit link, not a link to the report. It is self-contained
-   plain text and tables. The comment may name the report's path as plain text.
+   plain text and tables. The comment may name the report's path as plain text. A bare commit hash
+   or `PR #N` that Bitbucket itself shows as a link is not a link in the comment and does not break
+   this rule; Step 8 has the detail.
 
 Never put an API key, token, password or connection string into the report or the comment.
 
@@ -58,6 +60,8 @@ Step 5 launches, so Hard rules 1 and 2 remain workflow discipline as well.
   tools spends its budget before it reads anything.
 - Call a tool only when it is required. Every call needs a clear purpose.
 - Write a todo list before starting.
+- A subagent whose result may be long writes it to a file and replies with only the path. Step 5
+  says which subagents and why.
 
 ## What is in this skill
 
@@ -125,16 +129,50 @@ before pinning a checkout: the pin is a clone, and a skipped pull request should
 - The pull request is a draft. Step 1 already fetched the draft flag.
 - The change does not need review: an automated pull request, or a change that is trivially and
   obviously correct. This one is your judgement.
-- This procedure has already posted its review. One
+- This procedure has already posted its review at the current head. One
   `BITBUCKET_GET_REPOSITORIES_PULLREQUESTS_COMMENTS` call answers this: look for a top-level comment
   whose first line is exactly `Code review by pr-review`, the marker Step 8 puts on every comment it
   posts. Nothing else counts. A review comment from anyone else, including an AI review the author
   posted under their own account, is not a skip condition: it was not produced by this procedure, and
   its statements are claims for Step 6 like any other. Two pull requests checked on 2026-09-16 each
   carried such an author-posted review, one in this procedure's old shape and one in another; the
-  marker is what makes the check the same in both cases.
+  marker is what makes the check the same in both cases. If there is more than one marker comment,
+  use the newest.
 
-If any condition is true, stop and do not go on. Say which condition stopped you.
+  Then compare the head that marker comment names with the source commit Step 1 fetched. The head is
+  on the line that starts `Reviewed at head`, which Step 8 writes as the comment's second line,
+  `Reviewed at head <hash>.`. An older comment may have that line further down, with backticks
+  around the hash; ignore the backticks. One of the two hashes may be abbreviated:
+  Bitbucket gives the source commit as 12 characters. They match when the shorter one is the start of
+  the longer one.
+
+  - **The same head.** The condition holds. Stop.
+  - **A different head, or no head line.** A comment posted before Step 8 required the head line has
+    none. The condition does not hold on its own, because the pull request has changed since it was
+    reviewed, or nobody can tell whether it has. Ask the user once with `AskUserQuestion`, with three
+    options:
+
+    1. A full re-review at the current head. This is the recommended default.
+    2. A review of only the new commits, from the earlier head to the current head. Do not offer it
+       when the comment has no head line, because there is then no earlier head to start from. Step 3
+       still pins the current head and cross-checks the whole diffstat. Steps 5 and 6 then work from
+       `git diff <earlier head>..<head>` in the pinned checkout, and the report and the comment say
+       that only that range was reviewed. If `git merge-base --is-ancestor <earlier head> <head>`
+       fails in the pinned checkout, a rebase or a force push removed the earlier head and the range
+       does not exist: say so and ask again with options 1 and 3 only.
+    3. Stop.
+
+    A declined or unanswered question means stop. **When `AskUserQuestion` is not available, stop.**
+    This is the same rule as Step 8: silence is not consent, and a re-review ends in a second comment
+    on the pull request.
+
+    On 2026-10-01 pull request #31 in mi9retail/nexus-transformation-service carried a marker
+    comment posted on 2026-09-23 at head `ac953395e94b`, when the pull request had 60 files. The head
+    was now `2dbb1401e4fb`: 100 commits had been added and the pull request had 354 files. Stopping
+    would have left a review of 60 files standing for 354. The user chose a full re-review.
+
+If any condition is true, stop and do not go on. Say which condition stopped you. The one exception
+is a marker comment at a different head, or with no head line: there the user's answer decides.
 
 A pull request written by Claude still gets reviewed. Being AI-generated is not a skip condition.
 
@@ -201,6 +239,14 @@ in `libs/core/`. The root `CLAUDE.md` and the files in `.claude/rules/` apply to
 Give every agent in this step the pull request title and description, so it knows what the author
 intended, and the path of the pinned checkout from Step 3. Read `references/severity-rubric.md`
 first; its "what to flag" and "what not to flag" lists go into the prompt of every agent here.
+
+Every subagent whose result may be long writes that result to a file. That is the four agents in
+5a, every validation subagent in 5b, and any agent you launch in Step 6. Put this in each one's
+initial brief: write the full result to `<scratchpad>/pr-<number>-agents/<agent name>.md`, then
+reply with only that path and a one-line summary. Then read the file, not the reply. A long result
+is truncated in the completion notification, and a message sent to a running agent reaches it only
+after its current tool call finishes, so the rule has to be in the first brief. On 2026-10-01 this
+cut off 4 results in one run, and asking an agent to resend in chat was cut off again.
 
 ### 5a. Four agents in parallel
 
@@ -306,6 +352,12 @@ finds most of what matters. Do not drop this step and do not merge it into Step 
 
    Name in the report the exact commands you ran, not the category. A gate that cannot run is
    reported as not run, with the reason, rather than left looking like it passed.
+6. **On a re-review, settle the status of each earlier finding.** This applies when Step 2 found a
+   marker comment at a different head and the user chose a re-review. Take the earlier findings
+   from that comment and, if it exists, from the earlier report at the path Step 7 writes, before
+   Step 7 writes over it. Check each one against the pinned head and record its status: fixed, not
+   fixed, or cannot be fixed, with the evidence, as for any other claim. The report and Step 8 both
+   need this list.
 
 Merge the findings from this step with the validated findings from Step 5 into one list. Label each
 finding with the stage that produced it, "diff pass" or "verification pass", so a reader can tell
@@ -331,7 +383,8 @@ Where the report goes depends on whether the pull request is in the repository y
   file dropped into an unrelated one.
 
 Say the report's path in your terminal reply either way. Do not modify any other file, and do not
-modify an existing report for a different pull request.
+modify an existing report for a different pull request. On a re-review, the new report replaces the
+earlier report for the same pull request at that path.
 
 This file is the primary output of the review. It has to be complete enough that a separate
 remediation agent can implement every fix without re-reading the codebase or the diff.
@@ -349,9 +402,17 @@ fixing the gaps hides whether the pass ran at all.
 
 1. **If `--no-comment` was given, stop after Step 7.** Post nothing, and ask no question.
 2. **Build the comment.** One top-level comment whose first line is exactly
-   `Code review by pr-review`, on a line of its own. Step 2 of a later run looks for that line, so
-   it is what stops this procedure posting twice on one pull request. Then:
+   `Code review by pr-review`, on a line of its own, and whose second line is exactly
+   `Reviewed at head <hash>.`, where `<hash>` is the full 40-character `HEAD=` hash from Step 3. Step
+   2 of a later run reads both lines: the first finds this procedure's comment, and the second tells
+   it whether the pull request has moved since. Together they stop this procedure posting twice on
+   one pull request at one head. Then:
 
+   - On a re-review, say so directly after the head line: that this is a re-review at a new head,
+     the date and head of the review it replaces, and why it replaces it, for example "100 commits
+     were added since and the pull request grew from 60 to 354 files". On a review of only the new
+     commits, also name the range that was reviewed. Then the status of each finding of the earlier
+     review, from Step 6: fixed, not fixed, or cannot be fixed.
    - The pull request overview: what it does, its size, the number of files changed.
    - The findings-count table by severity.
    - Every CRITICAL issue, with file, line and a one-line description.
@@ -362,8 +423,19 @@ fixing the gaps hides whether the pass ran at all.
    **No snippet links. No download links. No external URLs of any kind.** The comment is
    self-contained. It may name the report's path as plain text, not as a link.
 
-   If no issues were found, the comment reads, after the marker line: "No issues found. Checked for
-   bugs, CLAUDE.md compliance, and the claims made in the commit messages and description."
+   Two rules for how Bitbucket renders the comment:
+
+   - Put a blank line before every list. A list placed directly under a line of text, a bold heading
+     line for example, renders as one run-on paragraph. That happened to 4 lists in the comment on
+     pull request #31 on 2026-10-01, and they were fixed afterwards by editing the comment.
+   - Bitbucket turns bare commit hashes and text such as `PR #8` into links when it renders the
+     comment. That is its own rendering, not a URL in the comment, so it does not break Hard rule 3.
+     Do not wrap hashes in backticks to stop it. The user decided this on 2026-09-16; on 2026-10-01 a
+     run misread the rendered links as a breach and nearly wrapped the hashes in backticks.
+
+   If no issues were found, the comment reads, after the marker line, the head line and any
+   re-review lines: "No issues found. Checked for bugs, CLAUDE.md compliance, and the claims made in
+   the commit messages and description."
 
    Where a bug is found, describe the exact fix in the comment. Do not push code.
 3. **Show the user the comment's exact full text, then ask once with `AskUserQuestion` whether to

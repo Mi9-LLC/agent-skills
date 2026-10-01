@@ -368,6 +368,11 @@ Add these only when the pull request calls for them, and number them in sequence
 - **One thing outside the diff, found while writing this report.** Use it for a real problem found
   during the review that this pull request did not cause. Say plainly that it is not a finding
   against this change, so nobody reads it as one.
+- **The earlier review, and the status of its findings.** Required on a re-review, when Step 2 found
+  this procedure's comment at an older head. Name the review this one replaces by its date and head
+  hash, and say why it is replaced. Then a table with one row per finding of the earlier review: its
+  number and title, its status at this head (fixed, not fixed, or cannot be fixed), and the evidence
+  for that status, quoted as for any finding.
 
 ## 10. What looks good
 
@@ -433,6 +438,8 @@ acting on it for the first time rather than from memory, and check:
 - Deferred items carry their reason.
 - Line numbers match the pinned head commit, not the shared working directory.
 - Any finding that changed during the review is recorded in both places.
+- On a re-review, the earlier review is named by date and head, and every one of its findings has a
+  status with evidence.
 
 Then say in the terminal reply what the self-review found. Silently fixing the gaps and re-declaring
 the report done hides whether the pass ran at all.
