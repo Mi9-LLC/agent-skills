@@ -14,7 +14,7 @@ description: >-
   known failing symptom (systematic-debugging), or for reviewing code with no
   claim of completeness attached.
 allowed-tools: Read, Edit, Write, Bash, Grep, Glob
-model: claude-opus-5
+model: opus
 ---
 
 # verify-implementation
@@ -23,7 +23,7 @@ The gate between "the work is claimed done" and "the work is done". Take one
 finished implementation plus whatever asserts it is complete, verify that
 claim against the code itself, and fix what the verification finds.
 
-This skill pins `model: claude-opus-5` deliberately: a weaker review returns
+This skill pins `model: opus` (the latest Opus) deliberately: a weaker review returns
 `CLEAN` on broken work, and `CLEAN` is acted on. The failure mode of this
 skill is false assurance, so it does not run on a smaller model.
 

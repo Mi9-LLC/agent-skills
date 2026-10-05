@@ -13,7 +13,7 @@ description: >-
   scratch (write the analysis first, or run the health skill's dead-code gate); to delete one file
   or symbol the user names; for static-analyser smells (sonar-issue-fix); or for code only runtime
   evidence could prove unused.
-model: claude-opus-5
+model: opus
 ---
 
 # Re-checking a dead-code analysis and removing what it proves

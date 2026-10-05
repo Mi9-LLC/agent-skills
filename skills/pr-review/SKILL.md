@@ -12,7 +12,7 @@ description: >-
   use it for a GitHub pull request, which needs gh or a general code-review skill; for reviewing
   uncommitted or local changes with no pull request behind them; or for a code review of a branch or
   a diff that was never opened as a pull request.
-model: claude-opus-5
+model: opus
 disallowed-tools: Edit, NotebookEdit
 ---
 

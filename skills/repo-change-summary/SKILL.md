@@ -13,7 +13,6 @@ description: >-
   or HTML change summary, a per-month change summary for a repo, or a summary report for a repo
   group ('summary report for STF') — even if they don't say 'skill'.
 allowed-tools: Bash
-model: claude-sonnet-5
 ---
 
 # repo-change-summary
