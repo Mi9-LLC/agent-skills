@@ -1,0 +1,15 @@
+P1	pos	My C drive is almost full. What can I delete?
+P2	pos	free up some disk space on this machine
+P3	pos	what is taking all the space on my disk?
+P4	pos	here is du -sh output from my user folder, what is safe to remove?\n54G\tCrossDevice\n53G\tAppData/Local/Docker\n15G\tAppData/Local/Google\n7.9G\tAppData/Local/pnpm
+P5	pos	Cursor is uninstalled but its folders are still in my user profile. Can those go?
+P6	pos	I ran the disk cleanup commands from yesterday, check again how much space is free now and what is still big
+P7	pos	delete the temp files on my C drive, they are taking too much space
+N1	neg	we're done here, clean up the branches and the scratch files
+N2	neg	delete the temp files this task created under .scratch
+N3	neg	how big is the src folder in this repo?
+N4	neg	remove the dead code in src/legacy
+N5	neg	rm -rf node_modules and reinstall the dependencies
+N6	neg	run npm cache clean --force
+N7	neg	my Ubuntu server's disk is full, what can I delete under /var?
+N8	neg	why is the dist bundle of this Vite app so big?

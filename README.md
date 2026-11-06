@@ -70,6 +70,7 @@ Install either skill this way **instead of** `npx skills add`, not as well: both
 | [`delegation-prompt`](#delegation-prompt) | Writes a paste-ready prompt that briefs a different session, agent, or teammate to do a follow-up job on work this session just finished (review the PR, test it under load, port the fix to a sibling repo). Picks a mode first: **checking** withholds this session's conclusions so the reviewer verifies instead of agreeing; **extending** hands over everything already settled. Every fact traced to its source or marked unknown; environment traps and ground rules always included; never a secret. Produces no files. |
 | [`session-cleanup`](#session-cleanup) | Deletes the branches, plan documents, spec artifacts, scratch files, and background processes a finished session created, and nothing else. Two questions decide every deletion: is it mine, and is it recoverable. Content beats ancestry after a squash merge (`git branch -d` refuses a branch whose work already shipped); a commit on no remote branch is treated as load-bearing; anything this session did not create is reported, not removed. Behavioral only. |
 | [`dead-code-removal`](#dead-code-removal) | Re-checks a dated dead-code analysis and its removal plan against the code as it stands today with parallel read-only agents, writes fresh VALID / CHANGED / INVALID / GONE verdicts into the plan and a new re-check file, shows the checked plan for approval, then deletes what is still statically proven dead, one plan step per commit, in a dedicated git worktree, with the project's own gates run after every step and no commit without approval. |
+| [`windows-disk-cleanup`](#windows-disk-cleanup) | Finds what fills a Windows disk with a read-only PowerShell script that reports both the size files claim and the space they really take, sorts every large item into safe to delete / caches / shrink / your call / do not delete, and gives the commands; never deletes anything itself. Checks each claim first (program really uninstalled, Temp named by full path, unreadable folders reported as not checked), and re-measures after you run the commands. |
 
 ## Recommended workflow — from idea to verified code
 
@@ -1284,6 +1285,55 @@ npx skills add https://github.com/Mi9-LLC/agent-skills --skill dead-code-removal
 ```
 
 **Full definition:** [`skills/dead-code-removal/SKILL.md`](skills/dead-code-removal/SKILL.md) (plus the re-check agent brief and the false-positive checklist under `references/`).
+
+---
+
+## `windows-disk-cleanup`
+
+**What it does.** Finds what fills a Windows machine's disk, says what can be removed without harm and how, and checks the result after you run the commands. A bundled read-only PowerShell script (`scripts/Measure-DiskUsage.ps1`) measures the drive's free space, the `TEMP` and `TMP` variables, the largest folders in the user profile and `AppData` with both their reported size and the space they really take on disk, a list of known locations (package caches, crash dumps, Windows Setup logs, AI model folders, placeholder folders), large folders whose name matches no installed program, Docker and WSL virtual disks, and repeating Temp growth such as Visual Studio Installer copies. The skill then sorts every large item into five groups — safe to delete, caches, shrink (do not delete), your call, do not delete — and gives one command per item. It checks each claim before making it: a program is confirmed as uninstalled before its folder is called a leftover; the Temp folder is named by full path, because the user's `TEMP` variable can point to another folder; a folder this shell cannot read is reported as not checked, not as empty; a database server or Docker volume is looked inside before its removal is suggested. A second script (`scripts/Clear-DiskSpace.ps1`) deletes the safe groups in one run, with `-DryRun`, and restarts itself elevated for the two Windows folders. After you run the commands, the skill measures again and explains every item that did not change.
+
+**Requirements.** Windows with Windows PowerShell 5.1 or PowerShell 7. Admin rights only for the Windows folders (`LiveKernelReports`, `Panther\monitor`) and for the Docker disk shrink; everything else runs as the normal user.
+
+**How to run.** Auto-triggers on a request to free disk space or to check what can be removed, or on pasted `du`, TreeSize or WinDirStat output with that question. Or run `/windows-disk-cleanup`. Declares no `allowed-tools`: the rule that the agent never deletes is workflow discipline, not a tool restriction.
+
+**Use it for.** A full system drive, or a check every few months of what has grown since the last one.
+
+**Triggers on phrases like.** "free up disk space", "what can I delete from C:", "what is taking all the space", "check what files and folders can be removed", "I ran the commands, check again".
+
+**What it does not do.** Delete anything itself — it measures, explains, and hands over the commands, even when asked to run them. Delete a virtual disk (`.vhdx`), anything under `C:\Windows` other than crash dumps and setup logs, `C:\Windows\Installer`, restore points, or Docker volumes without listing them first. Clean up after a coding session in a repository (branches, scratch files, worktrees) — that is [`session-cleanup`](#session-cleanup). Work on Linux or macOS.
+
+**What it produces.** No files. A report in the chat: the five groups as tables with on-disk sizes, the commands (each marked when it needs an admin shell), what could not be checked and why, and after a re-check a before/after comparison with the reason for anything unchanged. The cleanup script is given by its full path in the installed skill's folder; nothing is copied.
+
+**Example.**
+
+```
+You: check what can be removed from C:
+Claude: Measured. Free: 1,075 GB of 1,661 GB.
+  Safe to delete: AppData\Local\Temp 159.9 GB (Visual Studio Installer
+  copies left by its BackgroundDownload task, and loose .node files).
+  Shrink: the Docker folder 122.5 GB (docker_data.vhdx) — quit Docker
+  Desktop first, then compact it.
+  Caches: pnpm 12.8 GB.
+  Note: your TEMP variable points to C:\Temp, not AppData\Local\Temp —
+  the commands below name the folder by full path.
+You: ran all of it, check again
+Claude: Free: 1,312 GB (+237). Temp 159.9 → 0.1 GB, Docker folder
+  122.5 → 53.9 GB, pnpm 12.8 → 7.9 GB; the other 3.7 GB is the net
+  change of smaller items. CrossDevice shows 54 GB but takes 0.04 GB on disk
+  (phone placeholders) — nothing to free there.
+```
+
+**Pairs with.** [`session-cleanup`](#session-cleanup), which cleans what a coding session left in a repository; this skill cleans the machine.
+
+**Install.**
+
+```
+npx skills add https://github.com/Mi9-LLC/agent-skills --skill windows-disk-cleanup
+```
+
+**Origin.** Written at Mi9 on 2026-11-05 from one real cleanup across two days, including its mistakes: a Temp command written as `$env:TEMP` cleaned `C:\Temp` instead of the 160 GB `AppData\Local\Temp`; a script path given to run before the script was copied there; a Docker disk shrink that could not work while Docker Desktop was running; and a 54 GB folder that turned out to be phone placeholders using 0.04 GB. Each became a rule. Not adapted from an external project. **Trigger sweep on 2026-11-06** (`evals/windows-disk-cleanup/`, 15 prompts, `claude-opus-5-5`, real registration, every run in `dontAsk` mode so no prompt could delete files): 6 of 7 positives loaded the skill and 8 of 8 hard negatives stayed quiet. "Delete the temp files on my C drive" went to this skill and the same words scoped to a repository's `.scratch` folder went to `session-cleanup`. The one miss: "Cursor is uninstalled but its folders are still in my user profile. Can those go?" stayed quiet in 3 of 3 runs, because the description does not name the leftover folders of an uninstalled program, so a request about them that never mentions disk space may not load the skill. **The skill's behavior once loaded has not been measured.**
+
+**Full definition:** [`skills/windows-disk-cleanup/SKILL.md`](skills/windows-disk-cleanup/SKILL.md) (plus the locations and procedures under `references/` and the two scripts under `scripts/`).
 
 ---
 

@@ -1,0 +1,32 @@
+{
+  "skill": "windows-disk-cleanup",
+  "purpose": "Trigger accuracy of the YAML description: does the skill fire on a request to free or inspect disk space on a Windows machine, and stay quiet when session-cleanup, dead-code-removal, a plain command, or a non-Windows machine owns the request.",
+  "method": "Real .claude/skills registration: the user-level copy at ~/.claude/skills/windows-disk-cleanup, checked identical to skills/windows-disk-cleanup with diff -r before the run. One variant only, so nothing is parked. Every other installed user-level skill stays available, so the negatives compete against real neighbours (session-cleanup above all). One fresh claude -p per prompt in a scratch git repository, prompt on stdin, --max-turns 3. Runner: run_trigger_sweep.sh; prompts: trigger-prompts.tsv.",
+  "safety": "Every run uses --permission-mode dontAsk with only Skill, Read, Glob and Grep allowed. Before the sweep, two canary prompts asked for a file write through the Bash tool and through the PowerShell tool; both calls were denied (permission_denials listed Bash and PowerShell) and neither file existed afterwards. bypassPermissions is never used, because the user-level settings default to it and several prompts ask to delete files on the real machine.",
+  "detection": "Session transcript ~/.claude/projects/<slug>/<session-id>.jsonl, any \"skill\":\"windows-disk-cleanup\".",
+  "repo_fixture": {
+    "src/math.js": "one function",
+    "src/legacy/old.js": "target of the dead-code negative",
+    ".scratch/csv-import/vitest.log": "target of the session-cleanup negatives",
+    "package.json": "minimal"
+  },
+  "positives": [
+    { "id": "P1", "query": "My C drive is almost full. What can I delete?" },
+    { "id": "P2", "query": "free up some disk space on this machine" },
+    { "id": "P3", "query": "what is taking all the space on my disk?" },
+    { "id": "P4", "query": "here is du -sh output from my user folder, what is safe to remove? (four du lines follow)", "note": "pasted-output trigger from the description" },
+    { "id": "P5", "query": "Cursor is uninstalled but its folders are still in my user profile. Can those go?", "note": "leftover-folder case the README names" },
+    { "id": "P6", "query": "I ran the disk cleanup commands from yesterday, check again how much space is free now and what is still big", "note": "Step 4 check-again trigger; presupposes an earlier session a fresh claude -p does not have" },
+    { "id": "P7", "query": "delete the temp files on my C drive, they are taking too much space", "note": "overlap: session-cleanup lists \"delete the temp files\" as its own trigger; the machine scope makes it this skill's" }
+  ],
+  "hard_negatives": [
+    { "id": "N1", "query": "we're done here, clean up the branches and the scratch files", "owner": "session-cleanup" },
+    { "id": "N2", "query": "delete the temp files this task created under .scratch", "owner": "session-cleanup", "note": "mirror of P7 with repository scope" },
+    { "id": "N3", "query": "how big is the src folder in this repo?", "owner": "plain question" },
+    { "id": "N4", "query": "remove the dead code in src/legacy", "owner": "plain edit or dead-code-removal" },
+    { "id": "N5", "query": "rm -rf node_modules and reinstall the dependencies", "owner": "plain command" },
+    { "id": "N6", "query": "run npm cache clean --force", "owner": "plain command the user is driving" },
+    { "id": "N7", "query": "my Ubuntu server's disk is full, what can I delete under /var?", "owner": "none: the description excludes Linux" },
+    { "id": "N8", "query": "why is the dist bundle of this Vite app so big?", "owner": "trim-initial-bundle" }
+  ]
+}
