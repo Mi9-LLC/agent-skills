@@ -84,8 +84,8 @@ All of these download again when needed. Clearing them costs download time on th
 | Cache | Command |
 |---|---|
 | NuGet (`~\.nuget\packages`, `%LOCALAPPDATA%\NuGet\v3-cache`) | `dotnet nuget locals all --clear` |
-| pnpm store | `pnpm store prune` removes only packages no project uses. To remove all of it: `Remove-Item -Recurse -Force (pnpm store path)`; existing `node_modules` keep working. `pnpm store` with no second word only prints its usage. |
-| npm | `npm cache clean --force` |
+| pnpm store | `pnpm store prune` removes only packages no project uses, and only in the store of the pnpm version that runs it. Each pnpm major version writes its own subfolder (`v3`, `v10`, `v11`, ...) under `%LOCALAPPDATA%\pnpm\store`, and a project that pins another pnpm version (`packageManager` in `package.json`) fills a different one. Compare `pnpm store path` with the subfolders and measure each before recommending a command: `pnpm store prune` against a subfolder that does not exist frees nothing. A subfolder no pnpm in use writes to any more can be deleted as a folder. To remove all of a store: `Remove-Item -Recurse -Force (pnpm store path)`; existing `node_modules` keep working. `pnpm store` with no second word only prints its usage. |
+| npm | `npm cache clean --force` clears only `_cacache`. Packages that `npx` downloaded (CLIs and MCP servers started with `npx`) are in `%LOCALAPPDATA%\npm-cache\_npx`, which that command does not touch; measure it separately and delete the folder (`npx` downloads again on next use; files of an MCP server that is running are skipped). |
 | Yarn | `yarn cache clean` |
 | pip | `pip cache purge` |
 | Gradle / Maven | delete `~\.gradle\caches` / `~\.m2\repository` |
@@ -161,8 +161,17 @@ Removal: run `<install>\uninstall-postgresql.exe` (or Settings → Apps), then d
 ## Chrome on-device AI model
 
 `%LOCALAPPDATA%\Google\Chrome\User Data\OptGuideOnDeviceModel` (about 4 GB) is Chrome's built-in
-AI model. Deleting it alone does not last: Chrome downloads it again. Turn off the on-device model
-setting in `chrome://flags` first, restart Chrome, then delete the folder.
+AI model. Deleting it alone does not last: Chrome downloads it again. Stop the download first:
+
+- Lasting (admin shell): set the Chrome policy `GenAILocalFoundationalModelSettings` to 1, which
+  stops the download and removes a model already there (Chrome 147 and later):
+  `reg add "HKLM\SOFTWARE\Policies\Google\Chrome" /v GenAILocalFoundationalModelSettings /t REG_DWORD /d 1 /f`.
+  Restart Chrome and check the value on `chrome://policy`.
+- Without admin: set `chrome://flags/#optimization-guide-on-device-model` to Disabled and restart
+  Chrome. A flag can be reset by a Chrome update.
+
+Then delete the folder if it is still there. To check whether a flag is set, read
+`enabled_labs_experiments` in `User Data\Local State`; an empty list means none is.
 
 ## Folders that report more than they use
 

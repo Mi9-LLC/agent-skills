@@ -144,15 +144,15 @@ $known = @(
     @{ Path = "$env:SystemRoot\Panther\monitor"; Cat = 'Safe (admin)'; Note = 'Windows Setup monitor logs (WinSetupMon_*.log)' }
     @{ Path = "$env:USERPROFILE\.nuget\packages"; Cat = 'Cache'; Note = 'dotnet nuget locals all --clear' }
     @{ Path = "$env:LOCALAPPDATA\NuGet\v3-cache"; Cat = 'Cache'; Note = 'dotnet nuget locals all --clear' }
-    @{ Path = "$env:LOCALAPPDATA\pnpm\store"; Cat = 'Cache'; Note = 'pnpm store prune; or delete (pnpm store path)' }
+    @{ Path = "$env:LOCALAPPDATA\pnpm\store"; Cat = 'Cache'; Note = 'One subfolder per pnpm version; prune only reaches (pnpm store path). Measure each' }
     @{ Path = "$env:LOCALAPPDATA\pnpm-cache"; Cat = 'Cache'; Note = 'pnpm metadata cache' }
-    @{ Path = "$env:LOCALAPPDATA\npm-cache"; Cat = 'Cache'; Note = 'npm cache clean --force' }
+    @{ Path = "$env:LOCALAPPDATA\npm-cache"; Cat = 'Cache'; Note = 'npm cache clean --force clears _cacache only; _npx is separate' }
     @{ Path = "$env:LOCALAPPDATA\Yarn\Cache"; Cat = 'Cache'; Note = 'yarn cache clean' }
     @{ Path = "$env:LOCALAPPDATA\pip\cache"; Cat = 'Cache'; Note = 'pip cache purge' }
     @{ Path = "$env:USERPROFILE\.gradle\caches"; Cat = 'Cache'; Note = 'Gradle cache; downloads again' }
     @{ Path = "$env:USERPROFILE\.m2\repository"; Cat = 'Cache'; Note = 'Maven cache; downloads again' }
     @{ Path = "$env:LOCALAPPDATA\ms-playwright"; Cat = 'Cache'; Note = 'Playwright browsers; keep if a project runs Playwright tests' }
-    @{ Path = "$env:LOCALAPPDATA\Google\Chrome\User Data\OptGuideOnDeviceModel"; Cat = 'Cache'; Note = 'Chrome on-device AI model; turn off in chrome://flags first or it downloads again' }
+    @{ Path = "$env:LOCALAPPDATA\Google\Chrome\User Data\OptGuideOnDeviceModel"; Cat = 'Cache'; Note = 'Chrome on-device AI model; set policy GenAILocalFoundationalModelSettings=1 first or it downloads again' }
     @{ Path = "$env:LOCALAPPDATA\Temp\DockerDesktop"; Cat = 'Safe'; Note = 'Old Docker Desktop update files; delete with Docker Desktop closed' }
     @{ Path = "$env:USERPROFILE\.cache\huggingface"; Cat = 'Your call'; Note = 'Downloaded AI models' }
     @{ Path = "$env:USERPROFILE\.cache\whisper"; Cat = 'Your call'; Note = 'Downloaded speech models' }
