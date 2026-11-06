@@ -13,3 +13,5 @@ N5	neg	rm -rf node_modules and reinstall the dependencies
 N6	neg	run npm cache clean --force
 N7	neg	my Ubuntu server's disk is full, what can I delete under /var?
 N8	neg	why is the dist bundle of this Vite app so big?
+P8	pos	I removed Ollama last month. Is it safe to delete the models and settings it left in my user folder?
+N9	neg	how do I uninstall Docker Desktop?

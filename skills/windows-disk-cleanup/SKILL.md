@@ -7,8 +7,9 @@ description: >-
   compressed files are not mistaken for waste), sorts every large item into safe to delete /
   cache / shrink / your call / do not delete. Use whenever the user asks to free disk space,
   clean up the C drive, find what is taking space, check which files or folders can be removed,
-  or pastes `du`, TreeSize or WinDirStat output and
-  asks what is safe to delete; also for "check again" after a cleanup. Do NOT use for cleaning up
+  asks whether the folders a program left behind after it was uninstalled can be deleted, or
+  pastes `du`, TreeSize or WinDirStat output and asks what is safe to delete; also for "check
+  again" after a cleanup. Do NOT use for cleaning up
   after a coding session in a repository (branches, scratch files, worktrees - session-cleanup),
   for removing dead code (dead-code-removal), or on Linux or macOS.
 ---

@@ -53,9 +53,30 @@ finding what takes space, and which files or folders can be removed, but not the
 an uninstalled program, and P5 never mentions disk space. The README lists this case as a trigger
 phrase, so the README and the description disagree.
 
+## Run 2: after the description fix
+
+The description gained one clause after "check which files or folders can be removed": "asks
+whether the folders a program left behind after it was uninstalled can be deleted" (862 to 950
+characters). The user-level copy was updated and checked identical to the repository copy, and the
+whole set was run again on the same day and model, with two prompts added: P8, a second
+leftover-folder wording ("I removed Ollama last month. Is it safe to delete the models and settings
+it left in my user folder?"), so the fix is not fitted to P5 alone; and N9, "how do I uninstall
+Docker Desktop?", to check the new clause does not fire on an uninstall question. P5 was run three
+times. Raw rows: `description-sweep-2026-11-06-run2-results.tsv`.
+
+| Query | Run 1 | Run 2 |
+| --- | --- | --- |
+| P1-P4, P6, P7 | FIRED | FIRED |
+| P5 Cursor leftovers | quiet, 0/3 | **FIRED, 3/3** |
+| P8 Ollama leftovers | not in the set | FIRED |
+| N1-N8 | quiet | quiet (N1, N2 loaded `session-cleanup`; N8 loaded `trim-initial-bundle`) |
+| N9 uninstall Docker Desktop | not in the set | quiet |
+
+**Run 2: recall 8/8, precision 9/9.** The fixture repository was unchanged before and after the run.
+
 ## Caveats
 
-1. One run per prompt except P5. A single run does not establish a rate.
+1. One run per prompt in each run except P5. A single run does not establish a rate.
 2. The denied tool calls end each run early. Whether a model that could run the shell would still
    load the skill first is not measured here; in this sweep the Skill call came before any denied
    call in every fired run that tried a shell.

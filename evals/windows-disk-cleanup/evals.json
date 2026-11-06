@@ -11,22 +11,91 @@
     "package.json": "minimal"
   },
   "positives": [
-    { "id": "P1", "query": "My C drive is almost full. What can I delete?" },
-    { "id": "P2", "query": "free up some disk space on this machine" },
-    { "id": "P3", "query": "what is taking all the space on my disk?" },
-    { "id": "P4", "query": "here is du -sh output from my user folder, what is safe to remove? (four du lines follow)", "note": "pasted-output trigger from the description" },
-    { "id": "P5", "query": "Cursor is uninstalled but its folders are still in my user profile. Can those go?", "note": "leftover-folder case the README names" },
-    { "id": "P6", "query": "I ran the disk cleanup commands from yesterday, check again how much space is free now and what is still big", "note": "Step 4 check-again trigger; presupposes an earlier session a fresh claude -p does not have" },
-    { "id": "P7", "query": "delete the temp files on my C drive, they are taking too much space", "note": "overlap: session-cleanup lists \"delete the temp files\" as its own trigger; the machine scope makes it this skill's" }
+    {
+      "id": "P1",
+      "query": "My C drive is almost full. What can I delete?"
+    },
+    {
+      "id": "P2",
+      "query": "free up some disk space on this machine"
+    },
+    {
+      "id": "P3",
+      "query": "what is taking all the space on my disk?"
+    },
+    {
+      "id": "P4",
+      "query": "here is du -sh output from my user folder, what is safe to remove? (four du lines follow)",
+      "note": "pasted-output trigger from the description"
+    },
+    {
+      "id": "P5",
+      "query": "Cursor is uninstalled but its folders are still in my user profile. Can those go?",
+      "note": "leftover-folder case the README names"
+    },
+    {
+      "id": "P6",
+      "query": "I ran the disk cleanup commands from yesterday, check again how much space is free now and what is still big",
+      "note": "Step 4 check-again trigger; presupposes an earlier session a fresh claude -p does not have"
+    },
+    {
+      "id": "P7",
+      "query": "delete the temp files on my C drive, they are taking too much space",
+      "note": "overlap: session-cleanup lists \"delete the temp files\" as its own trigger; the machine scope makes it this skill's"
+    },
+    {
+      "id": "P8",
+      "query": "I removed Ollama last month. Is it safe to delete the models and settings it left in my user folder?",
+      "note": "added in run 2: a second leftover-folder wording, so the description fix is not fitted to P5 alone"
+    }
   ],
   "hard_negatives": [
-    { "id": "N1", "query": "we're done here, clean up the branches and the scratch files", "owner": "session-cleanup" },
-    { "id": "N2", "query": "delete the temp files this task created under .scratch", "owner": "session-cleanup", "note": "mirror of P7 with repository scope" },
-    { "id": "N3", "query": "how big is the src folder in this repo?", "owner": "plain question" },
-    { "id": "N4", "query": "remove the dead code in src/legacy", "owner": "plain edit or dead-code-removal" },
-    { "id": "N5", "query": "rm -rf node_modules and reinstall the dependencies", "owner": "plain command" },
-    { "id": "N6", "query": "run npm cache clean --force", "owner": "plain command the user is driving" },
-    { "id": "N7", "query": "my Ubuntu server's disk is full, what can I delete under /var?", "owner": "none: the description excludes Linux" },
-    { "id": "N8", "query": "why is the dist bundle of this Vite app so big?", "owner": "trim-initial-bundle" }
+    {
+      "id": "N1",
+      "query": "we're done here, clean up the branches and the scratch files",
+      "owner": "session-cleanup"
+    },
+    {
+      "id": "N2",
+      "query": "delete the temp files this task created under .scratch",
+      "owner": "session-cleanup",
+      "note": "mirror of P7 with repository scope"
+    },
+    {
+      "id": "N3",
+      "query": "how big is the src folder in this repo?",
+      "owner": "plain question"
+    },
+    {
+      "id": "N4",
+      "query": "remove the dead code in src/legacy",
+      "owner": "plain edit or dead-code-removal"
+    },
+    {
+      "id": "N5",
+      "query": "rm -rf node_modules and reinstall the dependencies",
+      "owner": "plain command"
+    },
+    {
+      "id": "N6",
+      "query": "run npm cache clean --force",
+      "owner": "plain command the user is driving"
+    },
+    {
+      "id": "N7",
+      "query": "my Ubuntu server's disk is full, what can I delete under /var?",
+      "owner": "none: the description excludes Linux"
+    },
+    {
+      "id": "N8",
+      "query": "why is the dist bundle of this Vite app so big?",
+      "owner": "trim-initial-bundle"
+    },
+    {
+      "id": "N9",
+      "query": "how do I uninstall Docker Desktop?",
+      "owner": "plain question",
+      "note": "added in run 2: checks the new leftover clause does not fire on an uninstall question"
+    }
   ]
 }
