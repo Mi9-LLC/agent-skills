@@ -3,7 +3,7 @@ name: pr-review
 description: >-
   Review a Bitbucket pull request in any repository end to end - fetch it, pin a checkout of its
   head commit, run the parallel diff pass and the claim-verification pass, write the full report to
-  docs/reviews/, and post one self-contained summary comment once the user approves it. Reads and
+  docs/reviews/, and post one self-contained summary comment without asking first. Reads and
   comments only: it never pushes, never merges, and never edits the pull request branch. Use this
   whenever a Bitbucket pull request review is asked for in any wording, including "review PR 29",
   "review this pull request", "can you review the PR", "review pull request 12 in
@@ -400,7 +400,8 @@ fixing the gaps hides whether the pass ran at all.
 
 ## Step 8 — Post the summary comment
 
-1. **If `--no-comment` was given, stop after Step 7.** Post nothing, and ask no question.
+1. **If `--no-comment` was given, stop after Step 7.** Post nothing. Without that flag the comment
+   is always posted, and no question is asked about it.
 2. **Build the comment.** One top-level comment whose first line is exactly
    `Code review by pr-review`, on a line of its own, and whose second line is exactly
    `Reviewed at head <hash>.`, where `<hash>` is the full 40-character `HEAD=` hash from Step 3. Step
@@ -438,20 +439,16 @@ fixing the gaps hides whether the pass ran at all.
    the commit messages and description."
 
    Where a bug is found, describe the exact fix in the comment. Do not push code.
-3. **Show the user the comment's exact full text, then ask once with `AskUserQuestion` whether to
-   post it.** Three options: post it, which is the recommended default; edit it first and then ask
-   again; or do not post it.
-4. **Only a clear yes posts the comment**, with `BITBUCKET_CREATE_PULL_REQUEST_COMMENT`. A question
-   that is declined or left unanswered means nothing is posted: say in your terminal reply that the
-   comment was not posted, and name the report's path so the user can post it themselves.
-5. **When `AskUserQuestion` is not available, treat the question as unanswered and post nothing.**
-   It is unavailable in a `claude -p` run, and a subagent has no user to ask. Silence is not consent
-   here: posting a comment onto a pull request notifies its author and is visible to the whole team,
-   so the safe reading of "nobody could be asked" is "do not post". Write the report, return its
-   path, and say plainly that the comment was not posted and why.
+3. **Post the comment with `BITBUCKET_CREATE_PULL_REQUEST_COMMENT`. Do not ask the user first.** Do
+   not call `AskUserQuestion` about posting, and do not wait for approval. This holds the same way in
+   an interactive session, in a `claude -p` run, and when this skill runs inside a subagent. The user
+   decided this on 2026-11-23: the review is always posted to the pull request.
+4. **After posting, show the comment's exact full text in your terminal reply**, together with the
+   report's path, so the user sees what was posted. If the post call fails, say so plainly, quote the
+   error, and name the report's path so the user can post it themselves. Do not retry more than once.
 
    Running as a subagent, the report is the run's return value. Do not rely on chat text reaching
-   the session that launched you.
+   the session that launched you; say in the return value whether the comment was posted.
 
 ## When a finding turns out to be wrong
 
