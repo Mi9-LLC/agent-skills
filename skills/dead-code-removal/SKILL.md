@@ -10,7 +10,7 @@ description: >-
   "update the code validity of the dead-code report", "is this dead-code list still accurate",
   "the analysis is a week old, check it and start removing", "execute the dead-code removal
   plan", "start Step 1 of the dead code plan in a worktree". Do NOT use it to find dead code from
-  scratch (write the analysis first, or run the health skill's dead-code gate); to delete one file
+  scratch (write the analysis first); to delete one file
   or symbol the user names; for static-analyser smells (sonar-issue-fix); or for code only runtime
   evidence could prove unused.
 model: opus

@@ -10,7 +10,7 @@ description: >-
   a how-to for X", "add reference docs", "update the docs to match the code". Do
   NOT trigger for: answering a how-does-X-work question in conversation (just
   answer it — no files are wanted), authoring CLAUDE.md or AGENTS.md agent
-  context (scaffold-claude), designing a feature that is not built yet
+  context, designing a feature that is not built yet
   (new-feature), or decomposing an approved plan into feature specs
   (convert-plan-to-feature).
 allowed-tools: Read, Grep, Glob, Bash, Write, Edit, Agent
@@ -26,8 +26,8 @@ verified, every claim traceable to code read this session.
 
 **Write surface: documentation files in the resolved docs home, plus minimal
 cross-link lines in the README and any existing docs index or sidebar —
-nothing else. CLAUDE.md and AGENTS.md are never edited (agent context is
-`scaffold-claude`'s job). Nothing is committed or pushed. And no doc file is
+nothing else. CLAUDE.md and AGENTS.md are never edited. Nothing is
+committed or pushed. And no doc file is
 written before the partition plan is approved.**
 
 Bash is for read-only research and side-effect-free example execution only —
@@ -79,8 +79,8 @@ Verification notes go in the completion report, not the doc files.
 
 **Which artifact is wanted.** A bare "document this project / this repo"
 with no signal about the artifact means one clarifying question before any
-research: human-facing docs (this skill), a CLAUDE.md / agent-context file
-(`scaffold-claude`), or a session handoff (`session-handoff`)? Ask once,
+research: human-facing docs (this skill), a CLAUDE.md / agent-context file,
+or a session handoff (`session-handoff`)? Ask once,
 then proceed on the answer.
 
 **Diff- and PR-anchored asks.** "Update the docs for this PR" / "document
@@ -261,7 +261,7 @@ exactly as written.
 
 - **"How does X work?" asked in conversation** — answer it in the
   conversation. No files are wanted; produce none.
-- **CLAUDE.md / AGENTS.md / agent context** — `scaffold-claude`.
+- **CLAUDE.md / AGENTS.md / agent context** — not written by this skill.
 - **Designing a feature that doesn't exist yet** — `new-feature`; this skill
   documents code as it exists.
 - **Splitting an approved plan into feature specs** —

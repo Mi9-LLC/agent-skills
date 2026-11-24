@@ -51,13 +51,9 @@ Install either skill this way **instead of** `npx skills add`, not as well: both
 | [`sonar-issue-check`](#sonar-issue-check) | Reads SonarCloud / self-hosted SonarQube issues for the current repo's analyzed branch or PR — by default just the new-code issues, or `--all` for the full unresolved backlog on that branch/PR. Zero-dependency Node script; read-only against the Sonar API. |
 | [`sonar-issue-fix`](#sonar-issue-fix) | Companion to `sonar-issue-check` that *fixes* the findings: triages by rule, applies behavior-preserving mechanical fixes plus a characterization-tests-first refactor for cognitive-complexity issues, and re-verifies with the project's gates. Never alters runtime/wire behavior. |
 | [`trim-initial-bundle`](#trim-initial-bundle) | Find and defer vendor libraries that bloat a React + Vite app's initial JS load but are only needed behind lazy routes — shrinking first-load size, LCP, and TTI. Decides everything from the *built* `dist`, diagnoses the leak, fixes on approval, verifies against artifacts. Vite/Rollup/Rolldown only. |
-| [`scaffold-claude`](#scaffold-claude) | Interview-driven `CLAUDE.md` author: asks one section at a time, captures only edge cases and tribal knowledge (never facts inferred from the manifest/tree/README), stubs what you skip, and writes a reviewable draft to `docs/scratchpad/CLAUDE.md`. No shell — Windows-clean. |
 | [`systematic-debugging`](#systematic-debugging) | Root-cause-first debugging discipline: investigate before fixing, test one hypothesis at a time, fix the cause behind a failing test, and after 3 failed fixes stop and question the architecture. .NET + JS examples. |
-| [`test-driven-development`](#test-driven-development) | **Opt-in** red-green-refactor discipline for work you choose to drive test-first — failing test → watch it fail → minimal code to pass → refactor. Triggers only on explicit TDD asks / new test-driven features, never on every edit. .NET + JS examples. |
 | [`session-handoff`](#session-handoff) | Create and resume handoff documents for transferring work between AI agent sessions — bundled Python scripts scaffold the document, validate it (secret scan + completeness score), and grade staleness before a resume. Writes under `.claude/handoffs/`. |
-| [`retro`](#retro) | Data-grounded engineering retrospective from the current repo's git history — commits, sessions, churn, test ratio, focus score, AI-assisted share — by default the last 7 days, or `--compare` for a trend against the prior window. Zero-dependency Node script; every number traces to its JSON output, never estimated. |
 | [`verify-frontend-change`](#verify-frontend-change) | Never calls a UI change done from a clean edit alone — starts the dev server, opens the affected page in Chrome (via the Chrome DevTools MCP server), interacts with the change, gates on zero new console errors, records a performance trace. Any failure is fixed and the loop rerun from the top. |
-| [`health`](#health) | Local quality-gate dashboard for the current repo — runs the project's own typecheck/lint/test/dead-code/shell-lint gates, scores each 0–10 against a weighted rubric, and computes a composite; `--save` tracks the trend against repo history. Zero-dependency Node script; every number traces to its JSON output, never estimated. |
 | [`plan-eng-review`](#plan-eng-review) | Pre-implementation review gate for a *written* implementation plan — scope challenge, what-already-exists reuse check, four review dimensions (architecture / code quality / tests / performance), evidence-gated findings, then a verdict plus a `## ENG REVIEW REPORT` spliced into the plan file (terminal-only when the plan has no file on disk). Never implements the plan. |
 | [`document-generate`](#document-generate) | Writes Diataxis documentation files (tutorial / how-to / reference / explanation) for a named feature, module, or project — end-to-end codebase archaeology first, a partition plan approved before any file is written, every example executed, traced, or labeled illustrative. Never edits `CLAUDE.md`/`AGENTS.md`, never commits. |
 | [`stdlib-first`](#stdlib-first) | Reuse-before-build ladder for new TypeScript/Node and C#/.NET code — built-in/standard library first, then (C#) first-party `Microsoft.Extensions.*`, then a library the project already uses, custom code last; precise types, specific error classes, doc comments. Asks before adding any dependency. Behavioral only — produces no files. |
@@ -485,45 +481,6 @@ npx skills add https://github.com/Mi9-LLC/agent-skills --skill trim-initial-bund
 
 ---
 
-## `scaffold-claude`
-
-**What it does.** Interview-driven `CLAUDE.md` author. Instead of scraping `package.json` and the directory tree into a generic file, it walks eight sections one at a time — header, stack, commands, architecture, conventions, hard constraints, doc pointers, gotchas — asking for the *non-obvious* facts and the *reason* behind each, and writes only what you confirm. Its Iron Rule: never write a section from inference — ask, and leave a `<!-- TODO -->` stub when you skip.
-
-**Requirements.** A project to document (it reads the manifest, tree, and README only to know *what to ask about*). No tokens, no network, no shell.
-
-**How to run.** Auto-triggers on "scaffold/write/set up CLAUDE.md" asks, or run `/scaffold-claude`. `allowed-tools: Read, Glob, Write`.
-
-**Use it for.** Bootstrapping a `CLAUDE.md` for a project that has none, or redoing a weak one from scratch. For a large repo, scaffold the root file; then, when you explicitly ask, run the same interview once per substantial subsystem to add nested `CLAUDE.md` files — Claude Code loads a nested file only when it touches that folder.
-
-**Triggers on phrases like.** "scaffold CLAUDE.md", "write a CLAUDE.md", "set up CLAUDE.md", "create project instructions for Claude", "bootstrap CLAUDE.md".
-
-**What it does not do.** Surgically edit an existing `CLAUDE.md` (just edit it directly). Infer or fabricate content to fill a section — an empty stub beats a confident guess. Write to the repo root — the draft lands in `docs/scratchpad/` for you to move. Run any shell command, so it's Windows-clean by construction — and, along with editing, it declares `disallowed-tools: Bash, Edit, NotebookEdit` to drop those tools while the skill is active (a per-turn guard; the restriction clears on your next message).
-
-**What it produces.** A reviewable draft at `docs/scratchpad/CLAUDE.md` — confirmed sections filled, skipped sections left as `<!-- TODO -->` stubs. Ships `references/` (an annotated one-shot example + the interview scripts) and a `templates/` stub.
-
-**Example.**
-
-```
-You: set up a CLAUDE.md for this project
-→ Saw a .NET solution + a React/Vite app, no existing CLAUDE.md. I won't assume — I'll ask.
-  Section 1/8 — Header: one or two sentences, what is this project and what does it optimize for?
-  (say "skip" and I'll stub it)
-→ … (8 sections later) Wrote docs/scratchpad/CLAUDE.md — 5 filled, 3 stubbed. Move it to the
-  repo root when you're happy with it.
-```
-
-**Pairs with.** [`document-generate`](#document-generate) — this skill authors the agent-facing context (`CLAUDE.md`); that one authors the human-facing docs for the same project.
-
-**Install.**
-
-```
-npx skills add https://github.com/Mi9-LLC/agent-skills --skill scaffold-claude
-```
-
-**Full definition:** [`skills/scaffold-claude/SKILL.md`](skills/scaffold-claude/SKILL.md) (plus interview scripts + an annotated example under `references/`, a stub under `templates/`). Adapted from [`ragnar-pwninskjold/tech-snacks`](https://github.com/ragnar-pwninskjold/tech-snacks) (MIT).
-
----
-
 ## `systematic-debugging`
 
 **What it does.** Enforces a four-phase debugging discipline instead of guess-and-check: (1) root-cause investigation, (2) pattern / context analysis, (3) ranked hypotheses, one tested at a time, (4) fix the cause behind a failing test. Hard rules: no fix before root-cause investigation, and after three failed fixes, stop and question the architecture rather than trying a fourth. Phase 1 needs a reproduction loop before any diagnosis: one named command, run once with its output shown, that fails on the exact symptom, fast and deterministic (a flaky bug is pushed to the highest reproduction rate you can reach — loops, parallel runs, load, injected sleeps — before diagnosis), then minimised one element at a time. Phase 3 writes down 2–4 ranked hypotheses, each with a falsifiable prediction, and tests only the top one; a failed test moves to the next on the list. Phase 4 puts the regression test at a seam that exercises the bug as it happens at the real call site. Temporary logs carry a unique `[DEBUG-xxxx]` prefix so cleanup is one grep, and shown diagnostics are redacted (`<REDACTED>`, credentials only via environment variables).
@@ -557,41 +514,6 @@ npx skills add https://github.com/Mi9-LLC/agent-skills --skill systematic-debugg
 ```
 
 **Full definition:** [`skills/systematic-debugging/SKILL.md`](skills/systematic-debugging/SKILL.md) (plus the three technique references). Adapted from [`obra/superpowers`](https://github.com/obra/superpowers) (MIT) — decoupled, Windows-clean, with .NET/xUnit + TS/Vitest examples. The reproduction-loop, ranked-hypotheses, seam, log-tag, redaction, and flaky-rate rules are adapted from [`mattpocock/skills`](https://github.com/mattpocock/skills) `diagnosing-bugs` (MIT, © 2026 Matt Pocock).
-
----
-
-## `test-driven-development`
-
-**What it does.** Guides the red-green-refactor cycle for a piece of work you've chosen to build test-first: write one failing test, watch it fail *for the right reason*, write the minimal code to pass, then refactor — and pushes back on the rationalizations for skipping that order. Before the first test it lists the test seams (the public boundaries the tests will go through — existing ones preferred, fewer is better) and confirms them with you, or states them in its report when running unattended. Expected values come from an independent source (a literal, a worked example, the spec), never recomputed the way the code computes them; writing all tests first and all code after (horizontal slicing) is named as a rationalization — one test, then one implementation.
-
-**Requirements.** A test framework set up for your stack so RED/GREEN can actually run — xUnit / `dotnet test` (C#) or Vitest / `npm test` (TS/JS). You opt in for the specific piece of work.
-
-**How to run.** **Opt-in** — it auto-triggers *only* on an explicit TDD ask or a new feature you say you want built test-first; or run `/test-driven-development`. `allowed-tools: Read, Write, Edit, Bash, Grep, Glob, AskUserQuestion`.
-
-**Use it for.** A new feature, module, or component you want built test-driven. It's a deliberate methodology you opt into — not a global mandate on all your code.
-
-**Triggers on phrases like.** "let's TDD this", "build X test-first", "write the tests first", "red-green-refactor", "implement Y test-driven". Deliberately does **not** trigger on ordinary work — every edit, routine bug fix, small tweak, refactor of existing code, or "add tests after the fact."
-
-**What it does not do.** Impose itself on changes you didn't opt into. Delete your existing code to "redo it properly" unless you ask. Let a test pass on the first run without you having watched it fail (that proves nothing).
-
-**What it produces.** No artifacts — a disciplined test-first workflow with a verification checklist. Ships `references/testing-anti-patterns.md` (asserting on mock behavior, test-only methods on production classes, incomplete mocks, the mocking-boundary rule — mock at the lowest boundary that owns the slow or external effect, and treat having to mock one of your own modules as a design smell — and verifying through a side channel such as a DB query instead of the interface).
-
-**Example.**
-
-```
-You: let's build the retry helper test-first
-→ RED: wrote a Vitest test "retries until the third attempt succeeds"; ran it — fails (no retry yet).
-  GREEN: minimal retry loop — test passes, suite green.
-  REFACTOR: extracted the backoff; re-ran — still green. Next behavior?
-```
-
-**Install.**
-
-```
-npx skills add https://github.com/Mi9-LLC/agent-skills --skill test-driven-development
-```
-
-**Full definition:** [`skills/test-driven-development/SKILL.md`](skills/test-driven-development/SKILL.md) (plus the anti-patterns reference). Adapted from [`obra/superpowers`](https://github.com/obra/superpowers) (MIT) — reframed as opt-in, decoupled, with .NET/xUnit + TS/Vitest examples. The seam, independent-expected-value, horizontal-slicing, mocking-boundary, and side-channel rules are adapted from [`mattpocock/skills`](https://github.com/mattpocock/skills) `tdd` (MIT, © 2026 Matt Pocock).
 
 ---
 
@@ -631,42 +553,6 @@ npx skills add https://github.com/Mi9-LLC/agent-skills --skill session-handoff
 
 ---
 
-## `retro`
-
-**What it does.** Engineering retrospective for the current git repository. A bundled, zero-dependency Node script (`scripts/git-retro.mjs`) computes every metric deterministically from git history — commits, contributors, LOC, test ratio, per-author work sessions (45-minute-gap detection), an hourly histogram, commit-type mix, churn hotspots, approximate PR count/size buckets, focus score, ship-of-the-window, streaks, and AI-assisted-commit share (via `Co-Authored-By` trailers) — and emits one JSON document; the model's only job is to turn that JSON into a narrative, never to compute or round a number itself.
-
-**Requirements.** **Node 18+** (uses `node:util` parseArgs; zero npm dependencies). A git repository with commit history. The script does one best-effort `git fetch` unless `--no-fetch` is passed. No token required.
-
-**How to run.** Auto-triggers on retro / velocity / "what did we ship" asks, or run `/retro`. `allowed-tools: Bash, Read, Write`. Useful flags: `--window 7d|24h|Nd|Nh|Nw` (default 7-day window), `--compare` (adds the prior same-length window, computed live from git, plus deltas), `--base <ref>` (default `origin/<default-branch>`, auto-detected), `--no-fetch`, `--save [dir]` (writes a JSON snapshot to `docs/retros/`, then the model writes the markdown narrative alongside it).
-
-**Use it for.** Weekly or sprint retros, "are we shipping faster than last month" trend checks, or a fast read on team velocity, focus, and churn hotspots without hand-computing git-log arithmetic.
-
-**Triggers on phrases like.** "what did we ship this week", "weekly retro", "engineering retrospective", "team velocity", "commit stats for the last N days", "who worked on what lately", "are we shipping faster than last month".
-
-**What it does not do.** State a number that isn't in the script's JSON — the iron rule is every figure in the retro traces back to that JSON, or the skill says the metric is unavailable. Grade, rank, or critique individual teammates — per-author output is stats-only (a leaderboard plus a personal deep-dive for the runner), improvement suggestions stay team-level, and it declines performance-review / HR asks outright. Pad a quiet window — a zero-commit window is reported as exactly that. Commit, push, or write anything beyond the optional `docs/retros/` snapshot and narrative on an explicit `--save`.
-
-**What it produces.** For a retro / retrospective / trend ask, the full 1,500–2,500-word narrative straight into the conversation: a tweetable one-liner, then a summary table, time/session patterns, shipping velocity, code-quality signals, focus & ship-of-the-window, a personal "your week" section for the runner, a team leaderboard, top 3 wins, 3 things to improve, 3 habits for next week, and — with `--compare` — a deltas table. For a narrower stat-shaped ask (e.g. "commit stats for the last N days") it gives a short form instead — the one-liner, the summary table, and only the sections the question actually asked about. Any true guard from the JSON (`zeroCommits`, `staleBase`, `fetchFailed`, `noRemote`, `detachedHead`, `shallowClone`) is carried into the narrative as a caveat, verbatim. With `--save`, also a JSON snapshot at `docs/retros/<YYYY-MM-DD>-<n>.json` and a markdown report at `docs/retros/<YYYY-MM-DD>-retro.md`. **Read-only on the repository otherwise.**
-
-**Example.**
-
-```
-You: what did we ship this week?
-→ Week of Jul 1: 47 commits (3 contributors), 3.2k LOC, 38% tests, 12 PRs, peak: 22:00 | streak 12d
-  … summary table, time & session patterns, shipping velocity, code-quality signals,
-  focus & ship of the window, your week, team leaderboard, top 3 wins, 3 things to
-  improve, 3 habits for next week.
-```
-
-**Install.**
-
-```
-npx skills add https://github.com/Mi9-LLC/agent-skills --skill retro
-```
-
-**Full definition:** [`skills/retro/SKILL.md`](skills/retro/SKILL.md) (plus the `git-retro.mjs` script under `scripts/`). Adapted from [`garrytan/gstack`](https://github.com/garrytan/gstack) (MIT) — rebuilt so a deterministic script replaces model-computed arithmetic; gstack-state integrations (learnings, Greptile, telemetry, global mode) dropped.
-
----
-
 ## `verify-frontend-change`
 
 **What it does.** Closes the "should work now" gap on frontend work. After a UI change it runs a five-step browser verification loop via the Chrome DevTools MCP server: start (or reuse) the dev server → open the affected page → interact with the changed behavior → require zero new console errors → record a performance trace. A change is reported *done* only when every step passes in one uninterrupted pass; any failure gets fixed and the loop reruns from the top.
@@ -703,43 +589,6 @@ npx skills add https://github.com/Mi9-LLC/agent-skills --skill verify-frontend-c
 ```
 
 **Full definition:** [`skills/verify-frontend-change/SKILL.md`](skills/verify-frontend-change/SKILL.md) (plus the tool cheatsheet and dev-server playbook under `references/`).
-
----
-
-## `health`
-
-**What it does.** A local quality-gate dashboard for the current repository. A bundled, zero-dependency Node script (`scripts/check-health.mjs`) runs the project's own tools — typecheck, lint, test, dead-code, shell lint — parses their output, scores each category 0–10 against a weighted rubric (typecheck 25 / lint 20 / test 30 / deadcode 15 / shell 10, renormalized over whichever gates actually ran), and computes one weighted composite; the model's only job is to narrate that JSON, never to compute or estimate a score itself.
-
-**Requirements.** **Node 18+** (zero npm dependencies). Whatever quality-gate tools the project already uses — a typechecker (JS/TS, Python, or .NET via `dotnet build --nologo`), linter, test runner, dead-code detector, shell linter. A category without an installed tool is skipped, not failed, and its weight redistributes across the rest. On first run there's no `.claude/health.json` yet — the skill detects a proposed config and has you confirm it before anything runs.
-
-**How to run.** Auto-triggers on whole-project quality-overview asks, or run `/health`. `allowed-tools: Bash, Write`. First run: `--detect-only` prints the proposed config (command/weight/reason per category) for you to confirm via AskUserQuestion before it's saved to `.claude/health.json` and anything executes. After that: no flags for a normal check, `--only typecheck,lint` to run a subset, `--config <path>` for a specific config file, `--parallel` to run the gates concurrently (opt-in — the durations it reports are then wall-clock-under-contention and not comparable to history), `--save [dir]` to append a line to `docs/health/history.jsonl` (trend is read from that file automatically whenever it exists).
-
-**Use it for.** A whole-project quality snapshot before a release or a big refactor, a "how healthy is this codebase" gut-check on an unfamiliar repo, or tracking whether quality is trending up or down over time via `--save` history.
-
-**Triggers on phrases like.** "check project health", "how healthy is the codebase", "quality dashboard", "run all the quality gates", "code health score", "full quality check", "are we getting better or worse".
-
-**What it does not do.** Fix anything it finds — that's a separate ask (`sonar-issue-fix` for Sonar findings). Run a single gate — "just run the tests" needs no dashboard. Set up CI pipelines, or substitute its own linter/test runner for the project's — it wraps the project's own commands and configs exactly. Score a skipped category — no tool installed means skipped, never a zero. State a number that isn't in the script's JSON.
-
-**What it produces.** A terminal dashboard: a header (repo/branch/date), a category table (gate, command, score, label, findings, duration — skipped rows say *skipped (reason)*, never a score), the composite (`X.X/10` with a CLEAN/WARNING/NEEDS WORK/CRITICAL label), a details block quoting real output for anything scoring below 7 (a clean gate's captured output is trimmed to a short tail), script-ranked recommendations, a trend section when history exists, and a caveat line for every true honesty guard (`noToolsDetected`, `notGitRepo`, `dirtyWorkingTree`, `anyTimeout`, `anyParseFallback`, `firstRun`). Writes nothing by default; `--save` appends one line to `docs/health/history.jsonl`, and only on an explicit ask does the model also Write `docs/health/<YYYY-MM-DD>-health.md`. **Never commits or pushes.**
-
-**Example.**
-
-```
-You: how healthy is this codebase?
-→ No .claude/health.json yet — detected: typecheck (tsc, 25), lint (eslint, 20), test (vitest, 30),
-  dead-code (knip, 15), shell (shellcheck, 10). Save this and run? (yes)
-→ Composite: 6.8/10 NEEDS WORK
-  typecheck 9.0 · lint 7.2 · test 5.5 (12 failing) · deadcode 8.0 · shell skipped (no .sh files)
-  Top recommendation (HIGH): 12 failing tests in src/orders/*.spec.ts are dragging the composite down.
-```
-
-**Install.**
-
-```
-npx skills add https://github.com/Mi9-LLC/agent-skills --skill health
-```
-
-**Full definition:** [`skills/health/SKILL.md`](skills/health/SKILL.md) (plus the `check-health.mjs` script under `scripts/`). Adapted from [`garrytan/gstack`](https://github.com/garrytan/gstack) (MIT) — rebuilt so a deterministic script replaces model-computed scoring; the gstack-only gbrain dimension and `~/.gstack` global state are dropped (weights renormalized to 100); config moves to a user-confirmed `.claude/health.json`; history is opt-in (`--save`) and lives in-repo under `docs/health/`.
 
 ---
 
@@ -795,7 +644,7 @@ npx skills add https://github.com/Mi9-LLC/agent-skills --skill plan-eng-review
 
 **Triggers on phrases like.** "write docs for this", "generate documentation", "document this feature / module / project", "create a tutorial for X", "write a how-to for X", "add reference docs".
 
-**What it does not do.** Answer a "how does X work?" question asked in conversation — that gets answered directly, no files produced. Author `CLAUDE.md` or `AGENTS.md` agent context (`scaffold-claude`'s job — never touched by this skill). Design a feature that isn't built yet (`new-feature`) or decompose an approved plan into specs (`convert-plan-to-feature`). Run an automated stale-docs sweep across a diff — "document the changes I just made" gets redirected at Step 0 to name the actual targets, since the code is the documentation source, not the diff. Commit or push, under any circumstance.
+**What it does not do.** Answer a "how does X work?" question asked in conversation — that gets answered directly, no files produced. Author `CLAUDE.md` or `AGENTS.md` agent context (never touched by this skill). Design a feature that isn't built yet (`new-feature`) or decompose an approved plan into specs (`convert-plan-to-feature`). Run an automated stale-docs sweep across a diff — "document the changes I just made" gets redirected at Step 0 to name the actual targets, since the code is the documentation source, not the diff. Commit or push, under any circumstance.
 
 **What it produces.** New or extended Markdown files in the resolved docs home — target-local convention, then repo `docs/`, then a detected doc framework (Docusaurus / MkDocs / VitePress / Nextra, with its sidebar updated), then a new root `docs/` as the last resort — written in order reference → explanation → how-to → tutorial, plus link lines added to the README's documentation section (a minimal `## Documentation` section is appended if none exists) and any existing docs sidebar. Ends with a report: files new/extended, quadrant counts, quality-gate results, a per-example verification list (executed / traced / illustrative), and a Corrections field for anywhere existing docs contradicted the code.
 
@@ -812,7 +661,7 @@ You: document the retry helper in src/retry.ts
   new docs and the README now say 3.
 ```
 
-**Pairs with.** [`scaffold-claude`](#scaffold-claude) — that skill authors the agent-facing context (`CLAUDE.md`); this one authors the human-facing docs for the same project. Also [`new-feature`](#new-feature) and [`plan-eng-review`](#plan-eng-review) — those settle decisions before the code is built; this skill documents it once it exists.
+**Pairs with.** [`new-feature`](#new-feature) and [`plan-eng-review`](#plan-eng-review) — those settle decisions before the code is built; this skill documents it once it exists.
 
 **Install.**
 
@@ -868,7 +717,7 @@ npx skills add https://github.com/Mi9-LLC/agent-skills --skill stdlib-first
 
 **How to run.** Auto-triggers on monthly change-volume asks, or run `/repo-change-summary`. `allowed-tools: Bash`; no `model:` pin, so it runs on the session's model. Flags: `--month YYYY-MM` (default: current month), `--repo PATH` (default: current directory), `--out DIR` (where the HTML report lands; default: current directory), `--no-fetch`, `--no-open` (don't open the report in a browser), `--exclude PATTERN` (repeatable; excludes a file from every count by basename, with `*`/`?` glob support — see "What it does not do" for the default-excluded list). Optional emailing: `--email`, `--to LIST` (implies `--email`), `--subject STR`, `--email-dry-run` (preview only, sends nothing), `--env-file PATH`, `--mailmap PATH` — always dry-run first; see "What it produces" and `skills/repo-change-summary/references/emailing.md`.
 
-**Use it for.** Monthly reporting numbers — "how many lines changed in June", "how many PRs did we merge last month", a churn snapshot for a status update. For a narrative retrospective with work sessions, hotspots, and trends over an arbitrary window, use `retro` instead — this skill is the raw monthly totals.
+**Use it for.** Monthly reporting numbers — "how many lines changed in June", "how many PRs did we merge last month", a churn snapshot for a status update.
 
 **Triggers on phrases like.** "how many lines changed this month", "how many files did we modify in June", "how many pull requests were merged last month", "repo churn for 2026-06", "diff volume in May", "monthly change summary", "generate the monthly change report / HTML summary", "give me the summary report for STF" (a named repo group).
 
@@ -1254,7 +1103,7 @@ npx skills add https://github.com/Mi9-LLC/agent-skills --skill session-cleanup
 
 **Triggers on phrases like.** "re-check the dead code analysis", "update the code validity of the dead-code report", "is this dead-code list still accurate", "the analysis is a week old, check it and start removing", "execute the dead-code removal plan", "start Step 1 of the dead code plan in a worktree".
 
-**What it does not do.** Find dead code from scratch when no analysis exists yet — produce the analysis first, or run the `health` skill's dead-code gate. Delete one file or symbol the user names directly. Fix static-analyser smells (`sonar-issue-fix`'s job). Delete anything whose deadness depends on configuration, deploy settings, or traffic — this skill deletes on static proof only, and leaves runtime-gated suspects in place for a person to decide. Fix a gate failure forward — a step whose gate result is worse than the baseline is reverted path by path (not patched), recorded under Skipped, and the run continues with the next step, skipping any later step that depends on it; the one exception is a lint auto-fix that only reorders imports, and only when the user approved it in advance. Delete a defect it finds along the way — a branch that never runs because of a bug (an uninjected dependency, an unregistered plugin) is reported as a bug to fix, never deleted, and state that production code writes but only tests read is recorded as a follow-up. Commit or push without the user's approval — it stages only the current step's files, each by its explicit path, never `git add -A` or `git add .`, and shows the staged list and the proposed commit message before every commit.
+**What it does not do.** Find dead code from scratch when no analysis exists yet — produce the analysis first. Delete one file or symbol the user names directly. Fix static-analyser smells (`sonar-issue-fix`'s job). Delete anything whose deadness depends on configuration, deploy settings, or traffic — this skill deletes on static proof only, and leaves runtime-gated suspects in place for a person to decide. Fix a gate failure forward — a step whose gate result is worse than the baseline is reverted path by path (not patched), recorded under Skipped, and the run continues with the next step, skipping any later step that depends on it; the one exception is a lint auto-fix that only reorders imports, and only when the user approved it in advance. Delete a defect it finds along the way — a branch that never runs because of a bug (an uninjected dependency, an unregistered plugin) is reported as a bug to fix, never deleted, and state that production code writes but only tests read is recorded as a follow-up. Commit or push without the user's approval — it stages only the current step's files, each by its explicit path, never `git add -A` or `git add .`, and shows the staged list and the proposed commit message before every commit.
 
 **What it produces.** A dedicated git worktree with the deletions applied: the re-check documents as the branch's first commit and then one commit per plan step, each made only once the user approves it. A document git ignores is edited where it is and reported as not committed. A new dated file next to the analysis, `NN-recheck-<YYYY-MM-DD>.md`, recording the commit range, the method, the counts per area, and every INVALID, CHANGED, and GONE item with its evidence. The plan itself edited in place: a status line with the re-check date and commit, corrected line numbers, INVALID items removed or rewritten, and cascade items, missed test files, and missed documents added to the step they belong to. A final check over the whole result: a clean build and test run with the task runner's cache turned off, and a search of the code and the documents for every removed name and deleted file. A final report in six sections: what was removed (files, symbols, and commit hash per step), what was skipped and why, every change that is not a pure deletion (such as a removed configuration validation rule that changes start-up behaviour), every gate result per step and for the final check against the baseline, every defect and follow-up found (never deleted, only reported), and which plan steps are left and what each one needs.
 
@@ -1277,7 +1126,7 @@ You: approved, go
   message shown — approve to commit?
 ```
 
-**Pairs with.** [`health`](#health) — its dead-code gate (knip, ts-prune, or an IDE analyzer) is a natural source of the analysis this skill re-checks and acts on, though this skill takes any existing analysis, not only one `health` produced. [`session-cleanup`](#session-cleanup) — this skill deliberately leaves its worktree in place once done ("removing it is the user's decision once the branch is merged"), which is exactly `session-cleanup`'s job to do once that happens.
+**Pairs with.** [`session-cleanup`](#session-cleanup) — this skill deliberately leaves its worktree in place once done ("removing it is the user's decision once the branch is merged"), which is exactly `session-cleanup`'s job to do once that happens.
 
 **Install.**
 

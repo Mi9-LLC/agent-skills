@@ -10,7 +10,7 @@ description: >-
   the session itself created; a branch, file, or process belonging to a teammate or another agent
   session is reported, not removed. Do NOT use to delete a named file or dead code the user points
   at, to run `git clean` or `rm -rf node_modules`, to save context so the same work can continue
-  later (session-handoff), to summarize what was shipped (retro), or to tidy up the code itself
+  later (session-handoff), to summarize what was shipped, or to tidy up the code itself
   (/simplify).
 ---
 
