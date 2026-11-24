@@ -1,0 +1,155 @@
+{
+  "skill": "pr-review-request",
+  "purpose": "Two checks, both run on 2026-11-24 (results-2026-11-24.md). Trigger accuracy of the YAML description: does the skill fire when the user wants the chat message that asks colleagues to review a pull request, and stay quiet when pr-review (which performs the review), delegation-prompt (which briefs another AI session) or a plain writing task owns the request. Behaviour: does the message keep the team header, add only the four sections (no *Not in scope*, no *Verification*) that have a source, and leave out or flag what no source gives instead of inventing it.",
+  "method": "Trigger set: real .claude/skills registration with pr-review, delegation-prompt and unslop all installed, because those are the neighbours the hard negatives are aimed at; not skill-creator's .claude/commands loop. SAFETY: pr-review posts its comment to Bitbucket without asking, so every trigger run uses --permission-mode dontAsk with only Skill, Read, Glob and Grep allowed; never bypassPermissions. Behaviour set: every prompt carries the pull request facts inline, so a run needs no Bitbucket, Jira or GitHub access and cannot fetch anything the grader did not see. Runner: run_evals.sh. Grade each behaviour run against its expected_output by reading the message, not by string match.",
+  "detection": "The session transcript: every \"skill\":\"<name>\" match is recorded, not only pr-review-request. A positive on which pr-review loads is reported separately from a quiet miss, because pr-review would go on to post a review comment.",
+  "positives": [
+    {
+      "id": "P1",
+      "query": "write a review request for PR 50"
+    },
+    {
+      "id": "P2",
+      "query": "PR 394 in acme/lda and PR 27 in acme/dms are ready. Ask the team to review them."
+    },
+    {
+      "id": "P3",
+      "query": "draft the Google Chat message for my pull request https://bitbucket.org/acme/billing-service/pull-requests/114"
+    },
+    {
+      "id": "P4",
+      "query": "generate the PR review request for BIL-401, reviewers are Alex and Sam"
+    },
+    {
+      "id": "P5",
+      "query": "https://bitbucket.org/acme/billing-service/pull-requests/114 is ready for review, write the message for the team chat"
+    },
+    {
+      "id": "P6",
+      "query": "I need the usual 'ready for review' post for these two PRs, with enough detail that the reviewer knows what to look at"
+    },
+    {
+      "id": "P7",
+      "query": "announce pull request 12 for review in the dev chat and stress the behavior changes"
+    },
+    {
+      "id": "P8",
+      "query": "write the message that asks my colleagues to review https://github.com/acme/billing-service/pull/7"
+    },
+    {
+      "id": "P9",
+      "query": "Review request for https://bitbucket.org/acme/accounts/pull-requests/33 please, ticket ACC-52",
+      "note": "Added 2026-11-24: in behaviour run 1 this wording loaded pr-review first on scenario 6."
+    }
+  ],
+  "hard_negatives": [
+    {
+      "id": "N1",
+      "query": "review PR 29",
+      "owner": "pr-review"
+    },
+    {
+      "id": "N2",
+      "query": "Can you review this pull request? https://bitbucket.org/acme/billing-service/pull-requests/114",
+      "owner": "pr-review"
+    },
+    {
+      "id": "N3",
+      "query": "post a review comment on PR 114 in acme/billing-service",
+      "owner": "pr-review"
+    },
+    {
+      "id": "N4",
+      "query": "write me a prompt for another session so it can review PR 114",
+      "owner": "delegation-prompt"
+    },
+    {
+      "id": "N5",
+      "query": "write the description for the pull request I am about to open",
+      "owner": "no skill; it is the pull request's own description"
+    },
+    {
+      "id": "N6",
+      "query": "create a pull request from this branch against develop",
+      "owner": "no skill"
+    },
+    {
+      "id": "N7",
+      "query": "write a Google Chat message telling the team the release moved to Thursday",
+      "owner": "no skill; a chat message with no pull request to review"
+    },
+    {
+      "id": "N8",
+      "query": "summarize what changed in PR 114 for me",
+      "owner": "no skill; a summary for the user, not a request to reviewers"
+    },
+    {
+      "id": "N9",
+      "query": "this review request message sounds like AI wrote it, clean it up",
+      "owner": "unslop"
+    },
+    {
+      "id": "N10",
+      "query": "reply to the reviewer's comments on PR 114",
+      "owner": "no skill"
+    }
+  ],
+  "evals": [
+    {
+      "id": 0,
+      "name": "single-pr-full-sources-placeholder-reviewer",
+      "prompt": "Write the review request for this PR. No tool access is needed, everything is below.\n\nURL: https://bitbucket.org/acme/billing-service/pull-requests/114\nState: OPEN, not a draft. Branch bugfix/BIL-401-invoice-rounding into develop.\nTitle: BIL-401 Billing: round invoice totals once\nDescription: Invoice line totals were rounded per line before summing, so a 12-line invoice could be off by up to 6 cents against the quoted total. Totals are now summed in integer cents and rounded once at the end. decimal.js goes from 10.4.3 to 10.5.0 because toFixed was wrong on negative values, which matters for credit notes.\nDiff stat (9 files, +212 -64): src/invoice/total.ts, src/invoice/line.ts, src/invoice/creditNote.ts, test/invoice/total.property.test.ts (new), test/invoice/total.test.ts, package.json, package-lock.json, CHANGELOG.md, docs/adr/0012-integer-cents.md (new).\nI ran the gates myself: npm run lint, npm run typecheck, 340 unit tests and 22 integration tests pass. I checked out develop and ran the new property test there: it fails.",
+      "expected_output": "One fenced code block preceded by a short note and followed by nothing. Line 1 is 'BIL-401 Billing: ...' with a verb-first summary. The mention line is exactly 'Hi @<reviewer> This PR is ready for review.' (singular) and the note says the mention is a placeholder to enter again in Chat. One link line 'Billing PR: <the URL>'. Sections in order, each on its own bold label line (*Why*, *What changed*, *Behavior to check*, *Also in the PR* if used). Why carries 12-line and 6 cents. What changed names files in backticks and the 10.4.3 to 10.5.0 bump. The unchanged line may say config, env vars and deployment are unchanged (no such file is in the diff stat) but must not say 'no dependency changes'. The gate results the user gave (lint, typecheck, 340 unit and 22 integration tests, the property test failing on develop) are NOT in the message, in any section. No line about AI-written code or AI review. No '#' heading, no [text](url), no '**', no em dash, no pleasantries beyond the mention line. The message has no *Not in scope* section and no *Verification* section, and the note does not mention their absence.",
+      "files": []
+    },
+    {
+      "id": 1,
+      "name": "two-prs-two-repos-named-reviewers",
+      "prompt": "Ticket SHOP-88. Two PRs are ready, reviewers are Alex and Sam.\n\nPR A: https://bitbucket.org/acme/storefront/pull-requests/394 (OPEN). Title: SHOP-88 Storefront: run multi-release deployments oldest-first. Description: releaseQueue.ts sorted pending releases by createdAt descending, so when a store had 3 releases queued the newest ran first and the two older ones then failed their version check. The sort is now ascending. Diff stat: src/deploy/releaseQueue.ts, test/deploy/releaseQueue.test.ts.\n\nPR B: https://bitbucket.org/acme/store-agent/pull-requests/27 (OPEN). Title: SHOP-88 Agent: reject a release older than the installed one. Description: the agent accepted any release id; it now returns RELEASE_OUT_OF_ORDER when the incoming release is older than the installed one. Diff stat: Agent/ReleaseHandler.cs, Agent.Tests/ReleaseHandlerTests.cs.\n\nWe call the repos Storefront and Agent.",
+      "expected_output": "One message for both pull requests. Line 1 starts 'SHOP-88 Storefront:' (or names the component the main change is in) with a verb-first summary. The mention line is 'Hi @Alex @Sam These PRs are ready for review.' (plural, the given names, no invented surnames), and the note says the mentions have to be entered again in Chat. Two link lines, 'Storefront PR: ...394' and 'Agent PR: ...27', separated by a blank line. Bullets under *What changed* start with the repo label. RELEASE_OUT_OF_ORDER, releaseQueue.ts and ReleaseHandler.cs are in backticks. No invented test counts, no invented reason for anything. The message has no *Not in scope* section and no *Verification* section, and the note does not mention their absence.",
+      "files": []
+    },
+    {
+      "id": 2,
+      "name": "sparse-input-no-invention",
+      "prompt": "Write a review request for https://bitbucket.org/acme/pricing-api/pull-requests/8. It turns on the noFloatingPromises lint rule and fixes the call sites. Assume you cannot reach Bitbucket from here and there is no local checkout.",
+      "expected_output": "The run does not produce a detailed message from the URL and one sentence. Acceptable: it asks the user to paste the description and the diff stat (and says why), or it produces only what the sentence supports and says in the note what is missing. Not acceptable: a number of call sites, file names, a ticket key, test results, a 'config unchanged' line, or a Why with an incident that the user did not give.",
+      "files": []
+    },
+    {
+      "id": 3,
+      "name": "description-contradicts-diffstat",
+      "prompt": "Review request for https://bitbucket.org/acme/orders/pull-requests/61 please, OPEN, ticket ORD-19, component Orders.\n\nDescription: The order-events consumer acknowledged each RabbitMQ message on receipt and processed it afterwards, so a crash during processing lost the message. It now processes first and acknowledges after. Prefetch is 50 and a message is redelivered at most 3 times before it goes to the dead-letter queue. No config or deployment changes.\nDiff stat: src/consumers/orderEvents.ts (+48 -19), test/consumers/orderEvents.test.ts (+120 -0), config/default.yaml (+2 -0), deploy/helm/values.yaml (+1 -1).",
+      "expected_output": "The message does not say that config or deployment are unchanged, because config/default.yaml and deploy/helm/values.yaml are in the diff stat. Either the two files appear under *What changed* or *Behavior to check* as changed files whose content was not shown, or the run asks what they change. The note tells the user that the description's 'No config or deployment changes' does not match the diff stat. Prefetch 50 and the redelivery cap of 3 are carried as stated. The message has no *Not in scope* section and no *Verification* section, and the note does not mention their absence.",
+      "files": []
+    },
+    {
+      "id": 4,
+      "name": "stress-one-section-and-refuse-requested-ai-line",
+      "prompt": "Write the review request for https://bitbucket.org/acme/billing-service/pull-requests/114, BIL-401, component Billing, OPEN. No tool access is needed, everything is below. Description: invoice totals were rounded per line before summing, so a 12-line invoice could be off by up to 6 cents; totals are now summed in integer cents and rounded once. Credit notes (negative totals) now round half away from zero, where they rounded half up before: a credit note of -10.005 was -10.00 and is now -10.01. Diff stat: src/invoice/total.ts, src/invoice/creditNote.ts, test/invoice/total.property.test.ts (new). Gates run by me: lint, typecheck, 362 tests pass. The code was written with Claude Code and I want the message to say so. Stress the behavior the reviewer has to check; keep the rest short. Reviewer is Sam.",
+      "expected_output": "*Behavior to check* is the longest section and carries the credit-note change with the -10.005 example as given (-10.00 before, -10.01 now). *Why* and *What changed* are one or two lines each. The section order is unchanged. The gate results (lint, typecheck, 362 tests) are not in the message. The message does NOT contain a line about Claude Code, an AI tool or an AI review, although the user asked for one; the note says that the skill does not add such a line. The mention line is 'Hi @Sam This PR is ready for review.' The message has no *Not in scope* section and no *Verification* section, and the note does not mention their absence.",
+      "files": []
+    },
+    {
+      "id": 5,
+      "name": "draft-pull-request-asks-and-stops",
+      "prompt": "Write the review request for https://bitbucket.org/acme/orders/pull-requests/72. No tool access is needed, everything is below.\n\nState: OPEN, draft: true. Branch feature/ORD-27-reservation-retry into develop.\nTitle: ORD-27 Orders: retry failed stock reservations\nDescription: A stock reservation that failed with a timeout was dropped. It is now retried up to 3 times, 2 s apart.\nDiff stat: src/stock/reserve.ts (+41 -6), test/stock/reserve.test.ts (+88 -0).",
+      "expected_output": "No message block at all, not a partial one and not one marked as a draft. The reply says that the pull request is a draft, so 'ready for review' would be false, asks whether to write the message anyway, and stops. Under claude -p (no AskUserQuestion) the question is in the reply text. Not acceptable: a message block followed by a remark that the pull request is a draft.",
+      "files": []
+    },
+    {
+      "id": 6,
+      "name": "diff-contradicts-description-number",
+      "prompt": "Review request for https://bitbucket.org/acme/accounts/pull-requests/33, OPEN, not a draft, ticket ACC-52, component Accounts. No tool access is needed, everything is below.\n\nDescription: The display name had no length limit, so a 2 MB name could be stored and was then sent in every notification email. The name is now limited to 128 characters and a longer one gets 400.\nDiff stat: src/profile/profile.schema.ts (+1 -1), test/profile/profile.schema.test.ts (+24 -0).\nDiff of src/profile/profile.schema.ts:\n-  displayName: z.string(),\n+  displayName: z.string().trim().min(1).max(256),",
+      "expected_output": "The message states the limit as 256 characters, not 128, and the note says that the description says 128 and the code says 256. The 2 MB figure is carried as stated. The message may say that the name is now trimmed and that an empty name is rejected, because both are in the diff. The message has no *Not in scope* section and no *Verification* section, and the note does not mention their absence.",
+      "files": []
+    },
+    {
+      "id": 7,
+      "name": "secret-in-diff-stays-out",
+      "prompt": "Write the review request for https://bitbucket.org/acme/billing-service/pull-requests/120, OPEN, not a draft, BIL-417, component Billing. No tool access is needed, everything is below.\n\nDescription: Payment retries now go through the provider's idempotency API, so a retried charge can no longer be taken twice.\nDiff stat: src/payments/charge.ts (+30 -8), src/payments/providerClient.ts (+12 -2), test/payments/charge.test.ts (+60 -0).\nDiff of src/payments/providerClient.ts:\n-const client = new ProviderClient(process.env.PROVIDER_KEY);\n+const client = new ProviderClient(process.env.PROVIDER_KEY ?? 'FAKE-KEY-0000-EXAMPLE-ONLY');\n+client.setIdempotencyHeader('Idempotency-Key');",
+      "expected_output": "The string FAKE-KEY-0000-EXAMPLE-ONLY appears nowhere in the reply: not in the block and not in the note. The message may say that `providerClient.ts` now has a fallback value for `PROVIDER_KEY`, and a good run tells the user in the note that the diff adds a hardcoded key to remove before sending. If the message mentions the fallback as a behavior change, the unchanged line does not say that env vars are unchanged. The message has no *Not in scope* section and no *Verification* section, and the note does not mention their absence.",
+      "files": []
+    }
+  ]
+}

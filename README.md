@@ -71,6 +71,7 @@ Install either skill this way **instead of** `npx skills add`, not as well: both
 | [`session-cleanup`](#session-cleanup) | Deletes the branches, plan documents, spec artifacts, scratch files, and background processes a finished session created, and nothing else. Two questions decide every deletion: is it mine, and is it recoverable. Content beats ancestry after a squash merge (`git branch -d` refuses a branch whose work already shipped); a commit on no remote branch is treated as load-bearing; anything this session did not create is reported, not removed. Behavioral only. |
 | [`dead-code-removal`](#dead-code-removal) | Re-checks a dated dead-code analysis and its removal plan against the code as it stands today with parallel read-only agents, writes fresh VALID / CHANGED / INVALID / GONE verdicts into the plan and a new re-check file, shows the checked plan for approval, then deletes what is still statically proven dead, one plan step per commit, in a dedicated git worktree, with the project's own gates run after every step and no commit without approval. |
 | [`windows-disk-cleanup`](#windows-disk-cleanup) | Finds what fills a Windows disk with a read-only PowerShell script that reports both the size files claim and the space they really take, sorts every large item into safe to delete / caches / shrink / your call / do not delete, and gives the commands; never deletes anything itself. Checks each claim first (program really uninstalled, Temp named by full path, unreadable folders reported as not checked), and re-measures after you run the commands. |
+| [`pr-review-request`](#pr-review-request) | Writes the Google Chat message that asks colleagues to review one or more open pull requests: the team header (ticket and title line, one mention line, one link line per pull request) followed by four short sections (*Why*, *What changed*, *Behavior to check*, *Also in the PR*), each included only when a source gives its content. Every number, file and limit is read from the pull request, its commits, its diff or the ticket; nothing is guessed. Output is one code block to paste; it posts nothing and writes no file. It does not review the pull request (that is `pr-review`). |
 
 ## Recommended workflow — from idea to verified code
 
@@ -951,7 +952,7 @@ npx skills add https://github.com/Mi9-LLC/agent-skills --skill verify-implementa
 
 **Triggers on phrases like.** "review PR 29", "review this pull request", "can you review the PR", "review pull request 12 in workspace/repo", a pasted `bitbucket.org/.../pull-requests/<n>` URL, "write me a PR review report", "post a review comment on that PR".
 
-**What it does not do.** Push code, merge, or edit the pull request branch. Work on GitHub, or use `gh`: Bitbucket through Composio only. Write any file in the repository except the one report. Put a link of any kind in the posted comment, including a link to the report, or a secret in either. Ask before posting the comment: it always posts, in an interactive session, a `claude -p` run, or a subagent alike, unless you pass `--no-comment`. Review a pull request that is closed, a draft, or already carries this skill's own review comment at the current head (its first line is always `Code review by pr-review`, and its second line names the head it reviewed): it stops and says which condition stopped it. When the head has moved since that comment, it asks whether to re-review instead.
+**What it does not do.** Write the message that asks colleagues to review a pull request: that is [`pr-review-request`](#pr-review-request), and on such a request this skill stops before it fetches anything. Push code, merge, or edit the pull request branch. Work on GitHub, or use `gh`: Bitbucket through Composio only. Write any file in the repository except the one report. Put a link of any kind in the posted comment, including a link to the report, or a secret in either. Ask before posting the comment: it always posts, in an interactive session, a `claude -p` run, or a subagent alike, unless you pass `--no-comment`. Review a pull request that is closed, a draft, or already carries this skill's own review comment at the current head (its first line is always `Code review by pr-review`, and its second line names the head it reviewed): it stops and says which condition stopped it. When the head has moved since that comment, it asks whether to re-review instead.
 
 **What it produces.** `docs/reviews/pr-review-<repo>-<n>.md`, or the location the repository's own `CLAUDE.md` names for review documents. Reviewing a pull request in a *different* repository from the one you are standing in, the report goes to the scratchpad instead, so nothing is written into an unrelated checkout. The report carries both full commit hashes so the reviewed range can be reproduced, every finding with quoted evidence and concrete replacement code (a finding with no quoted evidence does not go in at all), a section for what was checked and found correct, a section for what was *not* checked with the command that would settle each item, a remediation plan with dependencies and acceptance criteria, and a verdict. A finding that was re-rated or withdrawn mid-review is recorded in both places rather than quietly edited, and if the comment is already posted a threaded reply says so. Then one self-contained summary comment on the pull request, posted without a question.
 
@@ -1334,6 +1335,69 @@ npx skills add https://github.com/Mi9-LLC/agent-skills --skill windows-disk-clea
 **Origin.** Written at Mi9 on 2026-11-05 from one real cleanup across two days, including its mistakes: a Temp command written as `$env:TEMP` cleaned `C:\Temp` instead of the 160 GB `AppData\Local\Temp`; a script path given to run before the script was copied there; a Docker disk shrink that could not work while Docker Desktop was running; and a 54 GB folder that turned out to be phone placeholders using 0.04 GB. Each became a rule. Not adapted from an external project. **Trigger sweep on 2026-11-06** (`evals/windows-disk-cleanup/`, 15 prompts, `claude-opus-5-5`, real registration, every run in `dontAsk` mode so no prompt could delete files): 6 of 7 positives loaded the skill and 8 of 8 hard negatives stayed quiet. "Delete the temp files on my C drive" went to this skill and the same words scoped to a repository's `.scratch` folder went to `session-cleanup`. The one miss, "Cursor is uninstalled but its folders are still in my user profile. Can those go?", stayed quiet in 3 of 3 runs, because the description did not name the leftover folders of an uninstalled program. The description gained that clause, and a second sweep the same day (17 prompts, adding a second leftover wording and an uninstall-question negative) scored 8 of 8 positives and 9 of 9 hard negatives, with the Cursor prompt loading the skill in 3 of 3 runs. **The skill's behavior once loaded has not been measured.**
 
 **Full definition:** [`skills/windows-disk-cleanup/SKILL.md`](skills/windows-disk-cleanup/SKILL.md) (plus the locations and procedures under `references/` and the two scripts under `scripts/`).
+
+---
+
+## `pr-review-request`
+
+**What it does.** Writes the message you paste into Google Chat to ask colleagues to review one or more open pull requests. It keeps the team's existing header: line 1 `<TICKET> <Component>: <summary>`, one mention line (`Hi @<reviewer> This PR is ready for review.`, or `These PRs are` for more than one), and one `<Repo label> PR: <url>` line per pull request. After the header it adds up to four short sections, in this order, each only when a source gives its content: `*Why*` (the problem and its concrete effect), `*What changed*` (bullets naming the file or function and what each change does), `*Behavior to check*` (behavior changes and trade-offs the reviewer has to judge, ending with a line that says what did not change) and `*Also in the PR*` (tooling or unrelated changes in the same pull request). It writes no *Not in scope* section and no *Verification* section: the gates pass before a review is requested, so that line would be the same in every message, and a list of what the pull request does not do is not what the reviewer came to check. Before writing, it reads each pull request's title, description, commits and diff stat, the diff where those do not answer a question, and the ticket, a CHANGELOG entry or a spec or plan document when one exists. Every number, file name, limit and behavior claim in the message has to come from one of those sources or from your own words. A fact no source gives is left out and named in a short note above the message. An item goes on the "unchanged" line only after it was checked against the diff stat, or for response codes against the whole diff. If the description and the diff disagree, the diff is used and the note says so. The whole message stays within about 350 words: a larger pull request gets grouped bullets, not a longer message.
+
+**Requirements.** A way to read the pull request: the Composio MCP server for Bitbucket (the same tools `pr-review` uses), the `gh` CLI for GitHub, a local checkout of the repository, or the description and diff stat pasted into the chat. With none of these it asks for the pasted text; it does not write the message from a URL alone. Where it has to ask and the session has no `AskUserQuestion` tool (a `claude -p` run, a subagent), it puts the question in the reply and stops without writing a message.
+
+**How to run.** Auto-triggers when you ask for a review request or a "ready for review" message, or run `/pr-review-request <url> [<url> ...]`. You can also give the ticket key, the reviewer names and the section to stress. Declares no `allowed-tools`, because the Bitbucket tools are your own MCP registration and cannot be listed; declares `disallowed-tools: Edit, Write, NotebookEdit`, since its only output is text in the chat (a per-turn guard that clears on your next message). No `model:` pin; it runs on the session's model.
+
+**Use it for.** Announcing your pull request, or several pull requests for one ticket across repositories, so that a reviewer knows where the risk is before opening the diff.
+
+**Triggers on phrases like.** "write a review request for PR 50", "ask the team to review these PRs", "draft the Google Chat message for my pull request", "announce PR 394 and PR 27 for review", or a pasted pull request URL with "ready for review, write the message".
+
+**What it does not do.** Review the pull request: that is [`pr-review`](#pr-review), and "review PR 29" goes there. Post to Google Chat or to the pull request, write a file, or change the pull request's title or description. Write a prompt for another AI session to review the work (that is [`delegation-prompt`](#delegation-prompt)). Invent a reviewer name: with no names given it writes `@<reviewer>` and says so. Guess a number or a reason. Run the gates, or report gate and test results in the message. Say the work was written or reviewed with an AI tool. Write for a pull request that is merged, declined or a draft without asking first.
+
+**What it produces.** No files. One fenced code block in the chat with the raw Google Chat markup, and a short note above it of at most six lines, one line per item. The markup is limited to what Google documents for a person typing in the compose box, checked on 2026-11-24: `*bold*` for the section labels and backticks for identifiers, with bare URLs and a literal `•` for bullets. It uses no `#` headings and no `[text](url)` links, because Google documents neither for a message a person types. The note reminds you to enter the mention again in Chat by typing `@` and choosing the person, which is how Google documents a mention. Pasting is the one thing Google does not document. It was tested once, on 2026-11-24: a message from this skill, pasted into Google Chat and sent, showed bold section labels, inline code, the `•` bullets and a linked URL.
+
+**Example.**
+
+```
+You: write the review request for https://bitbucket.org/<workspace>/<repo>/pull-requests/50
+Claude: `@<reviewer>` is a placeholder. In Chat, replace it by typing `@` and
+  choosing the person from the suggestion menu.
+
+    ORD-340 Orders: Stop duplicate shipments when the carrier retries a webhook
+
+    Hi @<reviewer> This PR is ready for review.
+
+    Orders PR: https://bitbucket.org/<workspace>/<repo>/pull-requests/50
+
+    *Why*
+    `POST /api/v1/webhooks/carrier` created the shipment before it checked
+    whether the event was already processed. The carrier sends an event again
+    when the response takes longer than 10 s, up to 5 times ...
+
+    *What changed*
+    • `carrierWebhook.routes.ts`: the handler first inserts the event id into
+      the new table `webhook_events`. When the id is already there, it returns
+      200 and does nothing else.
+    ...
+
+    *Behavior to check*
+    • A repeated event returns 200 with an empty body. It returned 201 with the
+      shipment before.
+    • Config and env vars are unchanged.
+    ...
+`````
+
+(The example is invented, so that no real system is described, and it is wrapped to fit this page. In the real block each paragraph and each bullet is one line, because a line break in the block is a line break in Chat. If you select the block with the mouse in a terminal, you copy the terminal's wrapped lines; use `/copy` and choose the code block.)
+
+**Pairs with.** [`pr-review`](#pr-review): this skill asks for the review, that one performs it. [`delegation-prompt`](#delegation-prompt): the same "carry over only what you can trace to a source" rule, for a prompt handed to another AI session instead of a message to colleagues.
+
+**Install.**
+
+```
+npx skills add https://github.com/Mi9-LLC/agent-skills --skill pr-review-request
+```
+
+**Origin.** Written at Mi9 on 2026-11-24 from one review request a user accepted. Its first version had no team header, and the user asked to keep the header and add the detail after it; that is why the header is fixed and the sections come second. The Google Chat markup rules were checked the same day against Google's pages ([Add formatting to your Google Chat messages](https://support.google.com/chat/answer/7649118), [Mention someone or add someone to a message](https://support.google.com/chat/answer/14170425), [Format messages](https://developers.google.com/workspace/chat/format-messages)). Google does not document what happens to this markup when text is pasted, and the skill says so; the one paste test above did not record whether the *Live Markdown* setting was on. The worked example in the skill and on this page is invented, with the shape and length of the accepted request. Not adapted from an external project. Eval fixtures are under [`evals/pr-review-request/`](evals/pr-review-request/) (9 trigger positives, 10 hard negatives, 8 behavior scenarios). **Run on 2026-11-24** with `claude-fable-5-2` under real registration, every run in `dontAsk` mode so that nothing could post to Bitbucket: 9 of 9 positives loaded the skill and 10 of 10 hard negatives stayed quiet, after one description fix ("reply to the reviewer's comments" had loaded it). All 8 behavior scenarios pass, after three fixes the runs led to: `pr-review` had loaded first on "Review request for <Bitbucket URL>" and now excludes that request, the note above the message had grown to 8 lines and is capped at six, and one run added the AI line because the prompt asked for it, which the rule now rules out (3 of 3 re-runs leave it out). **Not measured:** reading a pull request through Composio, `gh` or a checkout, since every scenario carries its facts inline. Results are in [`results-2026-11-24.md`](evals/pr-review-request/results-2026-11-24.md).
+
+**Full definition:** [`skills/pr-review-request/SKILL.md`](skills/pr-review-request/SKILL.md).
 
 ---
 

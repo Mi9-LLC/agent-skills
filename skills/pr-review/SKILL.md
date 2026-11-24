@@ -4,14 +4,14 @@ description: >-
   Review a Bitbucket pull request in any repository end to end - fetch it, pin a checkout of its
   head commit, run the parallel diff pass and the claim-verification pass, write the full report to
   docs/reviews/, and post one self-contained summary comment without asking first. Reads and
-  comments only: it never pushes, never merges, and never edits the pull request branch. Use this
+  comments only: never pushes, merges or edits the pull request branch. Use this
   whenever a Bitbucket pull request review is asked for in any wording, including "review PR 29",
   "review this pull request", "can you review the PR", "review pull request 12 in
   <workspace>/<repo>", a pasted bitbucket.org/.../pull-requests/<n> URL, or a request for a PR
   review report or a review comment on a PR. Bitbucket only, through the Composio MCP tools. Do NOT
-  use it for a GitHub pull request, which needs gh or a general code-review skill; for reviewing
-  uncommitted or local changes with no pull request behind them; or for a code review of a branch or
-  a diff that was never opened as a pull request.
+  use it to write the message that asks colleagues for a review (pr-review-request); for a GitHub
+  pull request, which needs gh or a general code-review skill; for uncommitted or local changes
+  with no pull request behind them; or for a branch or a diff never opened as a pull request.
 model: opus
 disallowed-tools: Edit, NotebookEdit
 ---
@@ -29,6 +29,11 @@ disallowed-tools: Edit, NotebookEdit
   Bitbucket.
 
 Examples: `review PR 29`, `review PR 29 --no-comment`, `review PR 12 in <workspace>/<repo>`.
+
+**A review request is not a review.** If the user asked for the message that asks colleagues to
+review the pull request ("review request for PR 50", "write the ready-for-review message",
+"announce the PR for review"), stop before Step 1 and use `pr-review-request`. This skill posts a
+comment on the pull request, and that user asked for text to paste into a chat.
 
 ## Hard rules
 
