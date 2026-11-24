@@ -162,7 +162,7 @@ sections come after it.
 ### The header
 
 ```
-STF-1330 LDA: Fix multi-release deployments running newest-first
+*STF-1330 LDA: Fix multi-release deployments running newest-first*
 
 Hi @<reviewer> These PRs are ready for review.
 
@@ -171,7 +171,11 @@ LDA PR: https://bitbucket.org/<workspace>/<repo>/pull-requests/394
 DMS PR: https://bitbucket.org/<workspace>/<repo>/pull-requests/27
 ```
 
-- **Line 1 is `<TICKET> <Component>: <summary>`.**
+- **Line 1 is `*<TICKET> <Component>: <summary>*`, in bold.**
+  - The whole line is between one pair of asterisks, with no space after the first one or before
+    the last one. It is the only bold text in the message besides the section labels.
+  - Keep `*`, `_`, `~` and backticks out of the line. Markup inside bold text was not tested in
+    Chat, so a function or a setting is named in the sections, not on line 1.
   - The ticket key comes from the user, the pull request title, the branch name
     (`bugfix/ORD-340-carrier-webhook-retries`) or the commit messages. If none of them has one, write
     the line without a key and say so in the note.
@@ -231,7 +235,9 @@ under these names or others, and do not say in the note that they are missing.
 
 - The gates (lint, typecheck, tests, build) pass before a review is requested, so a line saying
   that they pass is the same in every message and tells the reviewer nothing. Do not run the gates
-  for this message, and do not put test counts or gate results in another section.
+  for this message, and do not put test counts or gate results in another section. A statement
+  that a new test fails on the target branch is a test result too: name the test file and leave
+  the result out.
 - A list of what the pull request does not do is not what the reviewer came to check. A design
   document's non-goals do not go in the message.
 
@@ -311,7 +317,8 @@ What is not available to a person typing:
 
 What the message uses, and why:
 
-- `*Label*` for the section labels, on a line of their own.
+- `*...*` around the whole of line 1, and `*Label*` for the section labels, each on a line of its
+  own.
 - Backticks around every file name, function, endpoint, setting, key and code value. This is also
   what protects them: `*`, `_` and `~` format text, so an identifier such as `pending_secret_hash`
   outside backticks can come out partly in italics.
@@ -334,8 +341,8 @@ the page does not state.
 Read the block once as the reviewer, then check:
 
 1. Every number, file name, limit and behavior claim traces to a source from Step 2.
-2. Line 1 is `<TICKET> <Component>: <summary>`, and the mention line is singular for one pull
-   request and plural for more.
+2. Line 1 is `*<TICKET> <Component>: <summary>*`, with the asterisks and no other markup, and the
+   mention line is singular for one pull request and plural for more.
 3. There is one link line per pull request, and each URL is the one the user gave, without a
    suffix.
 4. Each item on the "unchanged" line was checked against the diff stat or the whole diff.
@@ -364,7 +371,7 @@ The note above the block:
 The block:
 
 ```
-ORD-340 Orders: Stop duplicate shipments when the carrier retries a webhook
+*ORD-340 Orders: Stop duplicate shipments when the carrier retries a webhook*
 
 Hi @<reviewer> This PR is ready for review.
 
@@ -392,7 +399,8 @@ Orders PR: https://bitbucket.org/<workspace>/<repo>/pull-requests/50
 
 What to notice:
 
-- The header is the team's format, unchanged. The sections add to it and do not replace it.
+- The header is the team's format, with line 1 in bold. The sections add to it and do not replace
+  it.
 - *Why* gives the effect in numbers a reviewer can weigh: 10 s, 5 repeats, 6 shipments for one
   order, 41 orders shipped twice.
 - *Behavior to check* states the accepted trade-off as accepted and names where it is described,

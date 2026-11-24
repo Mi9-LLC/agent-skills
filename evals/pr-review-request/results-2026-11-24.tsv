@@ -77,3 +77,8 @@ behaviour-run4	B6	fire	FIRED	pr-review-request 	-	claude-fable-5-2
 behaviour-run4	B7	fire	FIRED	pr-review-request 	-	claude-fable-5-2
 behaviour-run5	B1	fire	FIRED	pr-review-request 	mcp__composio__COMPOSIO_SEARCH_TOOLS	claude-fable-5-2
 behaviour-run5	B4	fire	FIRED	pr-review-request 	-	claude-fable-5-2
+behaviour-run6	B0	fire	FIRED	pr-review-request 	-	claude-opus-5-5
+behaviour-run6	B1	fire	FIRED	pr-review-request 	mcp__composio__COMPOSIO_SEARCH_TOOLS	claude-opus-5-5
+behaviour-run6	B6	fire	FIRED	pr-review-request 	-	claude-opus-5-5
+behaviour-run7a	B0	fire	FIRED	pr-review-request 	-	claude-opus-5-5
+behaviour-run7b	B0	fire	FIRED	pr-review-request 	-	claude-opus-5-5
