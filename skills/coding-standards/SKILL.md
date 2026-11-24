@@ -1,5 +1,5 @@
 ---
-name: stdlib-first
+name: coding-standards
 description: >-
   Reuse-before-build discipline for writing NEW TypeScript/Node or C#/.NET
   code. Trigger at two decision moments: (1) about to write a new function,
@@ -15,7 +15,7 @@ description: >-
   TypeScript/C#.
 ---
 
-# stdlib-first
+# coding-standards
 
 Reuse before you build. When writing new TypeScript/Node or C#/.NET code, walk the ladder below and take the FIRST rung that solves the problem — a custom implementation is the last resort, not the default.
 
@@ -68,7 +68,7 @@ Never add a package silently. When the right tool is a library the project does 
 
 ## Canonical copy & repo bootstrap
 
-This skill is the canonical source of the `## Coding standards` block checked into Mi9 repos' root `CLAUDE.md` files — the `<!-- source: Mi9-LLC/agent-skills → skills/stdlib-first -->` comment in those blocks points here.
+This skill is the canonical source of the `## Coding standards` block checked into Mi9 repos' root `CLAUDE.md` files — the `<!-- source: Mi9-LLC/agent-skills → skills/coding-standards -->` comment in those blocks points here.
 
 - **Updating the rules:** change this skill first, then re-sync the repo blocks from it.
 - **Bootstrapping a new TS/C# repo:** if the repo's `CLAUDE.md` has no `## Coding standards` section, offer to insert the tailored block — TS repos get the ladder minus the C#-only rung (remaining rungs renumbered) and the TypeScript rules only; C# repos get the full 4-rung ladder and the C# rules only.

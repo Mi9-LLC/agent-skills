@@ -56,7 +56,7 @@ Install either skill this way **instead of** `npx skills add`, not as well: both
 | [`verify-frontend-change`](#verify-frontend-change) | Never calls a UI change done from a clean edit alone — starts the dev server, opens the affected page in Chrome (via the Chrome DevTools MCP server), interacts with the change, gates on zero new console errors, records a performance trace. Any failure is fixed and the loop rerun from the top. |
 | [`plan-eng-review`](#plan-eng-review) | Pre-implementation review gate for a *written* implementation plan — scope challenge, what-already-exists reuse check, four review dimensions (architecture / code quality / tests / performance), evidence-gated findings, then a verdict plus a `## ENG REVIEW REPORT` spliced into the plan file (terminal-only when the plan has no file on disk). Never implements the plan. |
 | [`document-generate`](#document-generate) | Writes Diataxis documentation files (tutorial / how-to / reference / explanation) for a named feature, module, or project — end-to-end codebase archaeology first, a partition plan approved before any file is written, every example executed, traced, or labeled illustrative. Never edits `CLAUDE.md`/`AGENTS.md`, never commits. |
-| [`stdlib-first`](#stdlib-first) | Reuse-before-build ladder for new TypeScript/Node and C#/.NET code — built-in/standard library first, then (C#) first-party `Microsoft.Extensions.*`, then a library the project already uses, custom code last; precise types, specific error classes, doc comments. Asks before adding any dependency. Behavioral only — produces no files. |
+| [`coding-standards`](#coding-standards) | Reuse-before-build ladder for new TypeScript/Node and C#/.NET code — built-in/standard library first, then (C#) first-party `Microsoft.Extensions.*`, then a library the project already uses, custom code last; precise types, specific error classes, doc comments. Asks before adding any dependency. Behavioral only — produces no files. |
 | [`repo-change-summary`](#repo-change-summary) | Deterministic per-month change totals for a git repo across **all** branches — lines added/deleted, total churn, distinct files, file-touches, commits, PRs merged, authors — as a Markdown table plus a styled HTML report; a companion multi-repo mode rolls up a named group of repos into one combined report. Bundled POSIX-shell scripts; each commit counted once, merges excluded. Optionally emails the report as a PDF attachment, preview-first. |
 | [`verify-implementation`](#verify-implementation) | Post-implementation gate: adversarially verifies finished work against whatever claims it is done — audits the report against the actual diff, re-derives every acceptance criterion, reads every new test body and re-runs mutation proofs to catch tautological guards, re-runs the project's own gates — then **fixes what it finds** on the branch in dedicated commits. Pins `opus` (the latest Opus). |
 | [`pr-review`](#pr-review) | Reviews a Bitbucket pull request end to end through the Composio MCP tools: pins a throwaway checkout of the PR head so line numbers cannot move, runs a parallel diff pass (`CLAUDE.md` compliance + bugs) whose every finding a separate subagent has to confirm, then a verification pass that settles the claims in the commit messages and the description against primary sources. Writes `docs/reviews/pr-review-<repo>-<n>.md` and posts one self-contained summary comment without asking. Read and comment only; Bitbucket only, never GitHub. Pins `opus` (the latest Opus). |
@@ -673,13 +673,13 @@ npx skills add https://github.com/Mi9-LLC/agent-skills --skill document-generate
 
 ---
 
-## `stdlib-first`
+## `coding-standards`
 
 **What it does.** Enforces a reuse-before-build ladder when Claude writes new TypeScript/Node or C#/.NET code: reach for a built-in or standard-library API first, then (C#) a first-party `Microsoft.Extensions.*` package, then a widely-adopted library the project already uses — and only when every rung fails, write a custom implementation. One consistency exception overrides the rung order: where the project already uses one library consistently for the exact task, matching that established convention outranks introducing a rung-1 built-in alongside it — or, if the two genuinely conflict, the conflict is named to you rather than decided silently. On top of the ladder: precise types (no `any`, no `object`/`dynamic`), specific error classes instead of bare `Error`/`Exception`, C# async discipline (`CancellationToken`, no sync-over-async), and short doc comments on non-obvious members.
 
 **Requirements.** None. Purely behavioral — it changes what code Claude writes, not what tools it can use.
 
-**How to run.** Auto-triggers when Claude is about to write a new utility/helper/service or add/choose a dependency in TS or C#, or run `/stdlib-first`. Declares no `allowed-tools`/`disallowed-tools` — it guides code-writing and must not drop tools.
+**How to run.** Auto-triggers when Claude is about to write a new utility/helper/service or add/choose a dependency in TS or C#, or run `/coding-standards`. Declares no `allowed-tools`/`disallowed-tools` — it guides code-writing and must not drop tools.
 
 **Use it for.** Keeping generated code on the platform: no hand-rolled retry loops, date parsers, deep clones, or HTTP wrappers when `fetch`, `structuredClone`, LINQ, or an already-installed library does the job — and no surprise dependencies, because a missing library is always a question to you first.
 
@@ -702,10 +702,10 @@ You: write a helper that retries a fetch up to 3 times with backoff
 **Install.**
 
 ```
-npx skills add https://github.com/Mi9-LLC/agent-skills --skill stdlib-first
+npx skills add https://github.com/Mi9-LLC/agent-skills --skill coding-standards
 ```
 
-**Full definition:** [`skills/stdlib-first/SKILL.md`](skills/stdlib-first/SKILL.md).
+**Full definition:** [`skills/coding-standards/SKILL.md`](skills/coding-standards/SKILL.md).
 
 ---
 
