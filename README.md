@@ -157,6 +157,516 @@ The two gates are deliberate counterparts: `plan-eng-review` catches problems wh
 
 ---
 
+## `new-feature`
+
+**What it does.** An investigative Q&A workflow that turns a fuzzy feature request into a fully-specified design *before* any code is written. It researches first — the relevant code, the repo's `CLAUDE.md`/`AGENTS.md` invariants, prior plans and git history, and current best practices — then surfaces every ambiguous decision as categorized questions (A/B/C…) with `[REC]`-marked defaults and a short reason, asking one category per message and locking each answer with a one-line summary, until zero ambiguity is left. After the first one or two categories it emits the full punch list of outstanding decisions proactively (a living list it re-posts as answers add or close items), and before handing off to plan mode it posts the complete locked-decision register in one message.
+
+**Requirements.** A codebase to investigate. Internet / Context7 access helps it ground recommendations in current best practices. Writes no files of its own.
+
+**How to run.** Auto-triggers aggressively on feature / design / "is it possible to" asks, or run `/new-feature`. Declares `disallowed-tools: Edit, Write, NotebookEdit` (drops those tools while active; a per-turn guard that clears on the next message) — Bash stays available for the git-history research step.
+
+**Use it for.** Any non-trivial change with real design surface — new modules, protocol / contract changes, cross-service behavior, security-sensitive code, significant refactors. The `[REC]` markers keep it fast: skim, say "agreed with all recommended", and spend attention only on the decisions you'd actually change.
+
+**Triggers on phrases like.** "new feature", "design / scope / plan a feature", "add capability", "analyze options", "think hard about", "investigate", "before we implement", "what do you think about adding X", "is it possible to".
+
+**What it does not do.** Write code — it's design-only (enforced by the `disallowed-tools` guard above) and hands off to plan mode once decisions are locked. Trigger on tiny, obvious tasks ("rename this variable"). Skip the research and make you fill in what it could have found itself. Dump every question at once.
+
+**What it produces.** No files — a locked set of design decisions carried into the planning phase.
+
+**Example.**
+
+```
+You: I want to add SSO to the portal
+→ (after reading the auth code) Question — Category A, identity protocol:
+  A1. (a) SAML  (b) [REC] OIDC — your stack already has an OAuth2 client; least new surface
+  A2. Session model: (a) [REC] reuse existing JWT cookie  (b) new server session store
+  Confirm A1–A2.
+```
+
+**Pairs with.** [`document-generate`](#document-generate) — this skill settles the design decisions before a line of code is written; that one documents the feature once it exists. Also [`plan-eng-review`](#plan-eng-review) — settle the design here, draft the plan, then gate the resulting plan before building.
+
+**Install.**
+
+```
+npx skills add https://github.com/Mi9-LLC/agent-skills --skill new-feature
+```
+
+**Full definition:** [`skills/new-feature/SKILL.md`](skills/new-feature/SKILL.md) (plus longer worked examples under `references/`).
+
+---
+
+## `plan-eng-review`
+
+**What it does.** The gate between "a plan exists" and "code gets written". Reviews a written implementation plan (the plan-mode draft, a file under `docs/plans/`, or a pasted plan) before any code is written: scope challenge (which also challenges any per-phase model recommendations the plan carries — quality outranks price, so an underestimation signal in a phase forces an Opus recommendation) → what-already-exists reuse check → four dimensions (architecture — including the deletion test on every planned module (delete it in your head: if complexity vanishes it was a pass-through) and the two-adapter rule (no interface or port unless two implementations are justified, normally production + test); code quality of the planned code; tests — the heaviest, including a seams check (a planned test that must change when the implementation changes tests past the interface; fewer seams, existing ones preferred) and the dependency category — in-process, locally substitutable, remote-but-owned, true external — that decides the test strategy; performance) → verdict. Iron law: no finding without evidence — a presence finding quotes the plan or a `file:line` verified with Read/Grep; an absence finding quotes the plan text that creates the obligation plus the negative search that verified the absence; a finding that depends on external library/framework/API behavior is verified against that dependency's *current* documentation in-session, never against internal knowledge. REGRESSION RULE: if the plan modifies existing behavior and no existing test covers the changed path, a regression test goes into Required plan changes — never asked, never waived.
+
+**Requirements.** A written implementation plan to review, and the codebase it targets — the review grounds itself in the repo's `CLAUDE.md` and the files the plan touches. No tokens; network only to check current documentation when a finding depends on external-library behavior.
+
+**How to run.** Auto-triggers when a written plan exists and you ask for it to be reviewed, or run `/plan-eng-review`. `allowed-tools: Read, Grep, Glob, Bash, Write, Agent, AskUserQuestion, WebSearch, WebFetch` (Bash is used read-only: git context, existence probes; Agent for the parallel Explore subagents in the what-already-exists reuse sweep — the reviewer then re-reads every cited `file:line` itself, since a subagent report is a lead, not evidence — and for the optional outside-voice subagent; WebSearch/WebFetch only to verify external-library behavior against current docs).
+
+**Use it for.** Gating a plan before implementation — catching rebuilt-what-already-exists, untested behavior changes, silent failure paths, bloated scope, and underestimated model recommendations while they are still cheap to fix.
+
+**Triggers on phrases like.** "review this plan", "eng review the plan", "is this plan sound", "architecture review before we build", "check the implementation plan before I start".
+
+**What it does not do.** Implement the plan (whatever the verdict). Design a feature from scratch (that's `new-feature`), decompose an approved plan (`convert-plan-to-feature`), devil's-advocate a decision or idea that isn't a written plan (`anti-sycophancy`), or review written code/diffs. It never edits any plan byte outside the report — the only mutation is replacing/appending the `## ENG REVIEW REPORT` section via a single whole-file Write-splice. Findings are batched into the report (each with a `[REC]`); AskUserQuestion is reserved for genuine scope/design forks, batched per section; an unanswered fork is recorded under `UNRESOLVED DECISIONS:`, never silently defaulted. Never commits or pushes.
+
+**What it produces.** An `## ENG REVIEW REPORT` section appended at the end of the plan file (replacing any prior report; resolved decisions carry forward on re-runs and are never re-asked, and each prior report's Required plan changes are re-verified against the amended plan so the max-8-findings cap can't silently drop one): a VERDICT (APPROVED / APPROVED WITH CHANGES / NEEDS REVISION — bound by a decision table: any CRITICAL GAP or unresolved decision ⇒ NEEDS REVISION; non-empty Required plan changes ⇒ at most APPROVED WITH CHANGES), scope-reduction opportunities, what-already-exists reuse findings, per-dimension findings (max 8 each, severity-ranked, confidence 1–10), a Required plan changes checklist, a failure-modes table (failure / test? / handled? / user-visible?), a test-coverage summary (★★★/★★/★/GAP planned-coverage legend + `COVERAGE: N/M`), a Decisions block, a NOT-in-scope list, a low-confidence appendix, and a closing `NO UNRESOLVED DECISIONS` / `UNRESOLVED DECISIONS:` marker. Terminal-only (zero writes) when the plan has no file on disk. Optional outside voice on explicit ask only: one subagent prompted to refute the verdict, tensions shown neutrally. Ships `references/review-dimensions.md`.
+
+**Example.**
+
+```
+You: review docs/plans/csv-import.md before I start building
+→ Grounded in CLAUDE.md + the 6 files the plan touches. 1 decision batch: processing
+  model (sync in request vs [REC] async job). Spliced ## ENG REVIEW REPORT into the plan:
+  VERDICT: NEEDS REVISION — importOrders() failure path is silent, untested, unhandled
+  (CRITICAL GAP). Required plan changes: 2 (regression test for calculateTotals — the
+  plan changes tested-by-nobody behavior; explicit error path for failed rows).
+  What already exists: parseCsv() at src/lib/csv.ts — plan rebuilds it; reuse instead.
+```
+
+**Pairs with.** [`new-feature`](#new-feature) → plan mode → **this gate** → [`convert-plan-to-feature`](#convert-plan-to-feature) → implement → [`verify-implementation`](#verify-implementation) — design the feature, plan it, gate the plan, decompose it, build it, then gate the built code (the full chain is the [recommended workflow](#recommended-workflow--from-idea-to-verified-code)). Also [`anti-sycophancy`](#anti-sycophancy) — that skill is the skepticism *stance* for any decision or idea; this one is the structured, evidence-gated *workflow* for a written plan. They complement, not compete. Also [`document-generate`](#document-generate) — this gate reviews the plan before implementation; that skill writes the user-facing docs once the code exists.
+
+**Install.**
+
+```
+npx skills add https://github.com/Mi9-LLC/agent-skills --skill plan-eng-review
+```
+
+**Full definition:** [`skills/plan-eng-review/SKILL.md`](skills/plan-eng-review/SKILL.md) (plus the review checklists, calibration tables, and report skeleton under `references/`). Adapted from [`garrytan/gstack`](https://github.com/garrytan/gstack) (MIT) — rebuilt so per-finding question gates become per-section decision batching, the automatic Codex outside voice becomes an optional on-request Claude subagent, the separate test-plan/tasks artifacts fold into the single in-plan report, and gstack state is dropped. The deletion test, two-adapter rule, and seams/dependency-categories check are adapted from [`mattpocock/skills`](https://github.com/mattpocock/skills) `codebase-design` and `to-spec` (MIT, © 2026 Matt Pocock).
+
+---
+
+## `convert-plan-to-feature`
+
+**What it does.** Takes a finished, approved plan — from plan mode, a conversation, or a file under `docs/plans/` — and decomposes it into a folder of independently-trackable per-feature specs. The plan answered *what* and *why*; this skill produces the *per-unit-of-work execution surface* so a team (or a fleet of agents) can pick up one feature at a time without re-reading the whole plan.
+
+**Requirements.** An approved/finished plan to convert (plan-mode output, a confirmed design in the conversation, or an existing file under `docs/plans/`). It writes under the repository's own plan location when one exists (checked via its CLAUDE.md and existing folders — e.g. `docs/up next/`), else `docs/plans/` (or a top-level `plans/` fallback). No tokens or network.
+
+**How to run.** Auto-triggers once a plan exists and you ask to decompose it, or run `/convert-plan-to-feature`. `allowed-tools: Read, Write, Glob, Grep, AskUserQuestion`.
+
+**Use it for.** Breaking a complex plan into separately assignable, reviewable, closeable units of work — feature tickets/specs a team or implementation agents can run in parallel.
+
+**Triggers on phrases like.** "convert this plan into features", "split the plan up", "break this into per-feature files", "turn the plan into implementation specs", "make a feature breakdown", "decompose the plan", "create feature tickets from this plan".
+
+**What it does not do.** Implement anything — it writes planning documents only and stops. It declares `disallowed-tools: Edit, NotebookEdit`, which drops those tools while the skill is active (a per-turn guard — the restriction clears on your next message). It never writes at the `docs/plans/` root (everything goes inside the `<initiative>/` subfolder so concurrent efforts don't collide), and it leaves the source plan where it is. It also stays out of repositories that mandate their own spec workflow (e.g. OpenSpec repos, where the change's `tasks.md` owns the breakdown) — there, its execution rigor (model rubric, parallel groups, acceptance criteria, standing implementer instructions) is ported into that artifact instead of a parallel breakdown.
+
+**What it produces.**
+- `docs/plans/<initiative>/REQUIREMENTS.md` — the index: context, blast radius, locked decisions, consolidated cross-cutting catalogs (wire-contract/enum tables, message types, error codes), deploy ordering, parallel groups (assigned mechanically from the dependency data — same group means no dependencies between them, safe to implement concurrently), a feature table with suggested models — assigned quality-first (Opus is the default; Sonnet/Haiku only for work meeting every condition of the cheaper tier; any underestimation signal forces Opus) and re-reviewed in a mandatory second pass, since a feature underestimated onto a cheaper model costs a bad implementation plus rework — a Status column (`todo` / `in progress` / `done` / `blocked` — the initiative's status board), test strategy, and open questions. On a re-run where the `<initiative>/` folder already exists it reads the existing `REQUIREMENTS.md` first, preserves every feature's Status value, and asks before overwriting any feature file whose status is past `todo`.
+- `docs/plans/<initiative>/features/NN - <Feature Name>.md` — one file per feature: requirement, a **Consumes/Produces interface contract**, ordered technical steps with real file paths (no placeholders), objectively checkable acceptance criteria (a feature that modifies existing behavior must carry a criterion naming its regression test), dependency/risk notes, its parallel group in the header, and a fixed *Standing instructions for the implementer* block (verbatim in every file: ask rather than resolve open questions by assumption; verify external library/API behavior against current documentation, not internal knowledge; the file's acceptance criteria are the verification contract `verify-implementation` runs against, so a mid-feature scope change is written back into them).
+
+**Example.**
+
+```
+You: break this approved rollback plan into feature files
+→ docs/plans/stf-555-store-release-rollback/
+   REQUIREMENTS.md
+   features/01 - Contracts protocol v3 bump.md   (Produces: protocol v3 enums)
+   features/02 - Store Agent backup engine.md     (Consumes: 01)
+   features/03 - Store Agent rollback engine.md   (Consumes: 01, 02)
+   … one slice each, numbered in deploy order.
+```
+
+**Pairs with.** [`plan-eng-review`](#plan-eng-review) — gate the plan before decomposing it. [`verify-implementation`](#verify-implementation) — each feature file's acceptance-criteria checklist is that skill's highest-preference input: decompose here, implement, then verify each feature against its own criteria.
+
+**Install.**
+
+```
+npx skills add https://github.com/Mi9-LLC/agent-skills --skill convert-plan-to-feature
+```
+
+**Full definition:** [`skills/convert-plan-to-feature/SKILL.md`](skills/convert-plan-to-feature/SKILL.md) · **README:** [`skills/convert-plan-to-feature/README.md`](skills/convert-plan-to-feature/README.md).
+
+---
+
+## `execute-change`
+
+**What it does.** Executes a plan brief end to end in an OpenSpec-managed repository, unattended. It can also start one step earlier, from a raw idea: a research subagent reads the relevant code and returns a design dossier (every claim with a source — a file path, or a URL to a primary source such as official docs or a spec), the lead runs a categorized design interview (`[REC]`-marked defaults, one category per question) in rounds — each answer opens the next round's questions, a question that depends on a still-open one waits, and the interview ends only when nothing is open; a fact from the repo or the docs is looked up by a read-only subagent, never asked of you; a term that conflicts with the repo's `CONTEXT.md` glossary is challenged, a vague word gets one proposed canonical term, and an ADR is offered only for a decision that is hard to reverse, surprising without context, and a real trade-off — drafts the brief to `docs/up next/<date-time>-<slug>-plan.md` (with `## Glossary updates` and `## Decisions to record as ADRs` sections, and the research dossier appended verbatim as `## Research dossier` so later steps and a resumed run see the same facts the interview used), and waits for your approval — only an approved brief enters the pipeline. One lead session coordinates the whole feature routine — author the OpenSpec change from the brief (`/opsx:propose` flow; task groups are vertical slices sized to one fresh context window — a change too wide for vertical slices is sequenced expand–contract: add the new form beside the old, migrate call sites in batches of one task group each, remove the old form last — and the brief's glossary/ADR sections are written into `CONTEXT.md` and `docs/adr/`, committed with the change) → [`plan-eng-review`](#plan-eng-review) gate → resolve the review's open decisions with the user → apply the required changes (`/opsx:update` flow, one subagent launched after the user's answers are in, so nothing runs while the question is out) → a lead-run check of the apply step's own quotes, where every whole line it quoted must be found by `grep -F -x` in the file it named, joined by one Opus reader over `tasks.md` when a required change or a decision edits a file list, a group boundary, or a blocked-by order, and by a re-review from [`plan-eng-review`](#plan-eng-review) whenever the first verdict was `NEEDS REVISION` → implement task group by task group (the implementer runs the type check and the single test files it touches while it works, then its verify clauses, and never the full suite; the lead's own gate run is the one that counts, and it is proportionate to what the group changed: a markdown lint alone for a documentation-only group, the type check and the lint plus the runner's related-tests mode for a code group, the full suite when the change alters behavior tests elsewhere assert on, and the full gates once after the last group) → [`verify-implementation`](#verify-implementation) audit of everything the run committed — the diff from the run's start commit (the commit `HEAD` pointed at when the run began, recorded in the ledger) to `HEAD`, not the base branch against the branch — with a bounded fix loop → behavior-preserving simplification pass → reconcile `tasks.md` and stop. Every authoring, review, implementation, audit, and simplification step runs in a fresh subagent with an empty context (putting the review's open decisions to you is the lead's own step) — the lead starts a subagent for every substantial task precisely to preserve its own context for the hours-long run; it never edits source itself, checks every "done" claim against evidence on disk, and commits per checkpoint by explicit pathspec on the run's branch. The authoring step works to content rules rather than line caps: `design.md` holds only the decisions the brief leaves open, `tasks.md` gives one line per task naming the file and the change, and file lists and verify clauses are never shortened, because the concurrency gate and the audit read them. A subagent that dies on the API or the transport (an Agent tool error, or a last message such as "529 Overloaded", with no report file written) is relaunched once from its progress file, which it appended a line to for every file it finished, so finished work is not redone; a second death pauses the run. The lead itself writes little: a step-log entry is capped at five lines, and the detail stays in the report files the ledger names. **Where the run works is a blocking question at preflight**, and its answer decides both that branch and the *run root* — the directory the run works in. Three options: reuse the current branch and checkout (recommended — commits go onto whatever branch is checked out now, no new branch and no new directory); create the run's own `agent/execute-change/<timestamp>-<plan name>` branch in the current checkout; or create that branch in a dedicated git worktree under `../<repo>.worktrees/`. Only the worktree keeps your main working tree out of the run. Pick either of the other two and the main working tree *is* the run root: you cannot keep working in the repo while the run executes, and two plans cannot run on that repo at the same time — the worktree is what makes concurrent runs possible, because git refuses to check one branch out twice. The question tells you two things before you answer: whether reusing the current branch would commit an hours-long autonomous change straight onto `main` or `master` (it says so, and does not block it), and whether the working tree is dirty — commits stage explicit paths, so your unrelated modified files are never committed, but every gate run executes against those changes and a pre-existing failure can then be blamed on the implementation, so committing or stashing first is the clean path. That question, the route question that rides in the same AskUserQuestion call so Step 0 still has one pause, and the not-an-OpenSpec-repo one — all asked rather than printed as a notice you could scroll past — are the only ones the preflight asks beyond its offers to install the OpenSpec CLI and the two companion skills: it otherwise prints a readiness line (brief, branch, base, run root, route, notification state) and starts — the manual invocation is the authorization, and concurrency is decided mechanically at implementation time from the task groups' file lists. Human decisions pause the run in one batched question per step — with Remote Control on, the question pushes to your phone, waits indefinitely, and survives machine sleep. A crash or interruption resumes from the run's ledger file at the last committed checkpoint, recreating the worktree if the run uses one and it is gone. Every piece of prose the subagents write for people to read — `proposal.md`, `design.md`, the spec deltas, `tasks.md`, `CONTEXT.md`, an ADR, a commit message body — is written free of AI writing tells, through the [`unslop`](#unslop) rules; no fact, number, or technical term is changed to satisfy that.
+
+**Two routes.** The run is either full (every step above) or light, and the route is settled at preflight in the same question as the run root, so Step 0 still has one pause. The lead answers six signals from the brief's own text and prints each answer with the brief line it came from: whether the change edits a shared contract (an exported type, function, schema, or API that another package in the repo, or another repo, imports); whether it touches infrastructure or data (deploy scripts, cloud resources, alert policies, CI config, database migrations, backfills); whether it touches sensitive paths (auth, permissions, secrets, locks, concurrency, caching); whether it is broad (more than one package, or more than 8 files, which is [`plan-eng-review`](#plan-eng-review)'s own hotspot threshold); whether the brief carries a test plan (concrete test cases plus the commands or gates that prove them); and whether it has been engineering-reviewed (an `## ENG REVIEW REPORT` section whose verdict is `APPROVED` or `APPROVED WITH CHANGES`, whose closing marker is `NO UNRESOLVED DECISIONS`, and whose required changes are marked addressed, where a `## Research dossier` section does not count, since the design interview asks you questions but runs no engineering review). A brief that does not say what it touches gets a `yes` on the signal it leaves open. The recommendation follows one rule: light when the first four signals are all `no` and the test plan is present, or when the brief is both engineering-reviewed and carries a test plan; full otherwise. Your answer is the route, whatever the recommendation was, and it goes into the ledger.
+
+The light route runs step 1 in a lighter form and then steps 6 and 7. Its author does not invoke the `/opsx:propose` flow, which writes every artifact of the schema, `design.md` included, and would re-plan a brief that is already the plan: it runs `openspec new change` for the scaffold and hand-writes `proposal.md`, the spec deltas (or sets `skip_specs: true` in the change's `.openspec.yaml` when the brief changes no observable behavior, as a refactor or a tooling change does), and a `tasks.md` with the full route's columns, its task groups taken from the brief's own order section. Steps 2 to 5 and step 8 are skipped. The full route's step numbers are kept so a resume keeps its meaning: the ledger carries a `Route:` line whose absence means full, and a light run whose last completed step is anywhere from 1 to 5 resumes at step 6. There is no switch between routes once the run has started. To get the review after choosing light, stop the run, delete the ledger, and run it again with full. What the light route gives up is what [`plan-eng-review`](#plan-eng-review) catches before any code exists: a changed path with no regression test asked for, over-build inside the claim, silent-failure gaps, architecture and performance findings, and a wrong `tasks.md` decomposition. [`verify-implementation`](#verify-implementation) works from the diff and the claims made about it, so it does not replace that, which is why the rule sends every brief without a test plan to the full route, and every brief with a risk signal too unless an engineering review has already been run on it.
+
+**Heartbeat and cleanup.** Installed as a plugin, the run also watches its own subagents. Three hooks — `SubagentStart`, `SubagentStop`, and a `Notification` hook matching `permission_prompt|agent_needs_input|idle_prompt` — fire in the lead session (not inside the subagent) and append one JSON line each to `<session project root>/.claude/execute-change-run.jsonl` — under the directory you started the session in, not the run root, because a hook starts from the payload's `cwd`, the shell's own current directory, and walks up to the nearest directory holding the run metadata file: the session's project root is the one directory every such walk from inside the project reaches, and a worktree sits outside the project, so a file written there is never reached. The lead pairs that log with a metadata file naming its own session, read from the `CLAUDE_CODE_SESSION_ID` environment variable; a hook whose payload session id does not match writes nothing, which is what keeps the hooks inert in every session that is not a run. After launching a subagent the lead arms a background watcher that re-reads that log every 180 seconds and stays quiet unless something is wrong: nine minutes with no new line, or one of those notifications. It prints one `alive: N agents running, oldest <age>` line every 30 minutes and exits once every subagent has stopped. Nine minutes of silence is not by itself a stall — `SubagentStart` fires once and nothing else arrives until `SubagentStop`, so an implementer working normally for 20 minutes looks identical to a stall in the log — so the lead lists its running agents first: an agent still running means it is working, and only an idle agent whose stop event never arrived starts the retry ladder (a status request, then a stop and one relaunch, then a pause that asks you). A permission prompt is never treated as a stall: only you can answer it, so the lead reports it at once and waits. An `IDLE` verdict gets the same check for the opposite reason: a start line can be missing (4 of 8 subagents in one session, a parallel batch of three among them logging none at all), so the replayed running set can be empty while agents are still working, and the lead confirms with the agent list before believing the batch is over. That defect was diagnosed and fixed on 2026-09-01: the hook read the metadata file at the payload's `cwd` literally, and `cwd` is the shell's current directory, so every event that fired while the shell sat in a package subdirectory was dropped, which is also why the matching stop events survived, logged after a later command had reset the directory. The hook now walks up from `cwd` to the nearest directory holding the file. The agent-list confirmation stays, because an installed copy of the older hook keeps the defect until you update the plugin, and so do the lead's own two rules: it never leaves the shell in another directory (it uses `git -C`, `pnpm -C`, or a subshell instead), and it never takes the run's worktree as an extra working directory, since a walk up from outside the project reaches nothing. Once `IDLE` has proved false in a run, or the hooks are not installed, the lead arms a plain 175-second timer instead of the log watcher and lists its agents at every tick. A subagent's stop carries no success or failure signal, so a failed step is caught by the lead's own acceptance check, not by the watcher. On Windows, when the last subagent of a batch stops, a process sweep kills what that batch left running — a process qualifies only when all three of these hold: its command line contains the run root path or it descends from the current `claude` process, it started at or after the batch began, and its executable is one of `node`, `npm`, `npx`, `pnpm`, `yarn`, `bun`, `biome`, `eslint`, `tsc`, `vitest`, `jest`, `esbuild`, `dotnet`. Shells (`bash`, `sh`, `pwsh`) are deliberately not on that list: every process the sweep exists for is a node or dotnet process, and a shell is far more often the lead's own tooling, including the watcher itself. A process started as `node script.js` from inside the run root carries no run root path on its command line, so only the parent-chain rule catches it — Windows exposes no working directory for a running process. The sweep also reaches the lead's own gate runs, which descend from the `claude` process and carry the run root path: one was killed twice in a single run, and a killed gate run reads as a real failure, because the output ends in `[ELIFECYCLE] Command failed with exit code 1` and names no failing test. So the lead parks the run metadata file, renaming it to `execute-change-run.json.parked` immediately before any gate run it starts itself and restoring it once that run ends. The hooks pass through while the file is absent, which disarms the sweep for that window; a resume restores a leftover parked file. Before believing a gate failure the lead greps the output for a failing-test marker, and none of those plus an `ELIFECYCLE` ending means killed rather than failed, so the gate is re-run.
+
+**Requirements.** An OpenSpec-managed repo (`openspec/config.yaml`, or a store the CLI recognizes) — the preflight verifies the OpenSpec CLI is installed and current and offers to install/update it (`npm install -g @fission-ai/openspec@latest`) if not. The [`plan-eng-review`](#plan-eng-review) and [`verify-implementation`](#verify-implementation) skills installed (the preflight offers to install those too). Git — and, if you pick the worktree run root, worktree support (any modern git); that run then installs the project's dependencies in its fresh worktree before the gates run, a per-run setup cost the other two run roots do not have, because they use the dependencies already installed in the checkout. Your main working tree may stay dirty, but only the worktree run root leaves it alone: under the other two the gates execute against your uncommitted changes, so commit or stash first if you want a gate result you can trust. For the phone-push pauses: Remote Control plus "Push when actions required" enabled (one-time setup documented in `references/preflight.md`; without it the run still works, it just waits in the terminal). For the heartbeat and the process sweep: install this skill as a plugin (see above) — `npx skills add` copies the skill files without the hooks, and the run then has no stall watcher and no cleanup. The three hooks run `python`, which must be on the PATH and be Python 3. The process sweep is Windows-only; on macOS and Linux it exits without killing anything and the rest of the run is unaffected. The machine must be on and awake while steps execute.
+
+**How to run.** **Manual-only** (`disable-model-invocation: true`) — an hours-long autonomous run that commits must never start off a description match. Invoke it explicitly:
+
+```
+/execute-change "docs/up next/csv-import-plan.md"       # existing brief → straight to the pipeline
+/execute-change "add CSV import to the orders page"     # free-text idea → design interview → approved brief → pipeline
+/execute-change                                         # no argument → lists docs/up next/*-plan.md candidates and asks
+/execute-change "docs/up next/csv-import-plan.md"       # same brief again after a crash/interruption → resumes from the ledger
+```
+
+No tool restriction and no model pin — the lead needs its full tool set, and you launch it on the model of your choice (subagent steps default to Opus; implementation groups run on the model their `tasks.md` row names).
+
+**Use it for.** Running the whole recommended workflow unattended in repos where OpenSpec owns the spec artifacts — from a finished brief or straight from an idea: start it, answer the design questions if you started from an idea, walk away, answer the occasional decision from your phone, come back to an audited, simplified, checkpoint-committed feature branch.
+
+**What it does not do.** Deploy, push, open a PR, or archive the OpenSpec change — it stops after the local commits and hands you the remaining manual steps. Commit the plan brief, its ledger, or its reports folder, or use `git add -A` (every commit stages explicit paths). Resolve design forks by assumption — open questions always pause the run. Run its pipeline outside an OpenSpec-managed repo — finding one is a blocking question at preflight, offering to stop and work without the skill (recommended) or to run `openspec init` here first; it never initializes a repo without asking. Choose where it works — the run root is your answer to a blocking preflight question, not a default it picks; only the worktree option keeps your main working tree out of the run, and either current-checkout option means the run commits in that tree and you cannot work there while it executes. Demand `bypassPermissions` — an unexpected permission prompt pausing and notifying is part of the design. Kill a process outside the sweep's allowlist, or one that started before the batch it is cleaning up after — a shell is never a candidate, and neither is the background dependency install that Step 0 starts and steps 1–5 run alongside. Act in any session that is not an `execute-change` run: with no run metadata file, or a session id that does not match the one recorded in it, the hooks exit and write nothing. Block a subagent from stopping — the hooks always exit 0.
+
+**What it produces.** Checkpoint commits (OpenSpec artifacts, one commit per implemented task group, audit fix commits, the simplification pass, the `tasks.md` reconciliation) on the branch you chose at preflight — the branch already checked out, a new `agent/execute-change/<timestamp>-<plan name>` branch in that checkout, or that branch in a worktree under `../<repo>.worktrees/` which you remove after the PR. A `<plan path>.ledger.md` next to the brief recording branch, run root, the route you picked (`Route: full` or `Route: light`, and a ledger without that line is a full-route run), the run's start commit (the full sha `HEAD` pointed at when the run began — what the step-7 audit diffs against), change ID, per-step outcomes, and decisions (you delete it at close-out). Beside it, a `<plan path>.reports/` folder with one file per pipeline step: each subagent writes its full report there, `OPEN QUESTIONS` first, and returns only the path and a short summary, so a truncated return value cannot hide an open question from the lead (you delete this folder at close-out too). And a final report: verdicts per step, decisions taken, the commit list, and the remaining manual steps — which list `git worktree remove` only when the run used a worktree. In the directory you started the session in it also writes two run-state files under `.claude/`: `execute-change-run.json`, written once at Step 0 with the session id, the `run_root` path, branch, ledger path, and start time, and deleted at close-out — its absence is what keeps the hooks inert everywhere else — and `execute-change-run.jsonl`, the hook log, one JSON object per line of kind `start`, `stop`, `notify`, `sweep`, or `resume` — the last appended by a resumed run and read by both replays as a hard reset, so the subagents that died in the interrupted run cannot leave the running set permanently occupied. Those two go there rather than in the run root because the hooks walk up from the payload's `cwd`, the shell's current directory, to the nearest directory holding the metadata file; a worktree sits outside the project, so no walk up reaches a file written there and every hook stays inert. Pick either reuse-checkout option and the two directories are the same anyway.
+
+**Example.**
+
+```
+You: /execute-change "docs/up next/tenant-export-plan.md"
+→ Preflight: OpenSpec 1.9.0 current, companions installed, push notifications on.
+  Where should this run work? [1] reuse the current branch and checkout
+  (recommended) [2] create branch
+  agent/execute-change/20260813-1054-tenant-export-plan in this checkout
+  [3] create that branch in a dedicated worktree.
+  Working tree clean; current branch feature/tenant-export, not main.
+  Route? Signals: shared contract yes (brief line 41), infrastructure no,
+  sensitive paths no, breadth 11 files yes, test plan yes,
+  engineering-reviewed no. [1] Full [REC] [2] Light.
+You: 1, and 1 for the route
+→ Readiness: branch feature/tenant-export, base main, route full, run root
+  C:\Develop\myapp — your own checkout, so do not work in it while the run executes.
+  Step 1: change tenant-export authored (proposal, design, deltas, tasks.md).
+  Step 2: plan-eng-review — NEEDS REVISION, 2 unresolved decisions.
+  Step 3: [push to phone] 2 questions answered from the phone.
+  Steps 4–5: changes applied, quote check 9/9 found, re-review APPROVED. Commit 1.
+  Step 6: groups 1–4 implemented (Opus ×3, Sonnet ×1), commits 2–5.
+  Step 7: verify-implementation — FIXED (1 finding, fix commit).
+  Step 8: simplify — 2 cleanups, gates green. Commit 7.
+  Close-out: tasks.md reconciled (commit 8), validate --strict green. STOPPED.
+  Manual next steps: deploy dev + smoke test, CLAUDE.md updates, delete brief,
+  ledger + reports, opsx:archive, PR. (No worktree to remove — this run
+  reused the current checkout.)
+```
+
+**Pairs with.** [`plan-eng-review`](#plan-eng-review) and [`verify-implementation`](#verify-implementation) — the run invokes both as its gates. The [recommended workflow](#recommended-workflow--from-idea-to-verified-code) — this skill is that chain's unattended form for OpenSpec repos; [`convert-plan-to-feature`](#convert-plan-to-feature) is the equivalent decomposition step for repos *without* a mandated spec workflow.
+
+**Install.**
+
+```
+claude plugin marketplace add Mi9-LLC/agent-skills
+claude plugin install execute-change@mi9-agent-skills
+```
+
+`npx skills add https://github.com/Mi9-LLC/agent-skills --skill execute-change` still installs the skill, but without the three hooks: no subagent log, so no stall watcher, and no process sweep. Pick one or the other — installing both registers two copies under the same name.
+
+**Full definition:** [`skills/execute-change/SKILL.md`](skills/execute-change/SKILL.md) (plus the preflight/one-time-setup guide, the design-first entry guide in `design-entry.md`, the verbatim step-prompt templates, and the `CONTEXT.md`/ADR formats in `domain-docs.md` under `references/`, and the heartbeat-log stall watcher in `scripts/stall-watcher.sh`). The three hooks and the process sweep are documented in [`hooks/README.md`](hooks/README.md). The source-per-claim, research-dossier-in-brief, expand–contract, and serial-vs-parallel test-running rules are adapted from [`mattpocock/skills`](https://github.com/mattpocock/skills) `research`, `implement`, and `to-tickets` (MIT, © 2026 Matt Pocock).
+
+---
+
+## `anti-sycophancy`
+
+**What it does.** Swaps Claude into critical-thinking-partner mode. Instead of agreeing reflexively or hedging, it argues the strongest opposing case first, names the load-bearing untested assumption, surfaces weaknesses before strengths, refuses to retreat without new evidence, and ends with a question worth sitting with. It also applies to *receiving code-review feedback* — verify a comment against the code before acting, no "great catch!", push back when a comment is wrong.
+
+**Requirements.** None. Purely behavioral — changes only how Claude argues.
+
+**How to run.** Auto-triggers on review / decision / feedback asks, or run `/anti-sycophancy`. Declares no `allowed-tools` (unrestricted), but it only shapes the reply.
+
+**Use it for.** Stress-testing your own judgment on a decision, plan, interpretation, or work you're about to commit to — the friction you'd want from a sharp colleague, not the validation from a friendly one.
+
+**Triggers on phrases like.** "should I", "I'm planning to", "I've decided", "what do you think", "is this the right call", "review my plan", "am I seeing this right", plus explicit asks: "play devil's advocate", "be brutal", "punch holes", "challenge me". Stated confidence or stakeholder buy-in ("the team agrees") *amplifies* activation rather than skipping it.
+
+**What it does not do.** Activate on objective questions with one knowable answer — syntax, config values, debugging, conversions, proofreading — even when phrased "is this correct?" Those need execution, not opposition. It won't manufacture a flaw to look thorough; if the idea holds up, it says so. It also does not run the structured pre-implementation review of a written implementation plan — that is [`plan-eng-review`](#plan-eng-review)'s job.
+
+**What it produces.** No files or reports — a behavioral mode that changes only how Claude argues.
+
+**Example.**
+
+```
+You: I'm going to move all our services to a monorepo this sprint — sounds right?
+→ The strongest case against: your CI is the bottleneck, not the repo layout, and a
+  monorepo multiplies CI minutes before it saves anyone time. Load-bearing assumption
+  you haven't tested: that cross-service changes are frequent enough to pay for it.
+  What would the last 20 PRs have looked like under a monorepo — actually faster, or just
+  rebased more often?
+```
+
+**Pairs with.** [`plan-eng-review`](#plan-eng-review) — anti-sycophancy supplies the skepticism *stance* for any decision or idea; plan-eng-review is the structured *gate* for a written implementation plan.
+
+**Install.**
+
+```
+npx skills add https://github.com/Mi9-LLC/agent-skills --skill anti-sycophancy
+```
+
+**Full definition:** [`skills/anti-sycophancy/SKILL.md`](skills/anti-sycophancy/SKILL.md).
+
+---
+
+## `coding-standards`
+
+**What it does.** Enforces a reuse-before-build ladder when Claude writes new TypeScript/Node or C#/.NET code: reach for a built-in or standard-library API first, then (C#) a first-party `Microsoft.Extensions.*` package, then a widely-adopted library the project already uses — and only when every rung fails, write a custom implementation. One consistency exception overrides the rung order: where the project already uses one library consistently for the exact task, matching that established convention outranks introducing a rung-1 built-in alongside it — or, if the two genuinely conflict, the conflict is named to you rather than decided silently. On top of the ladder: precise types (no `any`, no `object`/`dynamic`), specific error classes instead of bare `Error`/`Exception`, C# async discipline (`CancellationToken`, no sync-over-async), and short doc comments on non-obvious members.
+
+**Requirements.** None. Purely behavioral — it changes what code Claude writes, not what tools it can use.
+
+**How to run.** Auto-triggers when Claude is about to write a new utility/helper/service or add/choose a dependency in TS or C#, or run `/coding-standards`. Declares no `allowed-tools`/`disallowed-tools` — it guides code-writing and must not drop tools.
+
+**Use it for.** Keeping generated code on the platform: no hand-rolled retry loops, date parsers, deep clones, or HTTP wrappers when `fetch`, `structuredClone`, LINQ, or an already-installed library does the job — and no surprise dependencies, because a missing library is always a question to you first.
+
+**Triggers on phrases like.** "write a helper/utility/function to X", "implement retry / parsing / validation logic", "create a service for Y", "should we add lodash/Polly/date-fns", "which library for X".
+
+**What it does not do.** Fire on code review or critique asks, debugging of existing behavior, trivial edits (a typo, rename, one-line fix), or languages other than TypeScript/C#. It never adds a dependency on its own — a missing library is surfaced as a question, never a silent `npm install`.
+
+**What it produces.** No files or reports — a behavioral discipline that changes the code Claude writes. It is also the canonical copy of the `## Coding standards` block checked into Mi9 repos' `CLAUDE.md` files; the `<!-- source -->` comment in those blocks points here.
+
+**Example.**
+
+```
+You: write a helper that retries a fetch up to 3 times with backoff
+→ Ladder check: no retry library in package.json. Want p-retry added, or a
+  zero-dependency helper? [asks]
+→ "no new deps" → small helper on fetch + setTimeout from timers/promises,
+  throws RetryExhaustedError extends Error, one-line JSDoc.
+```
+
+**Install.**
+
+```
+npx skills add https://github.com/Mi9-LLC/agent-skills --skill coding-standards
+```
+
+**Full definition:** [`skills/coding-standards/SKILL.md`](skills/coding-standards/SKILL.md).
+
+---
+
+## `systematic-debugging`
+
+**What it does.** Enforces a four-phase debugging discipline instead of guess-and-check: (1) root-cause investigation, (2) pattern / context analysis, (3) ranked hypotheses, one tested at a time, (4) fix the cause behind a failing test. Hard rules: no fix before root-cause investigation, and after three failed fixes, stop and question the architecture rather than trying a fourth. Phase 1 needs a reproduction loop before any diagnosis: one named command, run once with its output shown, that fails on the exact symptom, fast and deterministic (a flaky bug is pushed to the highest reproduction rate you can reach — loops, parallel runs, load, injected sleeps — before diagnosis), then minimised one element at a time. Phase 3 writes down 2–4 ranked hypotheses, each with a falsifiable prediction, and tests only the top one; a failed test moves to the next on the list. Phase 4 puts the regression test at a seam that exercises the bug as it happens at the real call site. Temporary logs carry a unique `[DEBUG-xxxx]` prefix so cleanup is one grep, and shown diagnostics are redacted (`<REDACTED>`, credentials only via environment variables).
+
+**Requirements.** A failure you can reproduce, and a way to run it — your test runner / build / repro command (it uses `dotnet test`, `npm test`, etc.). git helps for the "what recently changed" step. No tokens or network.
+
+**How to run.** Auto-triggers on debugging asks, or run `/systematic-debugging`. `allowed-tools: Read, Grep, Glob, Bash, Edit, Write`.
+
+**Use it for.** Any failure you're about to fix — a bug, a failing or flaky test, a regression, a build break, a crash, "works locally but not in CI", or a repeated failed-fix loop. Most valuable exactly when it's tempting to skip: under time pressure and when a fix "looks obvious."
+
+**Triggers on phrases like.** "why is this broken", "this test is flaky", "my fix didn't work", "this keeps failing", "it works locally but not in CI", or a pasted stack trace. Not for trivial self-evident edits (a typo, a rename).
+
+**What it does not do.** Propose a fix before the root cause is found. Bundle a refactor or "while I'm here" cleanup into the fix. Keep trying on the same theory — it states the running fix-attempt count in the visible reply on every failed fix, and three failed fixes means the design is the suspect, so it stops to raise that with you.
+
+**What it produces.** No artifacts — a debugging discipline that ends in a root-cause fix behind a failing test (red before, green after). Ships `references/` (backward root-cause tracing, defense-in-depth validation, condition-based waiting for flaky tests).
+
+**Example.**
+
+```
+You: this test passes locally but fails in CI
+→ Phase 1: read the full error, reproduce, check the recent diff, instrument the CI/build/test
+  boundary to see which layer differs (not guess). Found: CI sets TZ=UTC; the test asserts a
+  local-time string. One fix at the root (format with an explicit timezone), behind a test that
+  fails before and passes after.
+```
+
+**Install.**
+
+```
+npx skills add https://github.com/Mi9-LLC/agent-skills --skill systematic-debugging
+```
+
+**Full definition:** [`skills/systematic-debugging/SKILL.md`](skills/systematic-debugging/SKILL.md) (plus the three technique references). Adapted from [`obra/superpowers`](https://github.com/obra/superpowers) (MIT) — decoupled, Windows-clean, with .NET/xUnit + TS/Vitest examples. The reproduction-loop, ranked-hypotheses, seam, log-tag, redaction, and flaky-rate rules are adapted from [`mattpocock/skills`](https://github.com/mattpocock/skills) `diagnosing-bugs` (MIT, © 2026 Matt Pocock).
+
+---
+
+## `verify-implementation`
+
+**What it does.** The post-implementation gate — `plan-eng-review`'s counterpart on the other side of the code. Takes a finished implementation plus whatever asserts it is complete (a feature file's acceptance criteria, a plan, a ticket, a PR description, or a subagent's completion report) and adversarially verifies the claim: audits the report against the actual diff (a claimed change absent from the diff is the most serious finding it can produce), re-derives every acceptance criterion from its own evidence, reads every new test body and re-runs mutation proofs to catch tautological guards — *a test that cannot be made to fail is not a guard* — re-runs the project's own quality gates reading output rather than exit codes, then **fixes what it finds** on the same branch in dedicated commits and re-runs the gates.
+
+**Requirements.** A completed implementation in a git repo (the diff is the review object), and **a claim of doneness**. Written acceptance criteria are the preferred input — the `features/NN - <name>.md` files from [`convert-plan-to-feature`](#convert-plan-to-feature) are the ideal shape — but a plan, ticket, PR description, or an agent's own report works; an informal claim gets a derived acceptance table, labeled as derived. With no claim at all it refuses: there is nothing to verify against. The project's own quality gates as its `CLAUDE.md` defines them.
+
+**How to run.** Auto-triggers when an implementation is finished and something asserts it is correct, or run `/verify-implementation`. `allowed-tools: Read, Edit, Write, Bash, Grep, Glob`. Pins `model: opus` — a weaker review returns `CLEAN` on broken work, and `CLEAN` is acted on; the failure mode of this skill is false assurance.
+
+**Use it for.** Verifying a subagent's (or teammate's) "done" report before acting on it, gating a feature branch against its acceptance criteria before merge, checking whether new tests actually guard anything, and closing the loop on an initiative implemented from `convert-plan-to-feature` specs.
+
+**Triggers on phrases like.** "verify the implementation", "the agent says it's done — check it", "audit this against the acceptance criteria", "is this actually done", "double-check the work before I merge", "the tests pass but I don't trust them".
+
+**What it does not do.** Review a written plan before code exists ([`plan-eng-review`](#plan-eng-review)). Open-ended critique of an idea ([`anti-sycophancy`](#anti-sycophancy)), static-analyser cleanups ([`sonar-issue-fix`](#sonar-issue-fix)), or debugging a known failure ([`systematic-debugging`](#systematic-debugging) — this skill starts from a claim of success, not a known failure). Manufacture findings — if the implementation is correct it says so plainly; a short review that confirms real evidence is a good review. Change a decision the plan or feature file locked, or widen scope — both go in the report, not into edits. Commit to a shared branch, push, or open a PR — fixes land on the working branch in dedicated commits, and if the work sits directly on `main` it proposes the fixes instead of committing.
+
+**What it produces.** Fix commits on the working branch (when findings are fixable in scope), plus a six-section report: a verdict — `CLEAN` / `FIXED` / `NEEDS ATTENTION`, bound by a decision table (any unfixed finding, locked-decision conflict, or not-run gate ⇒ `NEEDS ATTENTION`) — with a one-line *Passes not run* slot naming any verification pass it skipped and why, a claim-vs-diff audit, findings most serious first each with `path:line` and fixed-or-not status, mutation proofs with verbatim failure output (each proof re-runs only the targeted test file or single test — the full suite is the separate gate pass), gate results including not-run-with-reason, and an acceptance table backed by the reviewer's own evidence. On a `CLEAN` or `FIXED` verdict against a `convert-plan-to-feature` feature file it also writes that feature's Status cell to `done` in the initiative's `REQUIREMENTS.md` — a write outside the reviewed diff, so it is named explicitly in the report (a `NEEDS ATTENTION` verdict changes no Status cell). When run as a subagent, the report is the run's return value — findings never get lost as chat text. Ships `references/` (the seven-pass checklist, the tautology catalog, the report skeleton).
+
+**Example.**
+
+```
+You: the subagent says feature 07 (list caching) is done and tested — verify before I merge
+→ Claim audit: the "pages can never change" argument has 3 premises; 2 hold, 1 is false —
+  the ordering column is a caller-supplied business timestamp, and two shipped paths
+  backdate it, so a backdated record lands mid-list on a page the cache marked fresh.
+  Fixed: removed the line, rewrote the comment to name both backdating paths, added a
+  regression guard, mutation-proved it (re-adding the line fails: expected 2, received 1).
+  Gates re-run green. VERDICT: FIXED — 1 finding, fixed in 2 commits on the branch.
+```
+
+**Pairs with.** [`convert-plan-to-feature`](#convert-plan-to-feature) — its feature files' acceptance criteria are this skill's highest-preference input; decompose the plan there, verify the implementation here. [`plan-eng-review`](#plan-eng-review) — the same gate discipline on the other side of implementation (see the [recommended workflow](#recommended-workflow--from-idea-to-verified-code)). [`verify-frontend-change`](#verify-frontend-change) — browser-level evidence for frontend work; this skill verifies at the code-and-criteria level.
+
+**Install.**
+
+```
+npx skills add https://github.com/Mi9-LLC/agent-skills --skill verify-implementation
+```
+
+**Full definition:** [`skills/verify-implementation/SKILL.md`](skills/verify-implementation/SKILL.md) (plus the verification checklist, tautology catalog, and report skeleton under `references/`). Distilled from the review brief used in a 20-feature internal Mi9 initiative (July 2026), where each feature was implemented by one subagent and independently reviewed by another — and the reviews repeatedly beat their implementers. Not adapted from an external project.
+
+---
+
+## `verify-frontend-change`
+
+**What it does.** Closes the "should work now" gap on frontend work. After a UI change it runs a five-step browser verification loop via the Chrome DevTools MCP server: start (or reuse) the dev server → open the affected page → interact with the changed behavior → require zero new console errors → record a performance trace. A change is reported *done* only when every step passes in one uninterrupted pass; any failure gets fixed and the loop reruns from the top.
+
+**Requirements.** The [Chrome DevTools MCP server](https://github.com/ChromeDevTools/chrome-devtools-mcp) registered in Claude Code (`claude mcp add chrome-devtools --scope user npx chrome-devtools-mcp@latest` — needs Node 20.19+/22.12+/23+ and a current Chrome). Without it the skill stops and reports the change **unverified** instead of pretending. Plus a web app with a runnable dev server.
+
+**How to run.** Auto-triggers when a frontend change is about to be declared done, and on verify-asks; or run `/verify-frontend-change`. Declares no `allowed-tools` (unrestricted) — shell and browser actions prompt per your own permission settings, including your `chrome-devtools` MCP tools.
+
+**Use it for.** Any web-app change you'd otherwise sign off from a green build — component behavior, style tweaks, routes, client state — in any framework with a dev server (Vite, Next.js, CRA, Angular, Nuxt, Astro, SvelteKit, Remix; same loop for Rails/Django/ASP.NET-served frontends).
+
+**Triggers on phrases like.** "verify it works", "check it in the browser", "make sure nothing broke", "does it actually render", "test the UI change" — and proactively whenever a frontend edit is about to be called done/fixed/working. Does **not** trigger for backend-only, CLI, test-only, or docs-only changes.
+
+**What it does not do.** Call a change done from a clean edit, green build, or HMR reload. Resume mid-loop after a fix — a fix voids earlier evidence, so it reruns from Step 1. Patch forever — after 3 failed fix-and-rerun cycles on the same step it stops and questions the approach instead of trying a 4th. Invent login credentials, kill a dev server it didn't start, or hide a blocked step — "blocked, here's exactly what wasn't checked" is a valid end state; fake-verified is not.
+
+**What it produces.** No repo artifacts — an evidence-backed verdict in chat: the URL verified, the interactions performed, console triage (new vs pre-existing), and trace numbers (LCP/CLS, flagged long tasks) with dev-mode caveats. Ships `references/` (`chrome-devtools-mcp.md` tool cheatsheet, `dev-server-playbook.md`).
+
+**Example.**
+
+```
+You: swap the settings page's theme toggle for the new ThemePicker — done?
+→ Not yet — verifying. Started `pnpm dev` (localhost:5174 — port hopped), opened
+  /settings, picked "dark", saved, reloaded — persisted. Console: 1 new error
+  (ThemePicker.tsx:42, `prefs` undefined) → fixed, reran from the top: 0 errors.
+  Trace: LCP 1.1s, CLS 0.00, no new long tasks (dev-mode numbers).
+  Verified — done. Dev server stopped.
+```
+
+**Pairs with.** [`trim-initial-bundle`](#trim-initial-bundle) — when the trace step flags heavy first-load JS on a Vite app, that skill finds and defers the vendor weight.
+
+**Install.**
+
+```
+npx skills add https://github.com/Mi9-LLC/agent-skills --skill verify-frontend-change
+```
+
+**Full definition:** [`skills/verify-frontend-change/SKILL.md`](skills/verify-frontend-change/SKILL.md) (plus the tool cheatsheet and dev-server playbook under `references/`).
+
+---
+
+## `dead-code-removal`
+
+**What it does.** Takes an existing, dated dead-code analysis and its removal plan and re-checks every finding against the code as it is today, using parallel read-only re-check subagents. Each agent re-proves each claim from scratch with a repository-wide search rather than trusting the old evidence, and returns one of four verdicts: VALID (still unused), CHANGED (still unused, but moved, renamed, or otherwise different from the claim), INVALID (something uses it now, or the claim was wrong to begin with), or GONE (already deleted, or the named file no longer exists or is not tracked). The fresh verdicts are written into the plan and a new `NN-recheck-<YYYY-MM-DD>.md` file next to the analysis (the analysis itself gets at most one index paragraph and one table row; its original findings are not rewritten), the checked plan is shown for approval, and only then does the skill delete the statically proven dead code, one plan step at a time, in a dedicated git worktree, running the project's own quality gates after every step and comparing each result to a pre-deletion baseline.
+
+**Requirements.** An existing dead-code analysis and its removal plan already on disk — a folder or a file of findings, each with a location and its evidence, plus a document that turns the findings into ordered deletion steps (the plan can be the same file as the analysis). A git repository, since the deletion phase works in a dedicated worktree, created beside the repository, detached at a base commit the skill asks you to choose before it creates anything. The repository's own quality gates (format check, lint, typecheck, build, tests), run once as a baseline before anything is deleted and again after every step. If no analysis exists at all, the skill stops and says so — it checks and executes an analysis, it does not produce one from scratch.
+
+**How to run.** Auto-triggers when a dead-code report, an unused-code list, or a dead-code removal plan already exists and the user wants it re-checked or acted on. Declares no `allowed-tools`. Pins `model: opus`.
+
+**Use it for.** Bringing a dead-code analysis back up to date after other commits have moved lines, added callers, or deleted files since it was written, and then removing whatever the fresh re-check still proves is unused.
+
+**Triggers on phrases like.** "re-check the dead code analysis", "update the code validity of the dead-code report", "is this dead-code list still accurate", "the analysis is a week old, check it and start removing", "execute the dead-code removal plan", "start Step 1 of the dead code plan in a worktree".
+
+**What it does not do.** Find dead code from scratch when no analysis exists yet — produce the analysis first. Delete one file or symbol the user names directly. Fix static-analyser smells (`sonar-issue-fix`'s job). Delete anything whose deadness depends on configuration, deploy settings, or traffic — this skill deletes on static proof only, and leaves runtime-gated suspects in place for a person to decide. Fix a gate failure forward — a step whose gate result is worse than the baseline is reverted path by path (not patched), recorded under Skipped, and the run continues with the next step, skipping any later step that depends on it; the one exception is a lint auto-fix that only reorders imports, and only when the user approved it in advance. Delete a defect it finds along the way — a branch that never runs because of a bug (an uninjected dependency, an unregistered plugin) is reported as a bug to fix, never deleted, and state that production code writes but only tests read is recorded as a follow-up. Commit or push without the user's approval — it stages only the current step's files, each by its explicit path, never `git add -A` or `git add .`, and shows the staged list and the proposed commit message before every commit.
+
+**What it produces.** A dedicated git worktree with the deletions applied: the re-check documents as the branch's first commit and then one commit per plan step, each made only once the user approves it. A document git ignores is edited where it is and reported as not committed. A new dated file next to the analysis, `NN-recheck-<YYYY-MM-DD>.md`, recording the commit range, the method, the counts per area, and every INVALID, CHANGED, and GONE item with its evidence. The plan itself edited in place: a status line with the re-check date and commit, corrected line numbers, INVALID items removed or rewritten, and cascade items, missed test files, and missed documents added to the step they belong to. A final check over the whole result: a clean build and test run with the task runner's cache turned off, and a search of the code and the documents for every removed name and deleted file. A final report in six sections: what was removed (files, symbols, and commit hash per step), what was skipped and why, every change that is not a pure deletion (such as a removed configuration validation rule that changes start-up behaviour), every gate result per step and for the final check against the baseline, every defect and follow-up found (never deleted, only reported), and which plan steps are left and what each one needs.
+
+**Why it pins `model: opus`.** The failure mode this skill has to avoid is a re-check that calls an item VALID when the code as it stands today already uses it. A weaker model is more likely to return that wrong verdict on live code, and that verdict is what leads straight into deleting something that is not actually dead.
+
+**Where it came from.** Distilled from a live run on a TypeScript monorepo on 2026-09-24, six days and fourteen commits after the original analysis was written: five re-check agents checked about 245 items, found 11 INVALID or GONE and 29 CHANGED, and at least 4 of the INVALID items sat in files that no commit had touched since the analysis — showing that "did this file change?" is not a safe stand-in for a real re-check. It also adopts ideas from three published skills — `parcadei/continuous-claude-v3`'s `dead-code`, `code-yeongyu/oh-my-openagent`'s `remove-deadcode`, and `pproenca/dot-skills`'s `knip-deadcode`: re-checking each item right before deleting it, reverting a failing step instead of fixing forward, comparing gate results to a baseline, a false-positive checklist, re-scanning for cascade dead code after each deletion, one category of findings per commit, a separate test-only verdict left for the user to decide, and asking to split a step that holds more than about 50 items.
+
+**Example.**
+
+```
+You: the dead-code analysis is a week old — check it and start removing what's still dead
+→ Base commit? [current head recommended]
+You: current head
+→ Worktree ../<repo>.worktrees/dead-code-removal-<YYYY-MM-DD> created, detached at that commit. Baseline gates green.
+  5 re-check agents checked 62 items: 4 INVALID (each with the file and line now using it),
+  2 GONE, 9 CHANGED (line number moved), 3 cascade items found. Checked plan: 4 steps, 47 items.
+  Show the checked plan for approval? [shown]
+You: approved, go
+→ Step 1 (12 whole-file deletions): gates green, matches baseline. Staged files and commit
+  message shown — approve to commit?
+```
+
+**Pairs with.** [`session-cleanup`](#session-cleanup) — this skill deliberately leaves its worktree in place once done ("removing it is the user's decision once the branch is merged"), which is exactly `session-cleanup`'s job to do once that happens.
+
+**Install.**
+
+```
+npx skills add https://github.com/Mi9-LLC/agent-skills --skill dead-code-removal
+```
+
+**Full definition:** [`skills/dead-code-removal/SKILL.md`](skills/dead-code-removal/SKILL.md) (plus the re-check agent brief and the false-positive checklist under `references/`).
+
+---
+
+## `trim-initial-bundle`
+
+**What it does.** Finds heavy vendor libraries that ship on a React + Vite app's **initial JavaScript load** but are only needed behind a lazy route or click, and gets them off first load — shrinking download/parse cost, LCP, and TTI. It decides everything from the **built `dist`** (a zero-dependency analyzer ranks what's actually on first load), never from source guesses, then diagnoses *why* a library leaks and fixes it.
+
+**Requirements.** A **React + Vite / Rollup / Rolldown** app (not Next.js, not raw Webpack). A **production build it can run** — the method works off `dist/`, so the build must succeed and produce `index.html` + `.js` chunks. **Node** for the bundled analyzer (`scripts/analyze-initial-load.mjs`, zero dependencies). git is used only at the verify step (clean-baseline comparison). *Windows note:* it builds from the project root with absolute paths — never `cd` into `dist` during a rebuild (Vite's `emptyOutDir` fails with `EPERM`).
+
+**How to run.** Auto-triggers on bundle / first-load / "why is X in the main chunk" asks, or run `/trim-initial-bundle`. `allowed-tools: Bash, Read, Edit, Write, Grep, Glob, WebFetch`.
+
+**Use it for.** "Our JS bundle is too big", "the app loads slowly", "why is recharts / monaco / cmdk in the main chunk", "lazy-load this heavy dependency", "improve LCP / TTI / Lighthouse on our Vite app".
+
+**Triggers on phrases like.** "reduce / shrink / trim the bundle", "first-load / initial-load size", "why is `<library>` in the entry / index chunk", "defer / lazy-load `<heavy dep>`", "what's bloating my Vite build", "speed up first load".
+
+**What it does not do.** Run on Next.js or raw Webpack — it says so and stops. Commit or push. Assert anything it hasn't grepped out of `dist`. Add a `manualChunks` entry to "isolate" a lib (it only *removes* one once proven). Edit before you approve the plan.
+
+**What it produces.** First, a read-only ranked initial-load report plus a per-candidate leak diagnosis (eager import / un-tree-shaken barrel re-export / `manualChunks` hoist). Then a plan presented **for your approval** — library, size, leak mechanism with grep evidence, exact edits, projected brotli/gzip saving. On approval it applies one fix at a time, rebuilds, re-runs your gates, compares against a clean baseline, and reports before/after sizes. Ships `references/` (diagnosis + verification) and the analyzer under `scripts/`.
+
+**Example.**
+
+```
+You: our Vite dashboard's first load is huge — why is recharts in the main chunk?
+→ Built dist; analyzer: recharts-*.js = 142 kB br on the initial load.
+  Leak: barrel `export { Chart } from './charts'` consumed by the always-mounted layout.
+  Plan: drop the dead re-export + lazy-split <Chart>. Projected saving ~142 kB. Approve?
+→ (after approval & rebuild) recharts now only in the lazy Reports chunk; initial JS 480→338 kB.
+```
+
+**Pairs with.** [`verify-frontend-change`](#verify-frontend-change) — after trimming, verify the app still renders and behaves in a real browser.
+
+**Install.**
+
+```
+npx skills add https://github.com/Mi9-LLC/agent-skills --skill trim-initial-bundle
+```
+
+**Full definition:** [`skills/trim-initial-bundle/SKILL.md`](skills/trim-initial-bundle/SKILL.md) (plus the diagnosis / verification references and the `analyze-initial-load.mjs` analyzer under `scripts/`).
+
+---
+
+## `update-dependencies`
+
+**What it does.** Research-first dependency updater for any JavaScript/TypeScript project. Auto-detects the package manager and workspace layout, classifies outdated packages into safe (patch/minor) and major groups, bulk-applies the safe bumps behind a green gate, then handles each major individually — reading real release notes and changelogs first, migrating code for breaking changes, and reverting any group that won't go green.
+
+**Requirements.** A JS/TS project with exactly one lockfile at the root (npm, pnpm, yarn Classic, yarn Berry, or bun) and that package manager on `PATH`. **git with a clean working tree** — it stops and asks you to stash/commit if the tree is dirty. Internet access (it researches every major before touching it). It respects the project's declared Node target (`engines.node` / `.nvmrc` / `.node-version`) and skips bumps that would require a newer Node. No prebuilt artifact needed — it runs whatever quality gates exist and skips the ones that don't.
+
+**How to run.** **Manual-only** (`disable-model-invocation: true`) — it never auto-activates. Invoke it explicitly:
+
+```
+/update-dependencies                    # update everything outdated
+/update-dependencies zod                # scope to one package (+ its lockstep ecosystem)
+/update-dependencies react vitest       # scope to several
+```
+
+`allowed-tools: Bash, Read, Grep, Glob, Edit, Write, WebSearch, WebFetch, Agent`.
+
+**Use it for.** Keeping a project current without reading every changelog yourself — periodic maintenance runs, pre-release sweeps, or a scoped single-package upgrade that needs safe migration.
+
+**What it does not do.** Commit or push (changes stay on the work branch for you to review). Run on a dirty tree or with an ambiguous lockfile (it stops and asks). Make behavioral decisions on its own — a changed runtime default or a removed feature with several replacements pauses for you. Adopt a version needing a newer Node than the project targets.
+
+**What it produces.** A safety branch `agent/update-dependencies/<timestamp>-<rand>` off the detected default branch, with the edits applied there, and an end-of-run chat report: **Updated / Migrated / Skipped-Reverted / Warnings / Branch**. Your working branch is never touched.
+
+**Example.**
+
+```
+You: /update-dependencies
+→ Branch agent/update-dependencies/20260630-a1c4 off the detected default branch (origin/main here).
+  Safe pass: bumped 18 patch/minor (vite 7.0.2→7.0.6, …) — gates green.
+  Majors: zod 3→4 migrated (2 files); react-router 6→7 skipped (needs Node 22, project targets 20).
+  No commits made. Review with `git diff`.
+```
+
+**Install.**
+
+```
+npx skills add https://github.com/Mi9-LLC/agent-skills --skill update-dependencies
+```
+
+**Full definition:** [`skills/update-dependencies/SKILL.md`](skills/update-dependencies/SKILL.md) · **README:** [`skills/update-dependencies/README.md`](skills/update-dependencies/README.md) (plus the per-PM command reference and lockstep-ecosystem table under `references/`).
+
+---
+
 ## `security-vulnerability-scan`
 
 **What it does.** OWASP Top 10:2025-aligned static vulnerability scanner. Reads your source tree — web frameworks, IaC, container configs, dependency lockfiles, secrets — and writes a structured, severity-ranked assessment to disk. Never runs your app.
@@ -230,167 +740,6 @@ npx skills add https://github.com/Mi9-LLC/agent-skills --skill live-app-security
 ```
 
 **Full definition:** [`skills/live-app-security-audit/SKILL.md`](skills/live-app-security-audit/SKILL.md) (plus per-check reference docs under `references/`).
-
----
-
-## `anti-sycophancy`
-
-**What it does.** Swaps Claude into critical-thinking-partner mode. Instead of agreeing reflexively or hedging, it argues the strongest opposing case first, names the load-bearing untested assumption, surfaces weaknesses before strengths, refuses to retreat without new evidence, and ends with a question worth sitting with. It also applies to *receiving code-review feedback* — verify a comment against the code before acting, no "great catch!", push back when a comment is wrong.
-
-**Requirements.** None. Purely behavioral — changes only how Claude argues.
-
-**How to run.** Auto-triggers on review / decision / feedback asks, or run `/anti-sycophancy`. Declares no `allowed-tools` (unrestricted), but it only shapes the reply.
-
-**Use it for.** Stress-testing your own judgment on a decision, plan, interpretation, or work you're about to commit to — the friction you'd want from a sharp colleague, not the validation from a friendly one.
-
-**Triggers on phrases like.** "should I", "I'm planning to", "I've decided", "what do you think", "is this the right call", "review my plan", "am I seeing this right", plus explicit asks: "play devil's advocate", "be brutal", "punch holes", "challenge me". Stated confidence or stakeholder buy-in ("the team agrees") *amplifies* activation rather than skipping it.
-
-**What it does not do.** Activate on objective questions with one knowable answer — syntax, config values, debugging, conversions, proofreading — even when phrased "is this correct?" Those need execution, not opposition. It won't manufacture a flaw to look thorough; if the idea holds up, it says so. It also does not run the structured pre-implementation review of a written implementation plan — that is [`plan-eng-review`](#plan-eng-review)'s job.
-
-**What it produces.** No files or reports — a behavioral mode that changes only how Claude argues.
-
-**Example.**
-
-```
-You: I'm going to move all our services to a monorepo this sprint — sounds right?
-→ The strongest case against: your CI is the bottleneck, not the repo layout, and a
-  monorepo multiplies CI minutes before it saves anyone time. Load-bearing assumption
-  you haven't tested: that cross-service changes are frequent enough to pay for it.
-  What would the last 20 PRs have looked like under a monorepo — actually faster, or just
-  rebased more often?
-```
-
-**Pairs with.** [`plan-eng-review`](#plan-eng-review) — anti-sycophancy supplies the skepticism *stance* for any decision or idea; plan-eng-review is the structured *gate* for a written implementation plan.
-
-**Install.**
-
-```
-npx skills add https://github.com/Mi9-LLC/agent-skills --skill anti-sycophancy
-```
-
-**Full definition:** [`skills/anti-sycophancy/SKILL.md`](skills/anti-sycophancy/SKILL.md).
-
----
-
-## `update-dependencies`
-
-**What it does.** Research-first dependency updater for any JavaScript/TypeScript project. Auto-detects the package manager and workspace layout, classifies outdated packages into safe (patch/minor) and major groups, bulk-applies the safe bumps behind a green gate, then handles each major individually — reading real release notes and changelogs first, migrating code for breaking changes, and reverting any group that won't go green.
-
-**Requirements.** A JS/TS project with exactly one lockfile at the root (npm, pnpm, yarn Classic, yarn Berry, or bun) and that package manager on `PATH`. **git with a clean working tree** — it stops and asks you to stash/commit if the tree is dirty. Internet access (it researches every major before touching it). It respects the project's declared Node target (`engines.node` / `.nvmrc` / `.node-version`) and skips bumps that would require a newer Node. No prebuilt artifact needed — it runs whatever quality gates exist and skips the ones that don't.
-
-**How to run.** **Manual-only** (`disable-model-invocation: true`) — it never auto-activates. Invoke it explicitly:
-
-```
-/update-dependencies                    # update everything outdated
-/update-dependencies zod                # scope to one package (+ its lockstep ecosystem)
-/update-dependencies react vitest       # scope to several
-```
-
-`allowed-tools: Bash, Read, Grep, Glob, Edit, Write, WebSearch, WebFetch, Agent`.
-
-**Use it for.** Keeping a project current without reading every changelog yourself — periodic maintenance runs, pre-release sweeps, or a scoped single-package upgrade that needs safe migration.
-
-**What it does not do.** Commit or push (changes stay on the work branch for you to review). Run on a dirty tree or with an ambiguous lockfile (it stops and asks). Make behavioral decisions on its own — a changed runtime default or a removed feature with several replacements pauses for you. Adopt a version needing a newer Node than the project targets.
-
-**What it produces.** A safety branch `agent/update-dependencies/<timestamp>-<rand>` off the detected default branch, with the edits applied there, and an end-of-run chat report: **Updated / Migrated / Skipped-Reverted / Warnings / Branch**. Your working branch is never touched.
-
-**Example.**
-
-```
-You: /update-dependencies
-→ Branch agent/update-dependencies/20260630-a1c4 off the detected default branch (origin/main here).
-  Safe pass: bumped 18 patch/minor (vite 7.0.2→7.0.6, …) — gates green.
-  Majors: zod 3→4 migrated (2 files); react-router 6→7 skipped (needs Node 22, project targets 20).
-  No commits made. Review with `git diff`.
-```
-
-**Install.**
-
-```
-npx skills add https://github.com/Mi9-LLC/agent-skills --skill update-dependencies
-```
-
-**Full definition:** [`skills/update-dependencies/SKILL.md`](skills/update-dependencies/SKILL.md) · **README:** [`skills/update-dependencies/README.md`](skills/update-dependencies/README.md) (plus the per-PM command reference and lockstep-ecosystem table under `references/`).
-
----
-
-## `convert-plan-to-feature`
-
-**What it does.** Takes a finished, approved plan — from plan mode, a conversation, or a file under `docs/plans/` — and decomposes it into a folder of independently-trackable per-feature specs. The plan answered *what* and *why*; this skill produces the *per-unit-of-work execution surface* so a team (or a fleet of agents) can pick up one feature at a time without re-reading the whole plan.
-
-**Requirements.** An approved/finished plan to convert (plan-mode output, a confirmed design in the conversation, or an existing file under `docs/plans/`). It writes under the repository's own plan location when one exists (checked via its CLAUDE.md and existing folders — e.g. `docs/up next/`), else `docs/plans/` (or a top-level `plans/` fallback). No tokens or network.
-
-**How to run.** Auto-triggers once a plan exists and you ask to decompose it, or run `/convert-plan-to-feature`. `allowed-tools: Read, Write, Glob, Grep, AskUserQuestion`.
-
-**Use it for.** Breaking a complex plan into separately assignable, reviewable, closeable units of work — feature tickets/specs a team or implementation agents can run in parallel.
-
-**Triggers on phrases like.** "convert this plan into features", "split the plan up", "break this into per-feature files", "turn the plan into implementation specs", "make a feature breakdown", "decompose the plan", "create feature tickets from this plan".
-
-**What it does not do.** Implement anything — it writes planning documents only and stops. It declares `disallowed-tools: Edit, NotebookEdit`, which drops those tools while the skill is active (a per-turn guard — the restriction clears on your next message). It never writes at the `docs/plans/` root (everything goes inside the `<initiative>/` subfolder so concurrent efforts don't collide), and it leaves the source plan where it is. It also stays out of repositories that mandate their own spec workflow (e.g. OpenSpec repos, where the change's `tasks.md` owns the breakdown) — there, its execution rigor (model rubric, parallel groups, acceptance criteria, standing implementer instructions) is ported into that artifact instead of a parallel breakdown.
-
-**What it produces.**
-- `docs/plans/<initiative>/REQUIREMENTS.md` — the index: context, blast radius, locked decisions, consolidated cross-cutting catalogs (wire-contract/enum tables, message types, error codes), deploy ordering, parallel groups (assigned mechanically from the dependency data — same group means no dependencies between them, safe to implement concurrently), a feature table with suggested models — assigned quality-first (Opus is the default; Sonnet/Haiku only for work meeting every condition of the cheaper tier; any underestimation signal forces Opus) and re-reviewed in a mandatory second pass, since a feature underestimated onto a cheaper model costs a bad implementation plus rework — a Status column (`todo` / `in progress` / `done` / `blocked` — the initiative's status board), test strategy, and open questions. On a re-run where the `<initiative>/` folder already exists it reads the existing `REQUIREMENTS.md` first, preserves every feature's Status value, and asks before overwriting any feature file whose status is past `todo`.
-- `docs/plans/<initiative>/features/NN - <Feature Name>.md` — one file per feature: requirement, a **Consumes/Produces interface contract**, ordered technical steps with real file paths (no placeholders), objectively checkable acceptance criteria (a feature that modifies existing behavior must carry a criterion naming its regression test), dependency/risk notes, its parallel group in the header, and a fixed *Standing instructions for the implementer* block (verbatim in every file: ask rather than resolve open questions by assumption; verify external library/API behavior against current documentation, not internal knowledge; the file's acceptance criteria are the verification contract `verify-implementation` runs against, so a mid-feature scope change is written back into them).
-
-**Example.**
-
-```
-You: break this approved rollback plan into feature files
-→ docs/plans/stf-555-store-release-rollback/
-   REQUIREMENTS.md
-   features/01 - Contracts protocol v3 bump.md   (Produces: protocol v3 enums)
-   features/02 - Store Agent backup engine.md     (Consumes: 01)
-   features/03 - Store Agent rollback engine.md   (Consumes: 01, 02)
-   … one slice each, numbered in deploy order.
-```
-
-**Pairs with.** [`plan-eng-review`](#plan-eng-review) — gate the plan before decomposing it. [`verify-implementation`](#verify-implementation) — each feature file's acceptance-criteria checklist is that skill's highest-preference input: decompose here, implement, then verify each feature against its own criteria.
-
-**Install.**
-
-```
-npx skills add https://github.com/Mi9-LLC/agent-skills --skill convert-plan-to-feature
-```
-
-**Full definition:** [`skills/convert-plan-to-feature/SKILL.md`](skills/convert-plan-to-feature/SKILL.md) · **README:** [`skills/convert-plan-to-feature/README.md`](skills/convert-plan-to-feature/README.md).
-
----
-
-## `new-feature`
-
-**What it does.** An investigative Q&A workflow that turns a fuzzy feature request into a fully-specified design *before* any code is written. It researches first — the relevant code, the repo's `CLAUDE.md`/`AGENTS.md` invariants, prior plans and git history, and current best practices — then surfaces every ambiguous decision as categorized questions (A/B/C…) with `[REC]`-marked defaults and a short reason, asking one category per message and locking each answer with a one-line summary, until zero ambiguity is left. After the first one or two categories it emits the full punch list of outstanding decisions proactively (a living list it re-posts as answers add or close items), and before handing off to plan mode it posts the complete locked-decision register in one message.
-
-**Requirements.** A codebase to investigate. Internet / Context7 access helps it ground recommendations in current best practices. Writes no files of its own.
-
-**How to run.** Auto-triggers aggressively on feature / design / "is it possible to" asks, or run `/new-feature`. Declares `disallowed-tools: Edit, Write, NotebookEdit` (drops those tools while active; a per-turn guard that clears on the next message) — Bash stays available for the git-history research step.
-
-**Use it for.** Any non-trivial change with real design surface — new modules, protocol / contract changes, cross-service behavior, security-sensitive code, significant refactors. The `[REC]` markers keep it fast: skim, say "agreed with all recommended", and spend attention only on the decisions you'd actually change.
-
-**Triggers on phrases like.** "new feature", "design / scope / plan a feature", "add capability", "analyze options", "think hard about", "investigate", "before we implement", "what do you think about adding X", "is it possible to".
-
-**What it does not do.** Write code — it's design-only (enforced by the `disallowed-tools` guard above) and hands off to plan mode once decisions are locked. Trigger on tiny, obvious tasks ("rename this variable"). Skip the research and make you fill in what it could have found itself. Dump every question at once.
-
-**What it produces.** No files — a locked set of design decisions carried into the planning phase.
-
-**Example.**
-
-```
-You: I want to add SSO to the portal
-→ (after reading the auth code) Question — Category A, identity protocol:
-  A1. (a) SAML  (b) [REC] OIDC — your stack already has an OAuth2 client; least new surface
-  A2. Session model: (a) [REC] reuse existing JWT cookie  (b) new server session store
-  Confirm A1–A2.
-```
-
-**Pairs with.** [`document-generate`](#document-generate) — this skill settles the design decisions before a line of code is written; that one documents the feature once it exists. Also [`plan-eng-review`](#plan-eng-review) — settle the design here, draft the plan, then gate the resulting plan before building.
-
-**Install.**
-
-```
-npx skills add https://github.com/Mi9-LLC/agent-skills --skill new-feature
-```
-
-**Full definition:** [`skills/new-feature/SKILL.md`](skills/new-feature/SKILL.md) (plus longer worked examples under `references/`).
 
 ---
 
@@ -475,348 +824,6 @@ npx skills add https://github.com/Mi9-LLC/agent-skills --skill sonar-issue-fix
 
 ---
 
-## `trim-initial-bundle`
-
-**What it does.** Finds heavy vendor libraries that ship on a React + Vite app's **initial JavaScript load** but are only needed behind a lazy route or click, and gets them off first load — shrinking download/parse cost, LCP, and TTI. It decides everything from the **built `dist`** (a zero-dependency analyzer ranks what's actually on first load), never from source guesses, then diagnoses *why* a library leaks and fixes it.
-
-**Requirements.** A **React + Vite / Rollup / Rolldown** app (not Next.js, not raw Webpack). A **production build it can run** — the method works off `dist/`, so the build must succeed and produce `index.html` + `.js` chunks. **Node** for the bundled analyzer (`scripts/analyze-initial-load.mjs`, zero dependencies). git is used only at the verify step (clean-baseline comparison). *Windows note:* it builds from the project root with absolute paths — never `cd` into `dist` during a rebuild (Vite's `emptyOutDir` fails with `EPERM`).
-
-**How to run.** Auto-triggers on bundle / first-load / "why is X in the main chunk" asks, or run `/trim-initial-bundle`. `allowed-tools: Bash, Read, Edit, Write, Grep, Glob, WebFetch`.
-
-**Use it for.** "Our JS bundle is too big", "the app loads slowly", "why is recharts / monaco / cmdk in the main chunk", "lazy-load this heavy dependency", "improve LCP / TTI / Lighthouse on our Vite app".
-
-**Triggers on phrases like.** "reduce / shrink / trim the bundle", "first-load / initial-load size", "why is `<library>` in the entry / index chunk", "defer / lazy-load `<heavy dep>`", "what's bloating my Vite build", "speed up first load".
-
-**What it does not do.** Run on Next.js or raw Webpack — it says so and stops. Commit or push. Assert anything it hasn't grepped out of `dist`. Add a `manualChunks` entry to "isolate" a lib (it only *removes* one once proven). Edit before you approve the plan.
-
-**What it produces.** First, a read-only ranked initial-load report plus a per-candidate leak diagnosis (eager import / un-tree-shaken barrel re-export / `manualChunks` hoist). Then a plan presented **for your approval** — library, size, leak mechanism with grep evidence, exact edits, projected brotli/gzip saving. On approval it applies one fix at a time, rebuilds, re-runs your gates, compares against a clean baseline, and reports before/after sizes. Ships `references/` (diagnosis + verification) and the analyzer under `scripts/`.
-
-**Example.**
-
-```
-You: our Vite dashboard's first load is huge — why is recharts in the main chunk?
-→ Built dist; analyzer: recharts-*.js = 142 kB br on the initial load.
-  Leak: barrel `export { Chart } from './charts'` consumed by the always-mounted layout.
-  Plan: drop the dead re-export + lazy-split <Chart>. Projected saving ~142 kB. Approve?
-→ (after approval & rebuild) recharts now only in the lazy Reports chunk; initial JS 480→338 kB.
-```
-
-**Pairs with.** [`verify-frontend-change`](#verify-frontend-change) — after trimming, verify the app still renders and behaves in a real browser.
-
-**Install.**
-
-```
-npx skills add https://github.com/Mi9-LLC/agent-skills --skill trim-initial-bundle
-```
-
-**Full definition:** [`skills/trim-initial-bundle/SKILL.md`](skills/trim-initial-bundle/SKILL.md) (plus the diagnosis / verification references and the `analyze-initial-load.mjs` analyzer under `scripts/`).
-
----
-
-## `systematic-debugging`
-
-**What it does.** Enforces a four-phase debugging discipline instead of guess-and-check: (1) root-cause investigation, (2) pattern / context analysis, (3) ranked hypotheses, one tested at a time, (4) fix the cause behind a failing test. Hard rules: no fix before root-cause investigation, and after three failed fixes, stop and question the architecture rather than trying a fourth. Phase 1 needs a reproduction loop before any diagnosis: one named command, run once with its output shown, that fails on the exact symptom, fast and deterministic (a flaky bug is pushed to the highest reproduction rate you can reach — loops, parallel runs, load, injected sleeps — before diagnosis), then minimised one element at a time. Phase 3 writes down 2–4 ranked hypotheses, each with a falsifiable prediction, and tests only the top one; a failed test moves to the next on the list. Phase 4 puts the regression test at a seam that exercises the bug as it happens at the real call site. Temporary logs carry a unique `[DEBUG-xxxx]` prefix so cleanup is one grep, and shown diagnostics are redacted (`<REDACTED>`, credentials only via environment variables).
-
-**Requirements.** A failure you can reproduce, and a way to run it — your test runner / build / repro command (it uses `dotnet test`, `npm test`, etc.). git helps for the "what recently changed" step. No tokens or network.
-
-**How to run.** Auto-triggers on debugging asks, or run `/systematic-debugging`. `allowed-tools: Read, Grep, Glob, Bash, Edit, Write`.
-
-**Use it for.** Any failure you're about to fix — a bug, a failing or flaky test, a regression, a build break, a crash, "works locally but not in CI", or a repeated failed-fix loop. Most valuable exactly when it's tempting to skip: under time pressure and when a fix "looks obvious."
-
-**Triggers on phrases like.** "why is this broken", "this test is flaky", "my fix didn't work", "this keeps failing", "it works locally but not in CI", or a pasted stack trace. Not for trivial self-evident edits (a typo, a rename).
-
-**What it does not do.** Propose a fix before the root cause is found. Bundle a refactor or "while I'm here" cleanup into the fix. Keep trying on the same theory — it states the running fix-attempt count in the visible reply on every failed fix, and three failed fixes means the design is the suspect, so it stops to raise that with you.
-
-**What it produces.** No artifacts — a debugging discipline that ends in a root-cause fix behind a failing test (red before, green after). Ships `references/` (backward root-cause tracing, defense-in-depth validation, condition-based waiting for flaky tests).
-
-**Example.**
-
-```
-You: this test passes locally but fails in CI
-→ Phase 1: read the full error, reproduce, check the recent diff, instrument the CI/build/test
-  boundary to see which layer differs (not guess). Found: CI sets TZ=UTC; the test asserts a
-  local-time string. One fix at the root (format with an explicit timezone), behind a test that
-  fails before and passes after.
-```
-
-**Install.**
-
-```
-npx skills add https://github.com/Mi9-LLC/agent-skills --skill systematic-debugging
-```
-
-**Full definition:** [`skills/systematic-debugging/SKILL.md`](skills/systematic-debugging/SKILL.md) (plus the three technique references). Adapted from [`obra/superpowers`](https://github.com/obra/superpowers) (MIT) — decoupled, Windows-clean, with .NET/xUnit + TS/Vitest examples. The reproduction-loop, ranked-hypotheses, seam, log-tag, redaction, and flaky-rate rules are adapted from [`mattpocock/skills`](https://github.com/mattpocock/skills) `diagnosing-bugs` (MIT, © 2026 Matt Pocock).
-
----
-
-## `session-handoff`
-
-**What it does.** Creates comprehensive handoff documents so a fresh AI agent session can pick up work with zero ambiguity, and resumes from them later. Two modes: **CREATE** — scaffold a handoff, fill in state/decisions/next-steps, validate it before finalizing; **RESUME** — list available handoffs, grade staleness against the current repo state, then load the handoff (and its chain of predecessors, if any) before starting work.
-
-**Requirements.** **Python 3.9+** (the bundled scripts use built-in generics like `list[str]`; stdlib only — `argparse`, `os`, `re`, `subprocess`, `datetime`, `pathlib` — nothing to `pip install`). A git repository improves the auto-filled metadata (branch, recent commits, modified files) but isn't required. No tokens or network.
-
-**How to run.** Auto-triggers on save-state / handoff / resume asks, or run `/session-handoff`. Declares no `allowed-tools` (unrestricted).
-
-**Use it for.** Preserving context before a long session runs out of room, handing off to a different agent or teammate, or picking a project back up after a break without re-deriving what you already figured out.
-
-**Triggers on phrases like.** "save state", "create handoff", "I need to pause", "context is getting full", "load handoff", "resume from", "continue where we left off". Also self-triggers proactively after substantial work (5+ file edits, complex debugging, an architecture decision).
-
-**What it does not do.** Let you finalize a handoff with secrets detected or a validation score below 70 — `validate_handoff.py` scans for API keys, passwords, tokens, private keys, and common connection-string/bearer-token patterns before sign-off. Let a resume proceed blind — `check_staleness.py` grades the handoff FRESH → SLIGHTLY_STALE → STALE → VERY_STALE from time elapsed, commits since, files changed, and branch divergence, and a VERY_STALE result is a signal to create a fresh handoff rather than trust the old one.
-
-**What it produces.** A Markdown handoff at `.claude/handoffs/YYYY-MM-DD-HHMMSS-<slug>.md` — metadata, current state summary, codebase understanding, decisions made with rationale, immediate next steps, pending work, critical files, patterns discovered, and gotchas — optionally linked to a predecessor with `--continues-from` to form a chain. The documented workflow writes only under `.claude/handoffs/`. Ships `scripts/` (`create_handoff.py`, `list_handoffs.py`, `validate_handoff.py`, `check_staleness.py`) and `references/` (`handoff-template.md`, `resume-checklist.md`).
-
-**Example.**
-
-```
-You: context is getting full, save state before we continue tomorrow
-→ python "${CLAUDE_SKILL_DIR}/scripts/create_handoff.py" implementing-user-auth
-  Wrote .claude/handoffs/2026-07-08-143022-implementing-user-auth.md
-  Validation: 88/100, no secrets detected, no TODOs remaining.
-  First step next session: wire the refresh-token rotation in src/auth/session.ts.
-```
-
-**Install.**
-
-```
-npx skills add https://github.com/Mi9-LLC/agent-skills --skill session-handoff
-```
-
-**Full definition:** [`skills/session-handoff/SKILL.md`](skills/session-handoff/SKILL.md) · **README:** [`skills/session-handoff/README.md`](skills/session-handoff/README.md) (plus the handoff template and resume checklist under `references/`).
-
----
-
-## `verify-frontend-change`
-
-**What it does.** Closes the "should work now" gap on frontend work. After a UI change it runs a five-step browser verification loop via the Chrome DevTools MCP server: start (or reuse) the dev server → open the affected page → interact with the changed behavior → require zero new console errors → record a performance trace. A change is reported *done* only when every step passes in one uninterrupted pass; any failure gets fixed and the loop reruns from the top.
-
-**Requirements.** The [Chrome DevTools MCP server](https://github.com/ChromeDevTools/chrome-devtools-mcp) registered in Claude Code (`claude mcp add chrome-devtools --scope user npx chrome-devtools-mcp@latest` — needs Node 20.19+/22.12+/23+ and a current Chrome). Without it the skill stops and reports the change **unverified** instead of pretending. Plus a web app with a runnable dev server.
-
-**How to run.** Auto-triggers when a frontend change is about to be declared done, and on verify-asks; or run `/verify-frontend-change`. Declares no `allowed-tools` (unrestricted) — shell and browser actions prompt per your own permission settings, including your `chrome-devtools` MCP tools.
-
-**Use it for.** Any web-app change you'd otherwise sign off from a green build — component behavior, style tweaks, routes, client state — in any framework with a dev server (Vite, Next.js, CRA, Angular, Nuxt, Astro, SvelteKit, Remix; same loop for Rails/Django/ASP.NET-served frontends).
-
-**Triggers on phrases like.** "verify it works", "check it in the browser", "make sure nothing broke", "does it actually render", "test the UI change" — and proactively whenever a frontend edit is about to be called done/fixed/working. Does **not** trigger for backend-only, CLI, test-only, or docs-only changes.
-
-**What it does not do.** Call a change done from a clean edit, green build, or HMR reload. Resume mid-loop after a fix — a fix voids earlier evidence, so it reruns from Step 1. Patch forever — after 3 failed fix-and-rerun cycles on the same step it stops and questions the approach instead of trying a 4th. Invent login credentials, kill a dev server it didn't start, or hide a blocked step — "blocked, here's exactly what wasn't checked" is a valid end state; fake-verified is not.
-
-**What it produces.** No repo artifacts — an evidence-backed verdict in chat: the URL verified, the interactions performed, console triage (new vs pre-existing), and trace numbers (LCP/CLS, flagged long tasks) with dev-mode caveats. Ships `references/` (`chrome-devtools-mcp.md` tool cheatsheet, `dev-server-playbook.md`).
-
-**Example.**
-
-```
-You: swap the settings page's theme toggle for the new ThemePicker — done?
-→ Not yet — verifying. Started `pnpm dev` (localhost:5174 — port hopped), opened
-  /settings, picked "dark", saved, reloaded — persisted. Console: 1 new error
-  (ThemePicker.tsx:42, `prefs` undefined) → fixed, reran from the top: 0 errors.
-  Trace: LCP 1.1s, CLS 0.00, no new long tasks (dev-mode numbers).
-  Verified — done. Dev server stopped.
-```
-
-**Pairs with.** [`trim-initial-bundle`](#trim-initial-bundle) — when the trace step flags heavy first-load JS on a Vite app, that skill finds and defers the vendor weight.
-
-**Install.**
-
-```
-npx skills add https://github.com/Mi9-LLC/agent-skills --skill verify-frontend-change
-```
-
-**Full definition:** [`skills/verify-frontend-change/SKILL.md`](skills/verify-frontend-change/SKILL.md) (plus the tool cheatsheet and dev-server playbook under `references/`).
-
----
-
-## `plan-eng-review`
-
-**What it does.** The gate between "a plan exists" and "code gets written". Reviews a written implementation plan (the plan-mode draft, a file under `docs/plans/`, or a pasted plan) before any code is written: scope challenge (which also challenges any per-phase model recommendations the plan carries — quality outranks price, so an underestimation signal in a phase forces an Opus recommendation) → what-already-exists reuse check → four dimensions (architecture — including the deletion test on every planned module (delete it in your head: if complexity vanishes it was a pass-through) and the two-adapter rule (no interface or port unless two implementations are justified, normally production + test); code quality of the planned code; tests — the heaviest, including a seams check (a planned test that must change when the implementation changes tests past the interface; fewer seams, existing ones preferred) and the dependency category — in-process, locally substitutable, remote-but-owned, true external — that decides the test strategy; performance) → verdict. Iron law: no finding without evidence — a presence finding quotes the plan or a `file:line` verified with Read/Grep; an absence finding quotes the plan text that creates the obligation plus the negative search that verified the absence; a finding that depends on external library/framework/API behavior is verified against that dependency's *current* documentation in-session, never against internal knowledge. REGRESSION RULE: if the plan modifies existing behavior and no existing test covers the changed path, a regression test goes into Required plan changes — never asked, never waived.
-
-**Requirements.** A written implementation plan to review, and the codebase it targets — the review grounds itself in the repo's `CLAUDE.md` and the files the plan touches. No tokens; network only to check current documentation when a finding depends on external-library behavior.
-
-**How to run.** Auto-triggers when a written plan exists and you ask for it to be reviewed, or run `/plan-eng-review`. `allowed-tools: Read, Grep, Glob, Bash, Write, Agent, AskUserQuestion, WebSearch, WebFetch` (Bash is used read-only: git context, existence probes; Agent for the parallel Explore subagents in the what-already-exists reuse sweep — the reviewer then re-reads every cited `file:line` itself, since a subagent report is a lead, not evidence — and for the optional outside-voice subagent; WebSearch/WebFetch only to verify external-library behavior against current docs).
-
-**Use it for.** Gating a plan before implementation — catching rebuilt-what-already-exists, untested behavior changes, silent failure paths, bloated scope, and underestimated model recommendations while they are still cheap to fix.
-
-**Triggers on phrases like.** "review this plan", "eng review the plan", "is this plan sound", "architecture review before we build", "check the implementation plan before I start".
-
-**What it does not do.** Implement the plan (whatever the verdict). Design a feature from scratch (that's `new-feature`), decompose an approved plan (`convert-plan-to-feature`), devil's-advocate a decision or idea that isn't a written plan (`anti-sycophancy`), or review written code/diffs. It never edits any plan byte outside the report — the only mutation is replacing/appending the `## ENG REVIEW REPORT` section via a single whole-file Write-splice. Findings are batched into the report (each with a `[REC]`); AskUserQuestion is reserved for genuine scope/design forks, batched per section; an unanswered fork is recorded under `UNRESOLVED DECISIONS:`, never silently defaulted. Never commits or pushes.
-
-**What it produces.** An `## ENG REVIEW REPORT` section appended at the end of the plan file (replacing any prior report; resolved decisions carry forward on re-runs and are never re-asked, and each prior report's Required plan changes are re-verified against the amended plan so the max-8-findings cap can't silently drop one): a VERDICT (APPROVED / APPROVED WITH CHANGES / NEEDS REVISION — bound by a decision table: any CRITICAL GAP or unresolved decision ⇒ NEEDS REVISION; non-empty Required plan changes ⇒ at most APPROVED WITH CHANGES), scope-reduction opportunities, what-already-exists reuse findings, per-dimension findings (max 8 each, severity-ranked, confidence 1–10), a Required plan changes checklist, a failure-modes table (failure / test? / handled? / user-visible?), a test-coverage summary (★★★/★★/★/GAP planned-coverage legend + `COVERAGE: N/M`), a Decisions block, a NOT-in-scope list, a low-confidence appendix, and a closing `NO UNRESOLVED DECISIONS` / `UNRESOLVED DECISIONS:` marker. Terminal-only (zero writes) when the plan has no file on disk. Optional outside voice on explicit ask only: one subagent prompted to refute the verdict, tensions shown neutrally. Ships `references/review-dimensions.md`.
-
-**Example.**
-
-```
-You: review docs/plans/csv-import.md before I start building
-→ Grounded in CLAUDE.md + the 6 files the plan touches. 1 decision batch: processing
-  model (sync in request vs [REC] async job). Spliced ## ENG REVIEW REPORT into the plan:
-  VERDICT: NEEDS REVISION — importOrders() failure path is silent, untested, unhandled
-  (CRITICAL GAP). Required plan changes: 2 (regression test for calculateTotals — the
-  plan changes tested-by-nobody behavior; explicit error path for failed rows).
-  What already exists: parseCsv() at src/lib/csv.ts — plan rebuilds it; reuse instead.
-```
-
-**Pairs with.** [`new-feature`](#new-feature) → plan mode → **this gate** → [`convert-plan-to-feature`](#convert-plan-to-feature) → implement → [`verify-implementation`](#verify-implementation) — design the feature, plan it, gate the plan, decompose it, build it, then gate the built code (the full chain is the [recommended workflow](#recommended-workflow--from-idea-to-verified-code)). Also [`anti-sycophancy`](#anti-sycophancy) — that skill is the skepticism *stance* for any decision or idea; this one is the structured, evidence-gated *workflow* for a written plan. They complement, not compete. Also [`document-generate`](#document-generate) — this gate reviews the plan before implementation; that skill writes the user-facing docs once the code exists.
-
-**Install.**
-
-```
-npx skills add https://github.com/Mi9-LLC/agent-skills --skill plan-eng-review
-```
-
-**Full definition:** [`skills/plan-eng-review/SKILL.md`](skills/plan-eng-review/SKILL.md) (plus the review checklists, calibration tables, and report skeleton under `references/`). Adapted from [`garrytan/gstack`](https://github.com/garrytan/gstack) (MIT) — rebuilt so per-finding question gates become per-section decision batching, the automatic Codex outside voice becomes an optional on-request Claude subagent, the separate test-plan/tasks artifacts fold into the single in-plan report, and gstack state is dropped. The deletion test, two-adapter rule, and seams/dependency-categories check are adapted from [`mattpocock/skills`](https://github.com/mattpocock/skills) `codebase-design` and `to-spec` (MIT, © 2026 Matt Pocock).
-
----
-
-## `document-generate`
-
-**What it does.** Writes human-facing documentation files — Diataxis tutorials, how-to guides, reference pages, and explanations — for a named feature, module, or whole project. Reads the implementation and tests end-to-end before writing a word (codebase archaeology), classifies what's needed across the four Diataxis quadrants via a decision matrix, gets the partition plan approved, then writes in a fixed order: reference, explanation, how-to, tutorial.
-
-**Requirements.** A codebase to document — the whole project, or a named feature/module/file within it. No bundled script, token, or network dependency; it works entirely from the repo's own source, tests, and existing docs.
-
-**How to run.** Auto-triggers on doc-writing asks, or run `/document-generate`. `allowed-tools: Read, Grep, Glob, Bash, Write, Edit, Agent`.
-
-**Use it for.** Producing an actual documentation file for a feature, module, or project — a tutorial that gets a newcomer to a working result, a how-to for one specific task, a reference page covering the full public surface, or an explanation of a design decision.
-
-**Triggers on phrases like.** "write docs for this", "generate documentation", "document this feature / module / project", "create a tutorial for X", "write a how-to for X", "add reference docs".
-
-**What it does not do.** Answer a "how does X work?" question asked in conversation — that gets answered directly, no files produced. Author `CLAUDE.md` or `AGENTS.md` agent context (never touched by this skill). Design a feature that isn't built yet (`new-feature`) or decompose an approved plan into specs (`convert-plan-to-feature`). Run an automated stale-docs sweep across a diff — "document the changes I just made" gets redirected at Step 0 to name the actual targets, since the code is the documentation source, not the diff. Commit or push, under any circumstance.
-
-**What it produces.** New or extended Markdown files in the resolved docs home — target-local convention, then repo `docs/`, then a detected doc framework (Docusaurus / MkDocs / VitePress / Nextra, with its sidebar updated), then a new root `docs/` as the last resort — written in order reference → explanation → how-to → tutorial, plus link lines added to the README's documentation section (a minimal `## Documentation` section is appended if none exists) and any existing docs sidebar. Ends with a report: files new/extended, quadrant counts, quality-gate results, a per-example verification list (executed / traced / illustrative), and a Corrections field for anywhere existing docs contradicted the code.
-
-**Example.**
-
-```
-You: document the retry helper in src/retry.ts
-→ Archaeology: retry(fn, opts) — maxAttempts (default 3), baseDelayMs (default 100);
-  maxAttempts=0 throws RangeError (retry.test.ts:71).
-  Partition plan: reference (new) + how-to (new) — approved as-is.
-→ Wrote docs/reference-retry.md, docs/how-to-retry-flaky-calls.md. 1 link line added to
-  README's ## Documentation.
-  Corrections: README said the default maxAttempts is 5; src/retry.ts:14 says 3 — both
-  new docs and the README now say 3.
-```
-
-**Pairs with.** [`new-feature`](#new-feature) and [`plan-eng-review`](#plan-eng-review) — those settle decisions before the code is built; this skill documents it once it exists.
-
-**Install.**
-
-```
-npx skills add https://github.com/Mi9-LLC/agent-skills --skill document-generate
-```
-
-**Full definition:** [`skills/document-generate/SKILL.md`](skills/document-generate/SKILL.md) (plus the quadrant templates, anti-mixing table, and collision-policy detail under `references/`). Adapted from [`garrytan/gstack`](https://github.com/garrytan/gstack) (MIT) — rebuilt so the commit/push/PR-update tail is dropped (this skill never commits), the `gstack-redact` binary becomes a placeholder-credentials rule, the confirm-above-5-docs threshold becomes an always-on partition-plan approval gate, upstream's inline-summaries-plus-standalone-files default narrows to standalone files plus minimal link lines, and the gstack machinery is dropped.
-
----
-
-## `coding-standards`
-
-**What it does.** Enforces a reuse-before-build ladder when Claude writes new TypeScript/Node or C#/.NET code: reach for a built-in or standard-library API first, then (C#) a first-party `Microsoft.Extensions.*` package, then a widely-adopted library the project already uses — and only when every rung fails, write a custom implementation. One consistency exception overrides the rung order: where the project already uses one library consistently for the exact task, matching that established convention outranks introducing a rung-1 built-in alongside it — or, if the two genuinely conflict, the conflict is named to you rather than decided silently. On top of the ladder: precise types (no `any`, no `object`/`dynamic`), specific error classes instead of bare `Error`/`Exception`, C# async discipline (`CancellationToken`, no sync-over-async), and short doc comments on non-obvious members.
-
-**Requirements.** None. Purely behavioral — it changes what code Claude writes, not what tools it can use.
-
-**How to run.** Auto-triggers when Claude is about to write a new utility/helper/service or add/choose a dependency in TS or C#, or run `/coding-standards`. Declares no `allowed-tools`/`disallowed-tools` — it guides code-writing and must not drop tools.
-
-**Use it for.** Keeping generated code on the platform: no hand-rolled retry loops, date parsers, deep clones, or HTTP wrappers when `fetch`, `structuredClone`, LINQ, or an already-installed library does the job — and no surprise dependencies, because a missing library is always a question to you first.
-
-**Triggers on phrases like.** "write a helper/utility/function to X", "implement retry / parsing / validation logic", "create a service for Y", "should we add lodash/Polly/date-fns", "which library for X".
-
-**What it does not do.** Fire on code review or critique asks, debugging of existing behavior, trivial edits (a typo, rename, one-line fix), or languages other than TypeScript/C#. It never adds a dependency on its own — a missing library is surfaced as a question, never a silent `npm install`.
-
-**What it produces.** No files or reports — a behavioral discipline that changes the code Claude writes. It is also the canonical copy of the `## Coding standards` block checked into Mi9 repos' `CLAUDE.md` files; the `<!-- source -->` comment in those blocks points here.
-
-**Example.**
-
-```
-You: write a helper that retries a fetch up to 3 times with backoff
-→ Ladder check: no retry library in package.json. Want p-retry added, or a
-  zero-dependency helper? [asks]
-→ "no new deps" → small helper on fetch + setTimeout from timers/promises,
-  throws RetryExhaustedError extends Error, one-line JSDoc.
-```
-
-**Install.**
-
-```
-npx skills add https://github.com/Mi9-LLC/agent-skills --skill coding-standards
-```
-
-**Full definition:** [`skills/coding-standards/SKILL.md`](skills/coding-standards/SKILL.md).
-
----
-
-## `repo-change-summary`
-
-**What it does.** Answers "how much did this repo change in month X?" with one deterministic table. A bundled POSIX-shell script (`scripts/summary.sh`) runs a validated `git log` pipeline across **all branches** — each commit counted once, merge commits excluded from the line/file/commit counts — and reports lines added, lines deleted, total lines changed (added + deleted — churn, not net), files modified two ways (distinct, and summed across commits), commits, pull requests merged, and distinct authors. The script prints a finished Markdown table and writes a styled, self-contained HTML report; the model relays the table verbatim and never re-derives a number by hand. A companion script (`scripts/multi-summary.sh --group NAME`) does the same for a **named group of repos**, processing them in parallel (bounded to 4 at a time) — one combined report with a rollup table (totals row; authors counted as distinct people across the group, never the column sum; repos whose fetch failed marked `*`; repos ordered by total changed ascending, smallest first) followed by every repo's full table in that same order. Groups are machine-local `.list` files under `~/.claude/repo-change-summary-groups/` (one repo path per line), kept outside the skill because clone paths differ per machine. An optional `--per-author` flag appends a per-developer **activity** table (lines, files, commits, plus PRs authored-and-merged via the Bitbucket API — git merge commits credit the merger, not the author) — ordered by total changed ascending (a presentation choice, not a ranking), explicitly labeled activity-not-performance, with any developer's single dominating file (lockfile, generated code) called out in a footnote rather than hidden. Bot identities (built-in: Bitbucket Pipelines; extendable via `bot-emails.list`) are excluded from the developer table and footnoted with their commit count, while the repo rollup keeps every commit.
-
-**Requirements.** `git` and a POSIX shell (Git Bash on Windows works) — no other dependencies. By default the script runs `git fetch` first so remote-only branches are included; a fetch failure is non-fatal (falls back to local branches with a warning), or skip the fetch with `--no-fetch`. The `--per-author` PR column additionally needs Python 3.9+ and Bitbucket credentials already stored for git (`git credential fill`; set `BITBUCKET_EMAIL` if your git email isn't your Atlassian login) — without them the column is omitted with a note, everything else still works. Emailing the report (`--email`) additionally needs Python 3.9+, a locally-installed headless Chrome or Edge (to render the HTML report to PDF), and SMTP credentials in a `repo-change-summary.env` file (kept in `~/.claude/`) — without these the email flags are simply unavailable and the rest of the skill is unaffected.
-
-**How to run.** Auto-triggers on monthly change-volume asks, or run `/repo-change-summary`. `allowed-tools: Bash`; no `model:` pin, so it runs on the session's model. Flags: `--month YYYY-MM` (default: current month), `--repo PATH` (default: current directory), `--out DIR` (where the HTML report lands; default: current directory), `--no-fetch`, `--no-open` (don't open the report in a browser), `--exclude PATTERN` (repeatable; excludes a file from every count by basename, with `*`/`?` glob support — see "What it does not do" for the default-excluded list). Optional emailing: `--email`, `--to LIST` (implies `--email`), `--subject STR`, `--email-dry-run` (preview only, sends nothing), `--env-file PATH`, `--mailmap PATH` — always dry-run first; see "What it produces" and `skills/repo-change-summary/references/emailing.md`.
-
-**Use it for.** Monthly reporting numbers — "how many lines changed in June", "how many PRs did we merge last month", a churn snapshot for a status update.
-
-**Triggers on phrases like.** "how many lines changed this month", "how many files did we modify in June", "how many pull requests were merged last month", "repo churn for 2026-06", "diff volume in May", "monthly change summary", "generate the monthly change report / HTML summary", "give me the summary report for STF" (a named repo group).
-
-**What it does not do.** Count a commit twice because it sits on several branches, or count merge commits' diffs (merged work is never double-counted). Count stash entries, tag-only commits, reverts that quote a merge subject, commit bodies that merely discuss a PR, or the same PR number twice — PRs are counted as distinct numbers from platform merge markers (GitHub / Bitbucket incl. its squash merges / GitLab), so markerless squash- or rebase-merges are not counted. Split one person into two authors over a name spelling — `.mailmap` is respected. Report the net line delta — "total lines changed" is churn (added + deleted). Count lockfiles or CI config toward any total by default — `package-lock.json`, `yarn.lock`, `pnpm-lock.yaml`, `composer.lock`, `Gemfile.lock`, `Cargo.lock`, `poetry.lock`, `Pipfile.lock`, `go.sum`, `pubspec.lock`, and `bitbucket-pipelines.yml` are excluded from every count out of the box — the default list lives in a shared `scripts/exclude-lib.sh` that both scripts source; add more with repeatable `--exclude PATTERN`, matched by basename with `*`/`?` glob support (an exact match is the fast path, character classes are not supported, and matching is case-sensitive). Modify the repo — it only reads git history and writes the one HTML report to `--out`. Never commits or pushes.
-
-**What it produces.** A Markdown summary table in the conversation, plus a self-contained styled HTML report named `YYYY-MM-DD-HHMM-repo-change-summary-<month>.html` in the output directory, opened in the default browser (suppress with `--no-open`). In group mode: one combined Markdown summary (rollup + per-repo tables) and one combined HTML report named `…-repo-change-summary-<group>-<month>.html`, with inline-SVG bar charts (no JS/CDN — offline-portable): lines changed by repo, and per developer (lines + PRs authored) when `--per-author` is on. With `--email`, also a PDF of that HTML report attached to an email with a modern, email-safe HTML body rendering the same summary table (plain-text alternative: the raw Markdown) — always **preview-first**: `--email-dry-run` resolves recipients and builds the PDF without sending, and only a confirmed re-run actually sends.
-
-**Example.**
-
-```
-You: how many lines of code changed in this repo in June?
-→ June, 2026 — Repository change summary (all branches · each commit counted once ·
-  merges excluded): 12,480 added · 7,912 deleted · 20,392 total changed ·
-  214 distinct files · 532 file-touches · 187 commits · 23 PRs merged · 6 authors.
-  HTML report: ./2026-07-17-1512-repo-change-summary-2026-06.html
-```
-
-**Install.**
-
-```
-npx skills add https://github.com/Mi9-LLC/agent-skills --skill repo-change-summary
-```
-
-**Full definition:** [`skills/repo-change-summary/SKILL.md`](skills/repo-change-summary/SKILL.md) (plus the `summary.sh` script under `scripts/`).
-
----
-
-## `verify-implementation`
-
-**What it does.** The post-implementation gate — `plan-eng-review`'s counterpart on the other side of the code. Takes a finished implementation plus whatever asserts it is complete (a feature file's acceptance criteria, a plan, a ticket, a PR description, or a subagent's completion report) and adversarially verifies the claim: audits the report against the actual diff (a claimed change absent from the diff is the most serious finding it can produce), re-derives every acceptance criterion from its own evidence, reads every new test body and re-runs mutation proofs to catch tautological guards — *a test that cannot be made to fail is not a guard* — re-runs the project's own quality gates reading output rather than exit codes, then **fixes what it finds** on the same branch in dedicated commits and re-runs the gates.
-
-**Requirements.** A completed implementation in a git repo (the diff is the review object), and **a claim of doneness**. Written acceptance criteria are the preferred input — the `features/NN - <name>.md` files from [`convert-plan-to-feature`](#convert-plan-to-feature) are the ideal shape — but a plan, ticket, PR description, or an agent's own report works; an informal claim gets a derived acceptance table, labeled as derived. With no claim at all it refuses: there is nothing to verify against. The project's own quality gates as its `CLAUDE.md` defines them.
-
-**How to run.** Auto-triggers when an implementation is finished and something asserts it is correct, or run `/verify-implementation`. `allowed-tools: Read, Edit, Write, Bash, Grep, Glob`. Pins `model: opus` — a weaker review returns `CLEAN` on broken work, and `CLEAN` is acted on; the failure mode of this skill is false assurance.
-
-**Use it for.** Verifying a subagent's (or teammate's) "done" report before acting on it, gating a feature branch against its acceptance criteria before merge, checking whether new tests actually guard anything, and closing the loop on an initiative implemented from `convert-plan-to-feature` specs.
-
-**Triggers on phrases like.** "verify the implementation", "the agent says it's done — check it", "audit this against the acceptance criteria", "is this actually done", "double-check the work before I merge", "the tests pass but I don't trust them".
-
-**What it does not do.** Review a written plan before code exists ([`plan-eng-review`](#plan-eng-review)). Open-ended critique of an idea ([`anti-sycophancy`](#anti-sycophancy)), static-analyser cleanups ([`sonar-issue-fix`](#sonar-issue-fix)), or debugging a known failure ([`systematic-debugging`](#systematic-debugging) — this skill starts from a claim of success, not a known failure). Manufacture findings — if the implementation is correct it says so plainly; a short review that confirms real evidence is a good review. Change a decision the plan or feature file locked, or widen scope — both go in the report, not into edits. Commit to a shared branch, push, or open a PR — fixes land on the working branch in dedicated commits, and if the work sits directly on `main` it proposes the fixes instead of committing.
-
-**What it produces.** Fix commits on the working branch (when findings are fixable in scope), plus a six-section report: a verdict — `CLEAN` / `FIXED` / `NEEDS ATTENTION`, bound by a decision table (any unfixed finding, locked-decision conflict, or not-run gate ⇒ `NEEDS ATTENTION`) — with a one-line *Passes not run* slot naming any verification pass it skipped and why, a claim-vs-diff audit, findings most serious first each with `path:line` and fixed-or-not status, mutation proofs with verbatim failure output (each proof re-runs only the targeted test file or single test — the full suite is the separate gate pass), gate results including not-run-with-reason, and an acceptance table backed by the reviewer's own evidence. On a `CLEAN` or `FIXED` verdict against a `convert-plan-to-feature` feature file it also writes that feature's Status cell to `done` in the initiative's `REQUIREMENTS.md` — a write outside the reviewed diff, so it is named explicitly in the report (a `NEEDS ATTENTION` verdict changes no Status cell). When run as a subagent, the report is the run's return value — findings never get lost as chat text. Ships `references/` (the seven-pass checklist, the tautology catalog, the report skeleton).
-
-**Example.**
-
-```
-You: the subagent says feature 07 (list caching) is done and tested — verify before I merge
-→ Claim audit: the "pages can never change" argument has 3 premises; 2 hold, 1 is false —
-  the ordering column is a caller-supplied business timestamp, and two shipped paths
-  backdate it, so a backdated record lands mid-list on a page the cache marked fresh.
-  Fixed: removed the line, rewrote the comment to name both backdating paths, added a
-  regression guard, mutation-proved it (re-adding the line fails: expected 2, received 1).
-  Gates re-run green. VERDICT: FIXED — 1 finding, fixed in 2 commits on the branch.
-```
-
-**Pairs with.** [`convert-plan-to-feature`](#convert-plan-to-feature) — its feature files' acceptance criteria are this skill's highest-preference input; decompose the plan there, verify the implementation here. [`plan-eng-review`](#plan-eng-review) — the same gate discipline on the other side of implementation (see the [recommended workflow](#recommended-workflow--from-idea-to-verified-code)). [`verify-frontend-change`](#verify-frontend-change) — browser-level evidence for frontend work; this skill verifies at the code-and-criteria level.
-
-**Install.**
-
-```
-npx skills add https://github.com/Mi9-LLC/agent-skills --skill verify-implementation
-```
-
-**Full definition:** [`skills/verify-implementation/SKILL.md`](skills/verify-implementation/SKILL.md) (plus the verification checklist, tautology catalog, and report skeleton under `references/`). Distilled from the review brief used in a 20-feature internal Mi9 initiative (July 2026), where each feature was implemented by one subagent and independently reviewed by another — and the reviews repeatedly beat their implementers. Not adapted from an external project.
-
----
-
 ## `pr-review`
 
 **What it does.** Reviews a Bitbucket pull request end to end and posts the summary back to the pull request, through the Composio MCP tools. Six things in order: fetch the pull request and its diffstat (following the pagination, and falling back to a local `git diff` when Bitbucket reports the diff as truncated); check the skip conditions before anything is cloned (closed, draft, needs no review, or already carrying this skill's own comment at the current head, recognised by its fixed first line `Code review by pr-review` and the head named on its `Reviewed at head <hash>.` line; when the head has moved since that comment, or the comment names no head, it asks whether to re-review instead of stopping; a review comment anyone else posted is not a skip condition); pin a throwaway checkout of the head commit so no line number in the review can move while it is being written, then cross-check that checkout's `--numstat` against Bitbucket's own diffstat and stop if the two disagree; run a parallel diff pass of four agents (two on `CLAUDE.md` and `.claude/rules/` compliance, two on bugs and security), where **every candidate finding then has to survive a separate validation subagent** and an unvalidated finding is dropped rather than reported; run a verification pass that treats every claim in the commit messages and the pull request description as a claim to settle against a primary source rather than as evidence, and that runs the target repository's own gates in the pinned checkout after installing its dependencies there with the install command its own CI runs; write the full report, then post the comment without asking and show its text in the terminal.
@@ -860,362 +867,6 @@ npx skills add https://github.com/Mi9-LLC/agent-skills --skill pr-review
 ```
 
 **Full definition:** [`skills/pr-review/SKILL.md`](skills/pr-review/SKILL.md) (plus the report template and the severity rubric under `references/`, and `pin-pr-head.sh` / `shellcheck-safe.sh` under `scripts/`). Written at Mi9 out of a run of real Bitbucket reviews; the rubric's examples are the cases those reviews actually turned on. Not adapted from an external project. Description trigger sweep on 2026-09-16 under real registration (`evals/pr-review/`): 6/6 Bitbucket positives fired, 7/8 hard negatives quiet; the one miss is a bare "review PR 29" in a GitHub checkout, which the skill body stops by asking for the repository. First live run the same day (PR 300 of `licensing-and-deployment-portal`, `--no-comment`): approve, 0 findings.
-
----
-
-## `execute-change`
-
-**What it does.** Executes a plan brief end to end in an OpenSpec-managed repository, unattended. It can also start one step earlier, from a raw idea: a research subagent reads the relevant code and returns a design dossier (every claim with a source — a file path, or a URL to a primary source such as official docs or a spec), the lead runs a categorized design interview (`[REC]`-marked defaults, one category per question) in rounds — each answer opens the next round's questions, a question that depends on a still-open one waits, and the interview ends only when nothing is open; a fact from the repo or the docs is looked up by a read-only subagent, never asked of you; a term that conflicts with the repo's `CONTEXT.md` glossary is challenged, a vague word gets one proposed canonical term, and an ADR is offered only for a decision that is hard to reverse, surprising without context, and a real trade-off — drafts the brief to `docs/up next/<date-time>-<slug>-plan.md` (with `## Glossary updates` and `## Decisions to record as ADRs` sections, and the research dossier appended verbatim as `## Research dossier` so later steps and a resumed run see the same facts the interview used), and waits for your approval — only an approved brief enters the pipeline. One lead session coordinates the whole feature routine — author the OpenSpec change from the brief (`/opsx:propose` flow; task groups are vertical slices sized to one fresh context window — a change too wide for vertical slices is sequenced expand–contract: add the new form beside the old, migrate call sites in batches of one task group each, remove the old form last — and the brief's glossary/ADR sections are written into `CONTEXT.md` and `docs/adr/`, committed with the change) → [`plan-eng-review`](#plan-eng-review) gate → resolve the review's open decisions with the user → apply the required changes (`/opsx:update` flow, one subagent launched after the user's answers are in, so nothing runs while the question is out) → a lead-run check of the apply step's own quotes, where every whole line it quoted must be found by `grep -F -x` in the file it named, joined by one Opus reader over `tasks.md` when a required change or a decision edits a file list, a group boundary, or a blocked-by order, and by a re-review from [`plan-eng-review`](#plan-eng-review) whenever the first verdict was `NEEDS REVISION` → implement task group by task group (the implementer runs the type check and the single test files it touches while it works, then its verify clauses, and never the full suite; the lead's own gate run is the one that counts, and it is proportionate to what the group changed: a markdown lint alone for a documentation-only group, the type check and the lint plus the runner's related-tests mode for a code group, the full suite when the change alters behavior tests elsewhere assert on, and the full gates once after the last group) → [`verify-implementation`](#verify-implementation) audit of everything the run committed — the diff from the run's start commit (the commit `HEAD` pointed at when the run began, recorded in the ledger) to `HEAD`, not the base branch against the branch — with a bounded fix loop → behavior-preserving simplification pass → reconcile `tasks.md` and stop. Every authoring, review, implementation, audit, and simplification step runs in a fresh subagent with an empty context (putting the review's open decisions to you is the lead's own step) — the lead starts a subagent for every substantial task precisely to preserve its own context for the hours-long run; it never edits source itself, checks every "done" claim against evidence on disk, and commits per checkpoint by explicit pathspec on the run's branch. The authoring step works to content rules rather than line caps: `design.md` holds only the decisions the brief leaves open, `tasks.md` gives one line per task naming the file and the change, and file lists and verify clauses are never shortened, because the concurrency gate and the audit read them. A subagent that dies on the API or the transport (an Agent tool error, or a last message such as "529 Overloaded", with no report file written) is relaunched once from its progress file, which it appended a line to for every file it finished, so finished work is not redone; a second death pauses the run. The lead itself writes little: a step-log entry is capped at five lines, and the detail stays in the report files the ledger names. **Where the run works is a blocking question at preflight**, and its answer decides both that branch and the *run root* — the directory the run works in. Three options: reuse the current branch and checkout (recommended — commits go onto whatever branch is checked out now, no new branch and no new directory); create the run's own `agent/execute-change/<timestamp>-<plan name>` branch in the current checkout; or create that branch in a dedicated git worktree under `../<repo>.worktrees/`. Only the worktree keeps your main working tree out of the run. Pick either of the other two and the main working tree *is* the run root: you cannot keep working in the repo while the run executes, and two plans cannot run on that repo at the same time — the worktree is what makes concurrent runs possible, because git refuses to check one branch out twice. The question tells you two things before you answer: whether reusing the current branch would commit an hours-long autonomous change straight onto `main` or `master` (it says so, and does not block it), and whether the working tree is dirty — commits stage explicit paths, so your unrelated modified files are never committed, but every gate run executes against those changes and a pre-existing failure can then be blamed on the implementation, so committing or stashing first is the clean path. That question, the route question that rides in the same AskUserQuestion call so Step 0 still has one pause, and the not-an-OpenSpec-repo one — all asked rather than printed as a notice you could scroll past — are the only ones the preflight asks beyond its offers to install the OpenSpec CLI and the two companion skills: it otherwise prints a readiness line (brief, branch, base, run root, route, notification state) and starts — the manual invocation is the authorization, and concurrency is decided mechanically at implementation time from the task groups' file lists. Human decisions pause the run in one batched question per step — with Remote Control on, the question pushes to your phone, waits indefinitely, and survives machine sleep. A crash or interruption resumes from the run's ledger file at the last committed checkpoint, recreating the worktree if the run uses one and it is gone. Every piece of prose the subagents write for people to read — `proposal.md`, `design.md`, the spec deltas, `tasks.md`, `CONTEXT.md`, an ADR, a commit message body — is written free of AI writing tells, through the [`unslop`](#unslop) rules; no fact, number, or technical term is changed to satisfy that.
-
-**Two routes.** The run is either full (every step above) or light, and the route is settled at preflight in the same question as the run root, so Step 0 still has one pause. The lead answers six signals from the brief's own text and prints each answer with the brief line it came from: whether the change edits a shared contract (an exported type, function, schema, or API that another package in the repo, or another repo, imports); whether it touches infrastructure or data (deploy scripts, cloud resources, alert policies, CI config, database migrations, backfills); whether it touches sensitive paths (auth, permissions, secrets, locks, concurrency, caching); whether it is broad (more than one package, or more than 8 files, which is [`plan-eng-review`](#plan-eng-review)'s own hotspot threshold); whether the brief carries a test plan (concrete test cases plus the commands or gates that prove them); and whether it has been engineering-reviewed (an `## ENG REVIEW REPORT` section whose verdict is `APPROVED` or `APPROVED WITH CHANGES`, whose closing marker is `NO UNRESOLVED DECISIONS`, and whose required changes are marked addressed, where a `## Research dossier` section does not count, since the design interview asks you questions but runs no engineering review). A brief that does not say what it touches gets a `yes` on the signal it leaves open. The recommendation follows one rule: light when the first four signals are all `no` and the test plan is present, or when the brief is both engineering-reviewed and carries a test plan; full otherwise. Your answer is the route, whatever the recommendation was, and it goes into the ledger.
-
-The light route runs step 1 in a lighter form and then steps 6 and 7. Its author does not invoke the `/opsx:propose` flow, which writes every artifact of the schema, `design.md` included, and would re-plan a brief that is already the plan: it runs `openspec new change` for the scaffold and hand-writes `proposal.md`, the spec deltas (or sets `skip_specs: true` in the change's `.openspec.yaml` when the brief changes no observable behavior, as a refactor or a tooling change does), and a `tasks.md` with the full route's columns, its task groups taken from the brief's own order section. Steps 2 to 5 and step 8 are skipped. The full route's step numbers are kept so a resume keeps its meaning: the ledger carries a `Route:` line whose absence means full, and a light run whose last completed step is anywhere from 1 to 5 resumes at step 6. There is no switch between routes once the run has started. To get the review after choosing light, stop the run, delete the ledger, and run it again with full. What the light route gives up is what [`plan-eng-review`](#plan-eng-review) catches before any code exists: a changed path with no regression test asked for, over-build inside the claim, silent-failure gaps, architecture and performance findings, and a wrong `tasks.md` decomposition. [`verify-implementation`](#verify-implementation) works from the diff and the claims made about it, so it does not replace that, which is why the rule sends every brief without a test plan to the full route, and every brief with a risk signal too unless an engineering review has already been run on it.
-
-**Heartbeat and cleanup.** Installed as a plugin, the run also watches its own subagents. Three hooks — `SubagentStart`, `SubagentStop`, and a `Notification` hook matching `permission_prompt|agent_needs_input|idle_prompt` — fire in the lead session (not inside the subagent) and append one JSON line each to `<session project root>/.claude/execute-change-run.jsonl` — under the directory you started the session in, not the run root, because a hook starts from the payload's `cwd`, the shell's own current directory, and walks up to the nearest directory holding the run metadata file: the session's project root is the one directory every such walk from inside the project reaches, and a worktree sits outside the project, so a file written there is never reached. The lead pairs that log with a metadata file naming its own session, read from the `CLAUDE_CODE_SESSION_ID` environment variable; a hook whose payload session id does not match writes nothing, which is what keeps the hooks inert in every session that is not a run. After launching a subagent the lead arms a background watcher that re-reads that log every 180 seconds and stays quiet unless something is wrong: nine minutes with no new line, or one of those notifications. It prints one `alive: N agents running, oldest <age>` line every 30 minutes and exits once every subagent has stopped. Nine minutes of silence is not by itself a stall — `SubagentStart` fires once and nothing else arrives until `SubagentStop`, so an implementer working normally for 20 minutes looks identical to a stall in the log — so the lead lists its running agents first: an agent still running means it is working, and only an idle agent whose stop event never arrived starts the retry ladder (a status request, then a stop and one relaunch, then a pause that asks you). A permission prompt is never treated as a stall: only you can answer it, so the lead reports it at once and waits. An `IDLE` verdict gets the same check for the opposite reason: a start line can be missing (4 of 8 subagents in one session, a parallel batch of three among them logging none at all), so the replayed running set can be empty while agents are still working, and the lead confirms with the agent list before believing the batch is over. That defect was diagnosed and fixed on 2026-09-01: the hook read the metadata file at the payload's `cwd` literally, and `cwd` is the shell's current directory, so every event that fired while the shell sat in a package subdirectory was dropped, which is also why the matching stop events survived, logged after a later command had reset the directory. The hook now walks up from `cwd` to the nearest directory holding the file. The agent-list confirmation stays, because an installed copy of the older hook keeps the defect until you update the plugin, and so do the lead's own two rules: it never leaves the shell in another directory (it uses `git -C`, `pnpm -C`, or a subshell instead), and it never takes the run's worktree as an extra working directory, since a walk up from outside the project reaches nothing. Once `IDLE` has proved false in a run, or the hooks are not installed, the lead arms a plain 175-second timer instead of the log watcher and lists its agents at every tick. A subagent's stop carries no success or failure signal, so a failed step is caught by the lead's own acceptance check, not by the watcher. On Windows, when the last subagent of a batch stops, a process sweep kills what that batch left running — a process qualifies only when all three of these hold: its command line contains the run root path or it descends from the current `claude` process, it started at or after the batch began, and its executable is one of `node`, `npm`, `npx`, `pnpm`, `yarn`, `bun`, `biome`, `eslint`, `tsc`, `vitest`, `jest`, `esbuild`, `dotnet`. Shells (`bash`, `sh`, `pwsh`) are deliberately not on that list: every process the sweep exists for is a node or dotnet process, and a shell is far more often the lead's own tooling, including the watcher itself. A process started as `node script.js` from inside the run root carries no run root path on its command line, so only the parent-chain rule catches it — Windows exposes no working directory for a running process. The sweep also reaches the lead's own gate runs, which descend from the `claude` process and carry the run root path: one was killed twice in a single run, and a killed gate run reads as a real failure, because the output ends in `[ELIFECYCLE] Command failed with exit code 1` and names no failing test. So the lead parks the run metadata file, renaming it to `execute-change-run.json.parked` immediately before any gate run it starts itself and restoring it once that run ends. The hooks pass through while the file is absent, which disarms the sweep for that window; a resume restores a leftover parked file. Before believing a gate failure the lead greps the output for a failing-test marker, and none of those plus an `ELIFECYCLE` ending means killed rather than failed, so the gate is re-run.
-
-**Requirements.** An OpenSpec-managed repo (`openspec/config.yaml`, or a store the CLI recognizes) — the preflight verifies the OpenSpec CLI is installed and current and offers to install/update it (`npm install -g @fission-ai/openspec@latest`) if not. The [`plan-eng-review`](#plan-eng-review) and [`verify-implementation`](#verify-implementation) skills installed (the preflight offers to install those too). Git — and, if you pick the worktree run root, worktree support (any modern git); that run then installs the project's dependencies in its fresh worktree before the gates run, a per-run setup cost the other two run roots do not have, because they use the dependencies already installed in the checkout. Your main working tree may stay dirty, but only the worktree run root leaves it alone: under the other two the gates execute against your uncommitted changes, so commit or stash first if you want a gate result you can trust. For the phone-push pauses: Remote Control plus "Push when actions required" enabled (one-time setup documented in `references/preflight.md`; without it the run still works, it just waits in the terminal). For the heartbeat and the process sweep: install this skill as a plugin (see above) — `npx skills add` copies the skill files without the hooks, and the run then has no stall watcher and no cleanup. The three hooks run `python`, which must be on the PATH and be Python 3. The process sweep is Windows-only; on macOS and Linux it exits without killing anything and the rest of the run is unaffected. The machine must be on and awake while steps execute.
-
-**How to run.** **Manual-only** (`disable-model-invocation: true`) — an hours-long autonomous run that commits must never start off a description match. Invoke it explicitly:
-
-```
-/execute-change "docs/up next/csv-import-plan.md"       # existing brief → straight to the pipeline
-/execute-change "add CSV import to the orders page"     # free-text idea → design interview → approved brief → pipeline
-/execute-change                                         # no argument → lists docs/up next/*-plan.md candidates and asks
-/execute-change "docs/up next/csv-import-plan.md"       # same brief again after a crash/interruption → resumes from the ledger
-```
-
-No tool restriction and no model pin — the lead needs its full tool set, and you launch it on the model of your choice (subagent steps default to Opus; implementation groups run on the model their `tasks.md` row names).
-
-**Use it for.** Running the whole recommended workflow unattended in repos where OpenSpec owns the spec artifacts — from a finished brief or straight from an idea: start it, answer the design questions if you started from an idea, walk away, answer the occasional decision from your phone, come back to an audited, simplified, checkpoint-committed feature branch.
-
-**What it does not do.** Deploy, push, open a PR, or archive the OpenSpec change — it stops after the local commits and hands you the remaining manual steps. Commit the plan brief, its ledger, or its reports folder, or use `git add -A` (every commit stages explicit paths). Resolve design forks by assumption — open questions always pause the run. Run its pipeline outside an OpenSpec-managed repo — finding one is a blocking question at preflight, offering to stop and work without the skill (recommended) or to run `openspec init` here first; it never initializes a repo without asking. Choose where it works — the run root is your answer to a blocking preflight question, not a default it picks; only the worktree option keeps your main working tree out of the run, and either current-checkout option means the run commits in that tree and you cannot work there while it executes. Demand `bypassPermissions` — an unexpected permission prompt pausing and notifying is part of the design. Kill a process outside the sweep's allowlist, or one that started before the batch it is cleaning up after — a shell is never a candidate, and neither is the background dependency install that Step 0 starts and steps 1–5 run alongside. Act in any session that is not an `execute-change` run: with no run metadata file, or a session id that does not match the one recorded in it, the hooks exit and write nothing. Block a subagent from stopping — the hooks always exit 0.
-
-**What it produces.** Checkpoint commits (OpenSpec artifacts, one commit per implemented task group, audit fix commits, the simplification pass, the `tasks.md` reconciliation) on the branch you chose at preflight — the branch already checked out, a new `agent/execute-change/<timestamp>-<plan name>` branch in that checkout, or that branch in a worktree under `../<repo>.worktrees/` which you remove after the PR. A `<plan path>.ledger.md` next to the brief recording branch, run root, the route you picked (`Route: full` or `Route: light`, and a ledger without that line is a full-route run), the run's start commit (the full sha `HEAD` pointed at when the run began — what the step-7 audit diffs against), change ID, per-step outcomes, and decisions (you delete it at close-out). Beside it, a `<plan path>.reports/` folder with one file per pipeline step: each subagent writes its full report there, `OPEN QUESTIONS` first, and returns only the path and a short summary, so a truncated return value cannot hide an open question from the lead (you delete this folder at close-out too). And a final report: verdicts per step, decisions taken, the commit list, and the remaining manual steps — which list `git worktree remove` only when the run used a worktree. In the directory you started the session in it also writes two run-state files under `.claude/`: `execute-change-run.json`, written once at Step 0 with the session id, the `run_root` path, branch, ledger path, and start time, and deleted at close-out — its absence is what keeps the hooks inert everywhere else — and `execute-change-run.jsonl`, the hook log, one JSON object per line of kind `start`, `stop`, `notify`, `sweep`, or `resume` — the last appended by a resumed run and read by both replays as a hard reset, so the subagents that died in the interrupted run cannot leave the running set permanently occupied. Those two go there rather than in the run root because the hooks walk up from the payload's `cwd`, the shell's current directory, to the nearest directory holding the metadata file; a worktree sits outside the project, so no walk up reaches a file written there and every hook stays inert. Pick either reuse-checkout option and the two directories are the same anyway.
-
-**Example.**
-
-```
-You: /execute-change "docs/up next/tenant-export-plan.md"
-→ Preflight: OpenSpec 1.9.0 current, companions installed, push notifications on.
-  Where should this run work? [1] reuse the current branch and checkout
-  (recommended) [2] create branch
-  agent/execute-change/20260813-1054-tenant-export-plan in this checkout
-  [3] create that branch in a dedicated worktree.
-  Working tree clean; current branch feature/tenant-export, not main.
-  Route? Signals: shared contract yes (brief line 41), infrastructure no,
-  sensitive paths no, breadth 11 files yes, test plan yes,
-  engineering-reviewed no. [1] Full [REC] [2] Light.
-You: 1, and 1 for the route
-→ Readiness: branch feature/tenant-export, base main, route full, run root
-  C:\Develop\myapp — your own checkout, so do not work in it while the run executes.
-  Step 1: change tenant-export authored (proposal, design, deltas, tasks.md).
-  Step 2: plan-eng-review — NEEDS REVISION, 2 unresolved decisions.
-  Step 3: [push to phone] 2 questions answered from the phone.
-  Steps 4–5: changes applied, quote check 9/9 found, re-review APPROVED. Commit 1.
-  Step 6: groups 1–4 implemented (Opus ×3, Sonnet ×1), commits 2–5.
-  Step 7: verify-implementation — FIXED (1 finding, fix commit).
-  Step 8: simplify — 2 cleanups, gates green. Commit 7.
-  Close-out: tasks.md reconciled (commit 8), validate --strict green. STOPPED.
-  Manual next steps: deploy dev + smoke test, CLAUDE.md updates, delete brief,
-  ledger + reports, opsx:archive, PR. (No worktree to remove — this run
-  reused the current checkout.)
-```
-
-**Pairs with.** [`plan-eng-review`](#plan-eng-review) and [`verify-implementation`](#verify-implementation) — the run invokes both as its gates. The [recommended workflow](#recommended-workflow--from-idea-to-verified-code) — this skill is that chain's unattended form for OpenSpec repos; [`convert-plan-to-feature`](#convert-plan-to-feature) is the equivalent decomposition step for repos *without* a mandated spec workflow.
-
-**Install.**
-
-```
-claude plugin marketplace add Mi9-LLC/agent-skills
-claude plugin install execute-change@mi9-agent-skills
-```
-
-`npx skills add https://github.com/Mi9-LLC/agent-skills --skill execute-change` still installs the skill, but without the three hooks: no subagent log, so no stall watcher, and no process sweep. Pick one or the other — installing both registers two copies under the same name.
-
-**Full definition:** [`skills/execute-change/SKILL.md`](skills/execute-change/SKILL.md) (plus the preflight/one-time-setup guide, the design-first entry guide in `design-entry.md`, the verbatim step-prompt templates, and the `CONTEXT.md`/ADR formats in `domain-docs.md` under `references/`, and the heartbeat-log stall watcher in `scripts/stall-watcher.sh`). The three hooks and the process sweep are documented in [`hooks/README.md`](hooks/README.md). The source-per-claim, research-dossier-in-brief, expand–contract, and serial-vs-parallel test-running rules are adapted from [`mattpocock/skills`](https://github.com/mattpocock/skills) `research`, `implement`, and `to-tickets` (MIT, © 2026 Matt Pocock).
-
----
-
-## `clear-and-short`
-
-**What it does.** Cuts the number of words in Claude's chat replies without making them harder to read. The compression happens at the level of **which facts get stated**, never **how the words are formed**: preamble and pleasantries, tool-call narration ("now I will read X"; before a call it writes nothing, or one short line such as "Checking both repos." when the calls take more than a few seconds), restating your question back at you, comments on the question or on its own approach ("that is checkable rather than a judgement call", "Let me verify in both repos"), the same fact repeated in a heading and a bullet and a closing line, a closing summary on a reply that is already short, surveys of options that were never going to be recommended, decorative tables and emoji, long raw logs, and hedging all go. Full sentences, articles, correct verb forms, negations, numbers, file paths, and verbatim code and error strings all stay. It also writes in **simple English** for readers whose first language is not English: the common word over the rare synonym ("use" not "utilize"), one idea per sentence of about 20 words or fewer, no idioms or figurative verbs ("the fix is merged", not "the fix landed"), concrete names instead of umbrella words ("the system", "the pipeline"), technical terms kept as names and defined in plain words the first time they appear. Questions to the user are asked one at a time with numbered options and a `[REC]` default, so the answer can be one number. This is the deliberate opposite of telegraphic "caveman" compression: dropping articles saves roughly 5-8% of tokens and costs every reader real effort — most of all anyone reading in a second language — while the structural cuts save far more and cost nothing.
-
-**Two entry points.** Asking for shorter replies ("be brief", "too many words") switches on every rule. Asking only for a less machine-sounding voice ("humanize your responses", "remove the AI tells", "stop writing like an AI") switches on the simple-English and no-AI-tells rules and leaves the length caps off: the request is for a different voice, not for less content, so nothing the answer needs is dropped. The no-AI-tells rules cover the tells that the simple-English ones miss: em dashes, "not just X, but Y", forced groups of three, AI vocabulary ("crucial", "delve", "robust", "seamless"), "serves as" instead of "is", puffery, bold-label lists that restate the line, sycophantic openers, feeling-words in place of facts, colons used as mid-sentence connectors, fake-candid openings ("Honestly?", "Look,", "Here's the thing"), fake deep truth ("at its core", "the real question is", "fundamentally"), announcing the next point ("Let's dive in", "here's what you need to know"), answering an objection the user did not raise ("To be clear", "Don't get me wrong"), and rows of dramatic fragments. Either request also switches the mode on for the rest of the session, and a later message asking for the other one adds it.
-
-**The voice half is on by default.** With the plugin installed you do not have to ask for it: the hook emits the voice directive on the first prompt of every session, so replies are in plain voice from the start. It emits the voice directive and not the length one deliberately — this is a default, and a default must not silently drop content you never asked to lose. It emits once per session, not on every prompt: re-injecting the same text every turn adds nothing and would conflict with an explicit "normal mode" later in the session. Sessions already seen are recorded in `~/.claude/.clear-and-short-sessions.json`; entries older than 7 days are pruned, the file is written atomically, and a missing or corrupt file never blocks a prompt. A prompt that matches the skill's own patterns keeps today's behavior exactly — "be brief" still upgrades to the length rules, "normal mode" still turns the skill off — and it also closes out the default for that session, so the voice directive can never fire a turn later and tell Claude to drop length rules you just asked for.
-
-**Three things hold the default back.** A first prompt that asks for the mode *off* — "normal mode", "stop clear-and-short", "stop being brief", "you can be verbose again", "back to normal" — now emits nothing and closes out the default for that session; before, such a prompt got the voice directive on the very message asking for the mode to be off. The default also fires only when the environment variable `CLAUDE_CODE_ENTRYPOINT` is `cli` (an interactive terminal) or absent, never when it is `sdk-cli`: it does not fire in `claude -p`, SDK runs, or automated eval harnesses, where it silently changed output being measured for something else. The payload's `source` field is checked too when present, but the `claude -p` payload on Claude Code 2.1.251 carries none, which is why a `source`-only check let the default fire there on 2026-08-28. A prompt that explicitly matches the skill's patterns is still honored whatever the entrypoint or source. And setting the environment variable `CLEAR_AND_SHORT_NO_DEFAULT` to any non-empty value turns the default off while matched prompts keep working; that is the documented opt-out, where before the only way out was uninstalling the plugin.
-
-**Requirements.** Install it as a plugin rather than with `npx skills add` (see above): the plugin carries the `UserPromptSubmit` hook that makes the mode switch on reliably. The hook runs `python`, which must be on the PATH and be Python 3 — on macOS and Linux, where the interpreter is often `python3` only, the hook does nothing and reports no error. The skill itself is purely behavioral and needs nothing: it changes how Claude writes, not what tools it can use.
-
-**How to run.** With the plugin installed the voice half needs no request at all — it is on from the first prompt of every session (see above), and asking for shorter replies adds the length rules on top of it. To ask explicitly: `/clear-and-short`, or just ask for shorter or simpler replies ("be brief", "too many words", "use simple English"), or for a less machine-sounding voice ("humanize your responses", "remove the AI tells"). It then stays on for the rest of the session until you say "normal mode" or "stop clear-and-short" — it does not drift back to long form or to harder words as the session grows. Declares no `allowed-tools`/`disallowed-tools`.
-
-**Use it for.** Spending your context budget on the work instead of on prose about the work — long agent sessions, repeated investigation summaries, and any workflow where you read many status reports. Also for keeping replies readable when English is not your first language: shorter, but still ordinary English sentences.
-
-**Triggers on phrases like.** "be brief", "keep it short", "from now on keep it short", "shorter answers", "too many words", "stop repeating yourself", "you are too verbose", "use fewer tokens", "save tokens", "stop narrating every tool call", "use simple English", "plain English", "I am not a native speaker" — and, for the voice entry point, "humanize your responses", "remove the AI tells", "your replies sound like ChatGPT", "stop writing like an AI", "de-AI your answers", "no more em dashes". A phrase that names a file or document instead ("humanize this README", "de-AI the docs") goes to `unslop`, not here. It triggers on the first such request even when the same message also asks an ordinary question — answering shorter just once is not a substitute, because loading the skill is what makes the change hold for the rest of the session.
-
-**What it does not do.** Shorten anything written for other people to read — code, comments, commit messages, documentation, PR/issue/ticket text, and memory files stay at normal length in normal prose; that prose is `unslop`'s job, and this skill owns only the length, wording, and AI tells of Claude's own chat replies. It also steps back to full prose on its own for security warnings, destructive or irreversible action confirmations, multi-step instructions you will follow by hand where the order matters, and whenever you repeat a question (a repeat means the short answer did not land, so it answers at greater length and in simpler words, not less). A shorter report never turns a partial result into a clean one: anything skipped, failed, uncertain, or assumed is still reported.
-
-**What it produces.** No files or reports — a behavioral discipline that changes how Claude writes in the chat.
-
-**Example.**
-
-```
-Normal:  I've finished looking into this. The issue you're running into is
-         caused by the auth middleware, which is checking token expiry with
-         a strict less-than comparison instead of less-than-or-equal. That
-         means a token expiring exactly on the boundary is rejected. I've
-         gone ahead and fixed that. Let me know if you'd like anything else!
-
-clear-and-short:
-         `auth/middleware.ts:42` compares token expiry with `<` instead of
-         `<=`, so a token expiring on the boundary is rejected. Fixed.
-         Tests pass.
-```
-
-**Install.**
-
-```
-claude plugin marketplace add Mi9-LLC/agent-skills
-claude plugin install clear-and-short@mi9-agent-skills
-```
-
-Restart the session, then type "be brief" to confirm the skill loads. Do not also run `npx skills add … --skill clear-and-short`: that installs a second copy under the same name, without the hook.
-
-**Origin.** Adapted from [`juliusbrussee/caveman`](https://github.com/juliusbrussee/caveman) (MIT, © 2026 Julius Brussee). Caveman's structural cuts are kept (plus its rules against invented abbreviations and arrows, which save no tokens); its grammar compression and six intensity levels are dropped. It is roughly caveman's `lite` level, extended with the simple-English and question rules.
-
-**Full definition:** [`skills/clear-and-short/SKILL.md`](skills/clear-and-short/SKILL.md). The hook is documented in [`hooks/README.md`](hooks/README.md).
-
----
-
-## `unslop`
-
-**What it does.** Edits prose to remove the patterns that mark text as AI-written. It works from a fixed list of 41 patterns in seven groups: **content** (puffery, name-dropping, "highlighting… / ensuring…" phrases, promotional adjectives, vague attributions, "despite challenges… continues to thrive", answering an objection nobody raised, rejecting a fake alternative that never comes back, writing about the previous version instead of current behavior), **language** (AI vocabulary such as "delve", "crucial", "tapestry", "landscape"; "serves as / boasts" instead of "is"; "not just X, but Y" and its tailing-negation form; forced groups of three; synonym cycling and repeated sentence openings; false "from X to Y" ranges), **style** (em dashes, mid-sentence colons, bold on every noun, bold-label lists that restate the line, title-case headings, decorative emoji, curly quotes, hyphenated pairs kept after the noun, a heading whose first sentence only repeats the heading), **communication artifacts** (chatbot phrases, cutoff disclaimers, sycophantic openers, fake-candid openings such as "Honestly?" and "Here's the thing", announcing the next point with "Let's dive in"), **filler** (phrases, hedging stacks, generic conclusions), **jargon** (abstract metaphor nouns such as "substrate", "wedge", "north star", "flywheel", with the concrete replacement for each; fake deep truth such as "at its core" and "the real question is"; formulaic sayings such as "X is the Y of Z" and "the currency of"), and **plain speech** (name the mechanism or number instead of the feeling, one idea per sentence, active voice including missing subjects, cut adverbs, the plain word, no rows of dramatic fragments). The process is: scan for the patterns, rewrite while preserving meaning and tone, then self-audit for anything still obviously machine-written.
-
-**The false-positive guard.** A `## What not to flag` list keeps the skill off writing that was never machine-written: perfect grammar, a mixed casual/formal register, dry prose with none of the specific tells, one em dash on its own, curly quotes a word processor inserted, one short sentence used for emphasis, deliberate repeated openings, real caveats and legal notices, real alternatives weighed in a design document, and a watched phrase sitting inside a quotation, a title, or an example that discusses the phrase rather than using it. One tell proves nothing; several together are evidence. A companion `## Keep the author's own voice` list names what the edit must not delete: specific unusual details, unresolved tension, era-bound references, genuine asides, and variety in sentence length.
-
-**Requirements.** None. Behavioral — it changes how Claude edits and writes prose.
-
-**How to run.** `/unslop` on a file or pasted text, or ask to "unslop", "de-AI", or "humanize" a piece of writing. Claude also applies it on its own when it writes a new documentation page, README, or announcement. Declares no `allowed-tools`/`disallowed-tools`.
-
-**Use it for.** Documentation, README files, blog posts, announcements, emails, PR descriptions, release notes — anything people will read where "this was written by an AI" is a cost.
-
-**Triggers on phrases like.** "unslop this", "make it sound less like AI", "remove the AI tells", "humanize this text", "de-AI the README", "this reads like ChatGPT wrote it". The same words aimed at Claude's own replies rather than at a piece of writing ("humanize your responses", "your answers sound like ChatGPT") belong to `clear-and-short` instead.
-
-**What it does not do.** Touch code, code comments, commit messages, or Claude's own chat replies (their length, wording, and AI tells are `clear-and-short`'s job — the two skills are complementary: `clear-and-short` decides how much to say in chat, `unslop` cleans up prose written for other readers). It does not change the meaning, facts, numbers, or the established technical terms of the text, and it does not add opinions or a first-person voice the author did not write. A project style guide (for example a house rule on heading case) overrides any conflicting pattern.
-
-**What it produces.** No files or reports of its own — it edits the text it is given in place, or returns the rewritten text when given a paste.
-
-**Example.**
-
-```
-Before:  This groundbreaking release serves as a testament to our commitment to
-         developer experience — delivering not just speed, but reliability and
-         elegance. Experts agree it's a pivotal moment for the ecosystem.
-
-After:   Version 3.0 cuts cold-start time from 900 ms to 120 ms and removes the
-         three flaky retry paths reported in #412, #418, and #430.
-```
-
-**Install.**
-
-```
-npx skills add https://github.com/Mi9-LLC/agent-skills --skill unslop
-```
-
-**Origin.** Adapted from the `unslop` skill in [`cursor/plugins`](https://github.com/cursor/plugins/tree/main/pstack/skills/unslop) (`pstack`, MIT, © 2026 Lauren Tan). All 31 of its patterns are kept. Upstream's "Adding soul" section (have opinions, use "I", let some mess in) and its "must always apply" trigger are dropped: the first conflicts with the plain-facts style used across this catalog, the second would fire on every turn including code and chat. Ten further patterns, three extensions to existing ones, and both the `## What not to flag` and `## Keep the author's own voice` sections are adapted from [`blader/humanizer`](https://github.com/blader/humanizer) (MIT, © 2025 Siqi Chen), whose list comes from [Wikipedia: Signs of AI writing](https://en.wikipedia.org/wiki/Wikipedia:Signs_of_AI_writing); humanizer's "Add personality only when it fits" section is dropped for the same reason upstream's "Adding soul" was.
-
-**Full definition:** [`skills/unslop/SKILL.md`](skills/unslop/SKILL.md).
-
----
-
-## `delegation-prompt`
-
-**What it does.** Writes the prompt you paste into a *different* Claude Code session, agent, or teammate's chat so that session does the next job on work this one just finished: review the pull request, test the change on another machine or under load, port the same fix to a sibling repository, audit what was built. It writes the brief; it does not do the job. Output is one fenced code block with the whole prompt and nothing else, preceded by one to three lines naming the mode it chose and why. Before writing a word it decides the mode. **Checking mode** (the receiving session will review, audit, verify, or test): this session's conclusions are withheld, risk areas are written as questions with no answers attached ("does the run order survive?", never "the run order survives"), and things that look like defects but are claimed deliberate are framed as claims to judge, because a reviewer handed the answer confirms it instead of verifying it. **Extending mode** (the receiving session will continue, implement, port, or build on the work): every settled decision is stated plainly so nothing is re-derived. A task that is both is split into a checking section and an extending section inside the single block. In both modes the prompt names concrete identifiers (PR number and URL, repo, branch, paths, the exact tool or MCP server, the installed skill to invoke), states the provenance ("written by an AI session; treat claims in commit messages as claims to verify"), lists environment traps with what the failure looks like (the stale install, the cache that fakes a pass, the service that must be running), states ground rules (read-only, do not push), and says where the output goes and in what shape.
-
-**Requirements.** None. Behavioral: it changes what Claude writes into the chat.
-
-**How to run.** Auto-triggers on a "write me a prompt for another session" ask, or run `/delegation-prompt`. Declares no `allowed-tools`/`disallowed-tools`. It does not write the prompt to a file unless asked.
-
-**Use it for.** Handing a review, a load test, an audit, a port, or any follow-up to someone who was not in this conversation, without leaking the answer key to a reviewer or making an implementer redo settled work.
-
-**Triggers on phrases like.** "write me a prompt for another session", "give me something to paste into a fresh session", "write a prompt to review this", "brief another agent to test / port / audit this", or just "generate the prompt" / "write it up for the reviewer" after a piece of work is done.
-
-**What it does not do.** Save context so the *same* work can continue after a pause or a full context window (that is `session-handoff`). Perform the follow-up task itself. Invent detail to fill a gap: every number, filename, version, command, or decision in the prompt must trace to the user's words, a file it read, or a command it ran, otherwise it is cut or marked unknown ("the author did not say which other files changed; establish that yourself"), because an invented fact in a delegation prompt reaches a session that cannot contradict it. Put a token, password, API key, or connection string in the prompt; it names where the credential lives instead.
-
-**What it produces.** No files. One fenced code block in the chat.
-
-**Example.**
-
-```
-You: we're done with PR #114. Generate the prompt for the session that reviews it.
-Claude: Checking mode: the other session reviews this one's work, so my
-  conclusions stay out and the risk areas are questions, not reassurances.
-
-    Review pull request #114 in acme/billing-service (branch
-    feature/BIL-401-invoice-rounding, opened against develop):
-    https://github.com/acme/billing-service/pull/114
-
-    Read + comment only. Do not push, merge, or edit code.
-    ...
-    ## Repo facts you need
-    Run `npm run fixtures:build` before the integration tests. Without it they
-    fail with an ENOENT that looks like a code bug.
-    ...
-```
-
-**Install.**
-
-```
-npx skills add https://github.com/Mi9-LLC/agent-skills --skill delegation-prompt
-```
-
-**Origin.** Written at Mi9 with `skill-creator`; the "carry over only what you can trace to a source" rule was added after the skill's own eval runs showed prompts inventing an incident timing profile, a load-scenario description, and a "the only file changed" claim that were in nobody's message (those runs used an earlier eval set, since replaced). Eval fixtures live under [`evals/delegation-prompt/`](evals/delegation-prompt/).
-
-**Full definition:** [`skills/delegation-prompt/SKILL.md`](skills/delegation-prompt/SKILL.md).
-
----
-
-## `session-cleanup`
-
-**What it does.** Runs the cleanup phase after a piece of work is finished, merged, or deployed: deletes the branches, plan documents, spec artifacts, scratch files, and background processes the session itself created, and leaves everything else in place with a note saying why. Two separate questions decide every deletion, and the skill's core claim is that conflating them is how a careful session does damage. **Is it mine?** — the ownership test, run before any git check: list what this session created, and treat anything else as belonging to a teammate, another agent session in the same checkout, or the state the repository was in on arrival. A branch can be stale, merged, and obviously finished and still not be yours to delete; when you are unsure whether you created something, you did not. **Is it recoverable?** — checked before the delete, not after: `git ls-remote --heads origin` and `git branch -r --contains <sha>` decide whether the work exists anywhere but this one local ref. Beyond that it covers `git branch -d` failing in both directions: it refuses a squash-merged branch whose content shipped an hour ago, and it also *succeeds* on a branch merged only to its own upstream and never to the target, printing a warning and deleting anyway, so a clean `-d` is not evidence the work landed. `git diff --stat <branch> <target>` and `git merge-base --is-ancestor refs/heads/<branch> <target>` settle it, and the report says which check was used. Three further restrictions: a protected list excluded before anything else (the repo's real default branch read from `git symbolic-ref`, the current branch, and long-lived `main`/`develop`/`staging`/`production`/`release/*` names, still reported when they carry unpushed commits); every branch name and path single-quoted in a shell command, because `$(id)`, `` `id` ``, `a;b` and `a&b` are all legal branch names that a bare `git branch -D $(id)` would execute; and a dirty worktree never removed under a batch confirmation, since its uncommitted changes exist nowhere else, plan documents (a file reading *"Status: not started"* is queued work, not finished work), spec artifacts (where the workflow archives a change, the archive is the record and archiving *is* the cleanup), processes (identify by what they are doing, not by name — a `gcloud` or `node` process may be the user's), worktrees (`git worktree remove`, never `rm -rf`, which leaves a registration in `.git/worktrees` that blocks the branch from being checked out anywhere else), and shared checkouts (the branch can change between two commands, so re-check `git branch --show-current` before committing, and message the other session before moving anything). The report is structured as removed / kept and why / at risk, because the exceptions are the part the user has to act on.
-
-**Requirements.** A git repository, for the branch checks. Everything else works anywhere.
-
-**How to run.** Auto-triggers on "clean up", "tidy up", "remove the branches", "delete the temp files", "kill the processes you started", or a question about what is left over after a merge — and is meant to fire whenever a deletion of a branch, plan file, or spec change is about to happen, even without the word "cleanup". Or run `/session-cleanup`. Declares no `allowed-tools`/`disallowed-tools`: the never-rules are workflow discipline, not a tool restriction.
-
-**Use it for.** The end of a finished task, especially in a checkout that teammates or other agent sessions share. Also as a pre-flight check on any single deletion you are unsure about.
-
-**Triggers on phrases like.** "clean up after yourself", "tidy up the branches", "what's left over", "delete the plan file now it's done", "kill the background processes", "remove the scratch files".
-
-**What it does not do.** Delete anything it did not create — a stale branch, an implemented-looking plan, someone else's scratch file are all reported instead. Leave a work product of its own in the scratchpad: a report or dossier a skill wrote there is either deleted, when its facts are already recorded somewhere findable, or moved to a place with a reader as a change you approve, because nothing indexes a session's scratchpad and no later session reads it. Use `git add -A` or `git add .` (staging is by explicit path, because in a shared checkout a sweep picks up work nobody has read). Commit or discard uncommitted changes that belong to someone else. Trust `git branch -d` about a squash-merged branch. Delete a commit that exists on no remote branch. Delete a remote branch: `git push origin --delete` removes the copy that made the local delete reversible and takes the branch from everyone else, so cleanup deletes local refs only and the remote one is left to the user or to the merge platform. Free disk space on the machine (Temp folders, caches, Docker disks): that is [`windows-disk-cleanup`](#windows-disk-cleanup).
-
-**What it produces.** No files. A cleanup report in the chat: what was removed, what was kept and why, and anything at risk — including a mistake that was made and reversed, because a cleanup that quietly deleted and restored something looks identical to one that never erred.
-
-**Example.**
-
-```
-You: we're done — clean up
-Claude: Removed: agent/csv-import (squash-merged in #10 — `git branch -d`
-  refused it, but `git diff --stat` against develop is empty), 3 scratch
-  files under .scratch/csv-import/, the vitest watcher I started.
-
-  Kept: feature/legacy-rounding — fully contained in develop and looks
-  finished, but this session did not create it. Delete it with
-  `git branch -d feature/legacy-rounding` if you want it gone.
-
-  At risk: agent/notify-admin holds fafd2c2, which `git branch -r
-  --contains` places on no remote. Deleting that branch destroys those
-  246 lines, so I left it.
-```
-
-**Pairs with.** [`execute-change`](#execute-change), which stops after its local commits and leaves a ledger, a reports folder, a plan brief, and a run branch or worktree behind for you to remove. [`session-handoff`](#session-handoff), when the work is pausing rather than finished — hand it over before cleaning up, not after.
-
-**Install.**
-
-```
-npx skills add https://github.com/Mi9-LLC/agent-skills --skill session-cleanup
-```
-
-**Origin.** Written at Mi9 from one real session's cleanup phase on 2026-09-04, including its two mistakes: a branch deleted because it was merged rather than because it was ours, and a plan document deleted while it still read "Status: not started". Not adapted from an external project. The `description` was chosen by a three-variant A/B against real `.claude/skills` registration on 2026-09-04 (42 queries plus 11 re-checks, `claude-opus-5`): the shipped description, one with the proactive clause removed, and the current one, which leads with the use-when clause and carries do-NOT carve-outs naming `session-handoff`, `retro` and `/simplify`. All three scored 14/14 — every positive fired, all eight hard negatives stayed quiet — so the set found no difference between them and the current wording was adopted on a pre-registered tiebreak, not on a measured win. **The behaviour eval is still owed**: nothing has yet checked that the skill changes which things get deleted. Results and caveats in [`evals/session-cleanup/`](evals/session-cleanup/). The protected-branch list, the branch-name quoting rule and the dirty-worktree refusal were prompted by reading [`trailofbits/skills`](https://github.com/trailofbits/skills) `git-cleanup` (CC-BY-SA-4.0), which covers branches and worktrees more thoroughly than this skill did and covers ownership, files and processes not at all. Its wording is **not** reused: every rule here was rewritten from behavior verified against git in this session, so the skill stays MIT. That verification also produced the `-d`-succeeds-on-upstream case above, which their skill states and this one now demonstrates.
-
-**Full definition:** [`skills/session-cleanup/SKILL.md`](skills/session-cleanup/SKILL.md).
-
----
-
-## `dead-code-removal`
-
-**What it does.** Takes an existing, dated dead-code analysis and its removal plan and re-checks every finding against the code as it is today, using parallel read-only re-check subagents. Each agent re-proves each claim from scratch with a repository-wide search rather than trusting the old evidence, and returns one of four verdicts: VALID (still unused), CHANGED (still unused, but moved, renamed, or otherwise different from the claim), INVALID (something uses it now, or the claim was wrong to begin with), or GONE (already deleted, or the named file no longer exists or is not tracked). The fresh verdicts are written into the plan and a new `NN-recheck-<YYYY-MM-DD>.md` file next to the analysis (the analysis itself gets at most one index paragraph and one table row; its original findings are not rewritten), the checked plan is shown for approval, and only then does the skill delete the statically proven dead code, one plan step at a time, in a dedicated git worktree, running the project's own quality gates after every step and comparing each result to a pre-deletion baseline.
-
-**Requirements.** An existing dead-code analysis and its removal plan already on disk — a folder or a file of findings, each with a location and its evidence, plus a document that turns the findings into ordered deletion steps (the plan can be the same file as the analysis). A git repository, since the deletion phase works in a dedicated worktree, created beside the repository, detached at a base commit the skill asks you to choose before it creates anything. The repository's own quality gates (format check, lint, typecheck, build, tests), run once as a baseline before anything is deleted and again after every step. If no analysis exists at all, the skill stops and says so — it checks and executes an analysis, it does not produce one from scratch.
-
-**How to run.** Auto-triggers when a dead-code report, an unused-code list, or a dead-code removal plan already exists and the user wants it re-checked or acted on. Declares no `allowed-tools`. Pins `model: opus`.
-
-**Use it for.** Bringing a dead-code analysis back up to date after other commits have moved lines, added callers, or deleted files since it was written, and then removing whatever the fresh re-check still proves is unused.
-
-**Triggers on phrases like.** "re-check the dead code analysis", "update the code validity of the dead-code report", "is this dead-code list still accurate", "the analysis is a week old, check it and start removing", "execute the dead-code removal plan", "start Step 1 of the dead code plan in a worktree".
-
-**What it does not do.** Find dead code from scratch when no analysis exists yet — produce the analysis first. Delete one file or symbol the user names directly. Fix static-analyser smells (`sonar-issue-fix`'s job). Delete anything whose deadness depends on configuration, deploy settings, or traffic — this skill deletes on static proof only, and leaves runtime-gated suspects in place for a person to decide. Fix a gate failure forward — a step whose gate result is worse than the baseline is reverted path by path (not patched), recorded under Skipped, and the run continues with the next step, skipping any later step that depends on it; the one exception is a lint auto-fix that only reorders imports, and only when the user approved it in advance. Delete a defect it finds along the way — a branch that never runs because of a bug (an uninjected dependency, an unregistered plugin) is reported as a bug to fix, never deleted, and state that production code writes but only tests read is recorded as a follow-up. Commit or push without the user's approval — it stages only the current step's files, each by its explicit path, never `git add -A` or `git add .`, and shows the staged list and the proposed commit message before every commit.
-
-**What it produces.** A dedicated git worktree with the deletions applied: the re-check documents as the branch's first commit and then one commit per plan step, each made only once the user approves it. A document git ignores is edited where it is and reported as not committed. A new dated file next to the analysis, `NN-recheck-<YYYY-MM-DD>.md`, recording the commit range, the method, the counts per area, and every INVALID, CHANGED, and GONE item with its evidence. The plan itself edited in place: a status line with the re-check date and commit, corrected line numbers, INVALID items removed or rewritten, and cascade items, missed test files, and missed documents added to the step they belong to. A final check over the whole result: a clean build and test run with the task runner's cache turned off, and a search of the code and the documents for every removed name and deleted file. A final report in six sections: what was removed (files, symbols, and commit hash per step), what was skipped and why, every change that is not a pure deletion (such as a removed configuration validation rule that changes start-up behaviour), every gate result per step and for the final check against the baseline, every defect and follow-up found (never deleted, only reported), and which plan steps are left and what each one needs.
-
-**Why it pins `model: opus`.** The failure mode this skill has to avoid is a re-check that calls an item VALID when the code as it stands today already uses it. A weaker model is more likely to return that wrong verdict on live code, and that verdict is what leads straight into deleting something that is not actually dead.
-
-**Where it came from.** Distilled from a live run on a TypeScript monorepo on 2026-09-24, six days and fourteen commits after the original analysis was written: five re-check agents checked about 245 items, found 11 INVALID or GONE and 29 CHANGED, and at least 4 of the INVALID items sat in files that no commit had touched since the analysis — showing that "did this file change?" is not a safe stand-in for a real re-check. It also adopts ideas from three published skills — `parcadei/continuous-claude-v3`'s `dead-code`, `code-yeongyu/oh-my-openagent`'s `remove-deadcode`, and `pproenca/dot-skills`'s `knip-deadcode`: re-checking each item right before deleting it, reverting a failing step instead of fixing forward, comparing gate results to a baseline, a false-positive checklist, re-scanning for cascade dead code after each deletion, one category of findings per commit, a separate test-only verdict left for the user to decide, and asking to split a step that holds more than about 50 items.
-
-**Example.**
-
-```
-You: the dead-code analysis is a week old — check it and start removing what's still dead
-→ Base commit? [current head recommended]
-You: current head
-→ Worktree ../<repo>.worktrees/dead-code-removal-<YYYY-MM-DD> created, detached at that commit. Baseline gates green.
-  5 re-check agents checked 62 items: 4 INVALID (each with the file and line now using it),
-  2 GONE, 9 CHANGED (line number moved), 3 cascade items found. Checked plan: 4 steps, 47 items.
-  Show the checked plan for approval? [shown]
-You: approved, go
-→ Step 1 (12 whole-file deletions): gates green, matches baseline. Staged files and commit
-  message shown — approve to commit?
-```
-
-**Pairs with.** [`session-cleanup`](#session-cleanup) — this skill deliberately leaves its worktree in place once done ("removing it is the user's decision once the branch is merged"), which is exactly `session-cleanup`'s job to do once that happens.
-
-**Install.**
-
-```
-npx skills add https://github.com/Mi9-LLC/agent-skills --skill dead-code-removal
-```
-
-**Full definition:** [`skills/dead-code-removal/SKILL.md`](skills/dead-code-removal/SKILL.md) (plus the re-check agent brief and the false-positive checklist under `references/`).
-
----
-
-## `windows-disk-cleanup`
-
-**What it does.** Finds what fills a Windows machine's disk, says what can be removed without harm and how, and checks the result after you run the commands. A bundled read-only PowerShell script (`scripts/Measure-DiskUsage.ps1`) measures the drive's free space, the `TEMP` and `TMP` variables, the largest folders in the user profile and `AppData` with both their reported size and the space they really take on disk, a list of known locations (package caches, crash dumps, Windows Setup logs, AI model folders, placeholder folders), large folders whose name matches no installed program, Docker and WSL virtual disks, and repeating Temp growth such as Visual Studio Installer copies. The skill then sorts every large item into five groups — safe to delete, caches, shrink (do not delete), your call, do not delete — and gives one command per item. It checks each claim before making it: a folder is called a leftover only after four checks (no installed program or Store package, no running process, no environment variable or PATH entry pointing into it, and no extension of an installed editor such as VS Code using it); the Temp folder is named by full path, because the user's `TEMP` variable can point to another folder; a folder this shell cannot read is reported as not checked, not as empty; a database server or Docker volume is looked inside before its removal is suggested. A second script (`scripts/Clear-DiskSpace.ps1`) deletes the safe groups in one run when you start it: items in `AppData\Local\Temp` older than 2 days, VS Code `workspaceStorage` folders unused for 60 days (this also deletes the VS Code chat history kept for those folders), the leftover folders passed in `-LeftoverPaths`, kernel crash dumps, and Windows Setup monitor logs. `-DryRun` shows the sizes without deleting; without it the script restarts itself elevated (one UAC prompt) for the two Windows folders. After you run the commands, the skill measures again and explains every item that did not change.
-
-**Requirements.** Windows with Windows PowerShell 5.1 or PowerShell 7. Admin rights only for the Windows folders (`LiveKernelReports`, `Panther\monitor`) and for the Docker disk shrink; everything else runs as the normal user.
-
-**How to run.** Auto-triggers on a request to free disk space or to check what can be removed, on a question about whether the folders an uninstalled program left behind can be deleted, or on pasted `du`, TreeSize or WinDirStat output with that question. Or run `/windows-disk-cleanup`. Declares no `allowed-tools`: the rule that the agent never deletes is workflow discipline, not a tool restriction.
-
-**Use it for.** A full system drive, or a check every few months of what has grown since the last one.
-
-**Triggers on phrases like.** "free up disk space", "what can I delete from C:", "what is taking all the space", "check what files and folders can be removed", "Cursor is uninstalled but its folders are still in my profile, can those go?", "I ran the commands, check again".
-
-**What it does not do.** Delete anything itself — it measures, explains, and hands over the commands, even when asked to run them. Delete a virtual disk (`.vhdx`), anything under `C:\Windows` other than crash dumps and setup logs, `C:\Windows\Installer`, restore points, or Docker volumes without listing them first. Clean up after a coding session in a repository (branches, scratch files, worktrees) — that is [`session-cleanup`](#session-cleanup). Work on Linux or macOS.
-
-**What it produces.** No files. A report in the chat: the five groups as tables with on-disk sizes, the commands (each marked when it needs an admin shell), what could not be checked and why, and after a re-check a before/after comparison with the reason for anything unchanged. The cleanup script is given by its full path in the installed skill's folder; nothing is copied.
-
-**Example.**
-
-```
-You: check what can be removed from C:
-Claude: Measured. Free: 1,075 GB of 1,661 GB.
-  Safe to delete: AppData\Local\Temp 159.9 GB (Visual Studio Installer
-  copies left by its BackgroundDownload task, and loose .node files).
-  Shrink: the Docker folder 122.5 GB (docker_data.vhdx) — quit Docker
-  Desktop first, then compact it.
-  Caches: pnpm 12.8 GB.
-  Note: your TEMP variable points to C:\Temp, not AppData\Local\Temp —
-  the commands below name the folder by full path.
-You: ran all of it, check again
-Claude: Free: 1,312 GB (+237). Temp 159.9 → 0.1 GB, Docker folder
-  122.5 → 53.9 GB, pnpm 12.8 → 7.9 GB; the other 3.7 GB is the net
-  change of smaller items. CrossDevice shows 54 GB but takes 0.04 GB on disk
-  (phone placeholders) — nothing to free there.
-```
-
-**Pairs with.** [`session-cleanup`](#session-cleanup), which cleans what a coding session left in a repository; this skill cleans the machine.
-
-**Install.**
-
-```
-npx skills add https://github.com/Mi9-LLC/agent-skills --skill windows-disk-cleanup
-```
-
-**Origin.** Written at Mi9 on 2026-11-05 from one real cleanup across two days, including its mistakes: a Temp command written as `$env:TEMP` cleaned `C:\Temp` instead of the 160 GB `AppData\Local\Temp`; a script path given to run before the script was copied there; a Docker disk shrink that could not work while Docker Desktop was running; and a 54 GB folder that turned out to be phone placeholders using 0.04 GB. Each became a rule. Not adapted from an external project. **Trigger sweep on 2026-11-06** (`evals/windows-disk-cleanup/`, 15 prompts, `claude-opus-5-5`, real registration, every run in `dontAsk` mode so no prompt could delete files): 6 of 7 positives loaded the skill and 8 of 8 hard negatives stayed quiet. "Delete the temp files on my C drive" went to this skill and the same words scoped to a repository's `.scratch` folder went to `session-cleanup`. The one miss, "Cursor is uninstalled but its folders are still in my user profile. Can those go?", stayed quiet in 3 of 3 runs, because the description did not name the leftover folders of an uninstalled program. The description gained that clause, and a second sweep the same day (17 prompts, adding a second leftover wording and an uninstall-question negative) scored 8 of 8 positives and 9 of 9 hard negatives, with the Cursor prompt loading the skill in 3 of 3 runs. **The skill's behavior once loaded has not been measured.**
-
-**Full definition:** [`skills/windows-disk-cleanup/SKILL.md`](skills/windows-disk-cleanup/SKILL.md) (plus the locations and procedures under `references/` and the two scripts under `scripts/`).
 
 ---
 
@@ -1279,6 +930,355 @@ npx skills add https://github.com/Mi9-LLC/agent-skills --skill pr-review-request
 **Origin.** Written at Mi9 on 2026-11-24 from one review request a user accepted. Its first version had no team header, and the user asked to keep the header and add the detail after it; that is why the header is fixed and the sections come second. The Google Chat markup rules were checked the same day against Google's pages ([Add formatting to your Google Chat messages](https://support.google.com/chat/answer/7649118), [Mention someone or add someone to a message](https://support.google.com/chat/answer/14170425), [Format messages](https://developers.google.com/workspace/chat/format-messages)). Google does not document what happens to this markup when text is pasted, and the skill says so; the one paste test above did not record whether the *Live Markdown* setting was on. The worked example in the skill and on this page is invented, with the shape and length of the accepted request. Not adapted from an external project. Eval fixtures are under [`evals/pr-review-request/`](evals/pr-review-request/) (9 trigger positives, 10 hard negatives, 8 behavior scenarios). **Run on 2026-11-24** with `claude-fable-5-2` under real registration, every run in `dontAsk` mode so that nothing could post to Bitbucket: 9 of 9 positives loaded the skill and 10 of 10 hard negatives stayed quiet, after one description fix ("reply to the reviewer's comments" had loaded it). All 8 behavior scenarios pass, after three fixes the runs led to: `pr-review` had loaded first on "Review request for <Bitbucket URL>" and now excludes that request, the note above the message had grown to 8 lines and is capped at six, and one run added the AI line because the prompt asked for it, which the rule now rules out (3 of 3 re-runs leave it out). **Not measured:** reading a pull request through Composio, `gh` or a checkout, since every scenario carries its facts inline. Results are in [`results-2026-11-24.md`](evals/pr-review-request/results-2026-11-24.md).
 
 **Full definition:** [`skills/pr-review-request/SKILL.md`](skills/pr-review-request/SKILL.md).
+
+---
+
+## `document-generate`
+
+**What it does.** Writes human-facing documentation files — Diataxis tutorials, how-to guides, reference pages, and explanations — for a named feature, module, or whole project. Reads the implementation and tests end-to-end before writing a word (codebase archaeology), classifies what's needed across the four Diataxis quadrants via a decision matrix, gets the partition plan approved, then writes in a fixed order: reference, explanation, how-to, tutorial.
+
+**Requirements.** A codebase to document — the whole project, or a named feature/module/file within it. No bundled script, token, or network dependency; it works entirely from the repo's own source, tests, and existing docs.
+
+**How to run.** Auto-triggers on doc-writing asks, or run `/document-generate`. `allowed-tools: Read, Grep, Glob, Bash, Write, Edit, Agent`.
+
+**Use it for.** Producing an actual documentation file for a feature, module, or project — a tutorial that gets a newcomer to a working result, a how-to for one specific task, a reference page covering the full public surface, or an explanation of a design decision.
+
+**Triggers on phrases like.** "write docs for this", "generate documentation", "document this feature / module / project", "create a tutorial for X", "write a how-to for X", "add reference docs".
+
+**What it does not do.** Answer a "how does X work?" question asked in conversation — that gets answered directly, no files produced. Author `CLAUDE.md` or `AGENTS.md` agent context (never touched by this skill). Design a feature that isn't built yet (`new-feature`) or decompose an approved plan into specs (`convert-plan-to-feature`). Run an automated stale-docs sweep across a diff — "document the changes I just made" gets redirected at Step 0 to name the actual targets, since the code is the documentation source, not the diff. Commit or push, under any circumstance.
+
+**What it produces.** New or extended Markdown files in the resolved docs home — target-local convention, then repo `docs/`, then a detected doc framework (Docusaurus / MkDocs / VitePress / Nextra, with its sidebar updated), then a new root `docs/` as the last resort — written in order reference → explanation → how-to → tutorial, plus link lines added to the README's documentation section (a minimal `## Documentation` section is appended if none exists) and any existing docs sidebar. Ends with a report: files new/extended, quadrant counts, quality-gate results, a per-example verification list (executed / traced / illustrative), and a Corrections field for anywhere existing docs contradicted the code.
+
+**Example.**
+
+```
+You: document the retry helper in src/retry.ts
+→ Archaeology: retry(fn, opts) — maxAttempts (default 3), baseDelayMs (default 100);
+  maxAttempts=0 throws RangeError (retry.test.ts:71).
+  Partition plan: reference (new) + how-to (new) — approved as-is.
+→ Wrote docs/reference-retry.md, docs/how-to-retry-flaky-calls.md. 1 link line added to
+  README's ## Documentation.
+  Corrections: README said the default maxAttempts is 5; src/retry.ts:14 says 3 — both
+  new docs and the README now say 3.
+```
+
+**Pairs with.** [`new-feature`](#new-feature) and [`plan-eng-review`](#plan-eng-review) — those settle decisions before the code is built; this skill documents it once it exists.
+
+**Install.**
+
+```
+npx skills add https://github.com/Mi9-LLC/agent-skills --skill document-generate
+```
+
+**Full definition:** [`skills/document-generate/SKILL.md`](skills/document-generate/SKILL.md) (plus the quadrant templates, anti-mixing table, and collision-policy detail under `references/`). Adapted from [`garrytan/gstack`](https://github.com/garrytan/gstack) (MIT) — rebuilt so the commit/push/PR-update tail is dropped (this skill never commits), the `gstack-redact` binary becomes a placeholder-credentials rule, the confirm-above-5-docs threshold becomes an always-on partition-plan approval gate, upstream's inline-summaries-plus-standalone-files default narrows to standalone files plus minimal link lines, and the gstack machinery is dropped.
+
+---
+
+## `unslop`
+
+**What it does.** Edits prose to remove the patterns that mark text as AI-written. It works from a fixed list of 41 patterns in seven groups: **content** (puffery, name-dropping, "highlighting… / ensuring…" phrases, promotional adjectives, vague attributions, "despite challenges… continues to thrive", answering an objection nobody raised, rejecting a fake alternative that never comes back, writing about the previous version instead of current behavior), **language** (AI vocabulary such as "delve", "crucial", "tapestry", "landscape"; "serves as / boasts" instead of "is"; "not just X, but Y" and its tailing-negation form; forced groups of three; synonym cycling and repeated sentence openings; false "from X to Y" ranges), **style** (em dashes, mid-sentence colons, bold on every noun, bold-label lists that restate the line, title-case headings, decorative emoji, curly quotes, hyphenated pairs kept after the noun, a heading whose first sentence only repeats the heading), **communication artifacts** (chatbot phrases, cutoff disclaimers, sycophantic openers, fake-candid openings such as "Honestly?" and "Here's the thing", announcing the next point with "Let's dive in"), **filler** (phrases, hedging stacks, generic conclusions), **jargon** (abstract metaphor nouns such as "substrate", "wedge", "north star", "flywheel", with the concrete replacement for each; fake deep truth such as "at its core" and "the real question is"; formulaic sayings such as "X is the Y of Z" and "the currency of"), and **plain speech** (name the mechanism or number instead of the feeling, one idea per sentence, active voice including missing subjects, cut adverbs, the plain word, no rows of dramatic fragments). The process is: scan for the patterns, rewrite while preserving meaning and tone, then self-audit for anything still obviously machine-written.
+
+**The false-positive guard.** A `## What not to flag` list keeps the skill off writing that was never machine-written: perfect grammar, a mixed casual/formal register, dry prose with none of the specific tells, one em dash on its own, curly quotes a word processor inserted, one short sentence used for emphasis, deliberate repeated openings, real caveats and legal notices, real alternatives weighed in a design document, and a watched phrase sitting inside a quotation, a title, or an example that discusses the phrase rather than using it. One tell proves nothing; several together are evidence. A companion `## Keep the author's own voice` list names what the edit must not delete: specific unusual details, unresolved tension, era-bound references, genuine asides, and variety in sentence length.
+
+**Requirements.** None. Behavioral — it changes how Claude edits and writes prose.
+
+**How to run.** `/unslop` on a file or pasted text, or ask to "unslop", "de-AI", or "humanize" a piece of writing. Claude also applies it on its own when it writes a new documentation page, README, or announcement. Declares no `allowed-tools`/`disallowed-tools`.
+
+**Use it for.** Documentation, README files, blog posts, announcements, emails, PR descriptions, release notes — anything people will read where "this was written by an AI" is a cost.
+
+**Triggers on phrases like.** "unslop this", "make it sound less like AI", "remove the AI tells", "humanize this text", "de-AI the README", "this reads like ChatGPT wrote it". The same words aimed at Claude's own replies rather than at a piece of writing ("humanize your responses", "your answers sound like ChatGPT") belong to `clear-and-short` instead.
+
+**What it does not do.** Touch code, code comments, commit messages, or Claude's own chat replies (their length, wording, and AI tells are `clear-and-short`'s job — the two skills are complementary: `clear-and-short` decides how much to say in chat, `unslop` cleans up prose written for other readers). It does not change the meaning, facts, numbers, or the established technical terms of the text, and it does not add opinions or a first-person voice the author did not write. A project style guide (for example a house rule on heading case) overrides any conflicting pattern.
+
+**What it produces.** No files or reports of its own — it edits the text it is given in place, or returns the rewritten text when given a paste.
+
+**Example.**
+
+```
+Before:  This groundbreaking release serves as a testament to our commitment to
+         developer experience — delivering not just speed, but reliability and
+         elegance. Experts agree it's a pivotal moment for the ecosystem.
+
+After:   Version 3.0 cuts cold-start time from 900 ms to 120 ms and removes the
+         three flaky retry paths reported in #412, #418, and #430.
+```
+
+**Install.**
+
+```
+npx skills add https://github.com/Mi9-LLC/agent-skills --skill unslop
+```
+
+**Origin.** Adapted from the `unslop` skill in [`cursor/plugins`](https://github.com/cursor/plugins/tree/main/pstack/skills/unslop) (`pstack`, MIT, © 2026 Lauren Tan). All 31 of its patterns are kept. Upstream's "Adding soul" section (have opinions, use "I", let some mess in) and its "must always apply" trigger are dropped: the first conflicts with the plain-facts style used across this catalog, the second would fire on every turn including code and chat. Ten further patterns, three extensions to existing ones, and both the `## What not to flag` and `## Keep the author's own voice` sections are adapted from [`blader/humanizer`](https://github.com/blader/humanizer) (MIT, © 2025 Siqi Chen), whose list comes from [Wikipedia: Signs of AI writing](https://en.wikipedia.org/wiki/Wikipedia:Signs_of_AI_writing); humanizer's "Add personality only when it fits" section is dropped for the same reason upstream's "Adding soul" was.
+
+**Full definition:** [`skills/unslop/SKILL.md`](skills/unslop/SKILL.md).
+
+---
+
+## `clear-and-short`
+
+**What it does.** Cuts the number of words in Claude's chat replies without making them harder to read. The compression happens at the level of **which facts get stated**, never **how the words are formed**: preamble and pleasantries, tool-call narration ("now I will read X"; before a call it writes nothing, or one short line such as "Checking both repos." when the calls take more than a few seconds), restating your question back at you, comments on the question or on its own approach ("that is checkable rather than a judgement call", "Let me verify in both repos"), the same fact repeated in a heading and a bullet and a closing line, a closing summary on a reply that is already short, surveys of options that were never going to be recommended, decorative tables and emoji, long raw logs, and hedging all go. Full sentences, articles, correct verb forms, negations, numbers, file paths, and verbatim code and error strings all stay. It also writes in **simple English** for readers whose first language is not English: the common word over the rare synonym ("use" not "utilize"), one idea per sentence of about 20 words or fewer, no idioms or figurative verbs ("the fix is merged", not "the fix landed"), concrete names instead of umbrella words ("the system", "the pipeline"), technical terms kept as names and defined in plain words the first time they appear. Questions to the user are asked one at a time with numbered options and a `[REC]` default, so the answer can be one number. This is the deliberate opposite of telegraphic "caveman" compression: dropping articles saves roughly 5-8% of tokens and costs every reader real effort — most of all anyone reading in a second language — while the structural cuts save far more and cost nothing.
+
+**Two entry points.** Asking for shorter replies ("be brief", "too many words") switches on every rule. Asking only for a less machine-sounding voice ("humanize your responses", "remove the AI tells", "stop writing like an AI") switches on the simple-English and no-AI-tells rules and leaves the length caps off: the request is for a different voice, not for less content, so nothing the answer needs is dropped. The no-AI-tells rules cover the tells that the simple-English ones miss: em dashes, "not just X, but Y", forced groups of three, AI vocabulary ("crucial", "delve", "robust", "seamless"), "serves as" instead of "is", puffery, bold-label lists that restate the line, sycophantic openers, feeling-words in place of facts, colons used as mid-sentence connectors, fake-candid openings ("Honestly?", "Look,", "Here's the thing"), fake deep truth ("at its core", "the real question is", "fundamentally"), announcing the next point ("Let's dive in", "here's what you need to know"), answering an objection the user did not raise ("To be clear", "Don't get me wrong"), and rows of dramatic fragments. Either request also switches the mode on for the rest of the session, and a later message asking for the other one adds it.
+
+**The voice half is on by default.** With the plugin installed you do not have to ask for it: the hook emits the voice directive on the first prompt of every session, so replies are in plain voice from the start. It emits the voice directive and not the length one deliberately — this is a default, and a default must not silently drop content you never asked to lose. It emits once per session, not on every prompt: re-injecting the same text every turn adds nothing and would conflict with an explicit "normal mode" later in the session. Sessions already seen are recorded in `~/.claude/.clear-and-short-sessions.json`; entries older than 7 days are pruned, the file is written atomically, and a missing or corrupt file never blocks a prompt. A prompt that matches the skill's own patterns keeps today's behavior exactly — "be brief" still upgrades to the length rules, "normal mode" still turns the skill off — and it also closes out the default for that session, so the voice directive can never fire a turn later and tell Claude to drop length rules you just asked for.
+
+**Three things hold the default back.** A first prompt that asks for the mode *off* — "normal mode", "stop clear-and-short", "stop being brief", "you can be verbose again", "back to normal" — now emits nothing and closes out the default for that session; before, such a prompt got the voice directive on the very message asking for the mode to be off. The default also fires only when the environment variable `CLAUDE_CODE_ENTRYPOINT` is `cli` (an interactive terminal) or absent, never when it is `sdk-cli`: it does not fire in `claude -p`, SDK runs, or automated eval harnesses, where it silently changed output being measured for something else. The payload's `source` field is checked too when present, but the `claude -p` payload on Claude Code 2.1.251 carries none, which is why a `source`-only check let the default fire there on 2026-08-28. A prompt that explicitly matches the skill's patterns is still honored whatever the entrypoint or source. And setting the environment variable `CLEAR_AND_SHORT_NO_DEFAULT` to any non-empty value turns the default off while matched prompts keep working; that is the documented opt-out, where before the only way out was uninstalling the plugin.
+
+**Requirements.** Install it as a plugin rather than with `npx skills add` (see above): the plugin carries the `UserPromptSubmit` hook that makes the mode switch on reliably. The hook runs `python`, which must be on the PATH and be Python 3 — on macOS and Linux, where the interpreter is often `python3` only, the hook does nothing and reports no error. The skill itself is purely behavioral and needs nothing: it changes how Claude writes, not what tools it can use.
+
+**How to run.** With the plugin installed the voice half needs no request at all — it is on from the first prompt of every session (see above), and asking for shorter replies adds the length rules on top of it. To ask explicitly: `/clear-and-short`, or just ask for shorter or simpler replies ("be brief", "too many words", "use simple English"), or for a less machine-sounding voice ("humanize your responses", "remove the AI tells"). It then stays on for the rest of the session until you say "normal mode" or "stop clear-and-short" — it does not drift back to long form or to harder words as the session grows. Declares no `allowed-tools`/`disallowed-tools`.
+
+**Use it for.** Spending your context budget on the work instead of on prose about the work — long agent sessions, repeated investigation summaries, and any workflow where you read many status reports. Also for keeping replies readable when English is not your first language: shorter, but still ordinary English sentences.
+
+**Triggers on phrases like.** "be brief", "keep it short", "from now on keep it short", "shorter answers", "too many words", "stop repeating yourself", "you are too verbose", "use fewer tokens", "save tokens", "stop narrating every tool call", "use simple English", "plain English", "I am not a native speaker" — and, for the voice entry point, "humanize your responses", "remove the AI tells", "your replies sound like ChatGPT", "stop writing like an AI", "de-AI your answers", "no more em dashes". A phrase that names a file or document instead ("humanize this README", "de-AI the docs") goes to `unslop`, not here. It triggers on the first such request even when the same message also asks an ordinary question — answering shorter just once is not a substitute, because loading the skill is what makes the change hold for the rest of the session.
+
+**What it does not do.** Shorten anything written for other people to read — code, comments, commit messages, documentation, PR/issue/ticket text, and memory files stay at normal length in normal prose; that prose is `unslop`'s job, and this skill owns only the length, wording, and AI tells of Claude's own chat replies. It also steps back to full prose on its own for security warnings, destructive or irreversible action confirmations, multi-step instructions you will follow by hand where the order matters, and whenever you repeat a question (a repeat means the short answer did not land, so it answers at greater length and in simpler words, not less). A shorter report never turns a partial result into a clean one: anything skipped, failed, uncertain, or assumed is still reported.
+
+**What it produces.** No files or reports — a behavioral discipline that changes how Claude writes in the chat.
+
+**Example.**
+
+```
+Normal:  I've finished looking into this. The issue you're running into is
+         caused by the auth middleware, which is checking token expiry with
+         a strict less-than comparison instead of less-than-or-equal. That
+         means a token expiring exactly on the boundary is rejected. I've
+         gone ahead and fixed that. Let me know if you'd like anything else!
+
+clear-and-short:
+         `auth/middleware.ts:42` compares token expiry with `<` instead of
+         `<=`, so a token expiring on the boundary is rejected. Fixed.
+         Tests pass.
+```
+
+**Install.**
+
+```
+claude plugin marketplace add Mi9-LLC/agent-skills
+claude plugin install clear-and-short@mi9-agent-skills
+```
+
+Restart the session, then type "be brief" to confirm the skill loads. Do not also run `npx skills add … --skill clear-and-short`: that installs a second copy under the same name, without the hook.
+
+**Origin.** Adapted from [`juliusbrussee/caveman`](https://github.com/juliusbrussee/caveman) (MIT, © 2026 Julius Brussee). Caveman's structural cuts are kept (plus its rules against invented abbreviations and arrows, which save no tokens); its grammar compression and six intensity levels are dropped. It is roughly caveman's `lite` level, extended with the simple-English and question rules.
+
+**Full definition:** [`skills/clear-and-short/SKILL.md`](skills/clear-and-short/SKILL.md). The hook is documented in [`hooks/README.md`](hooks/README.md).
+
+---
+
+## `delegation-prompt`
+
+**What it does.** Writes the prompt you paste into a *different* Claude Code session, agent, or teammate's chat so that session does the next job on work this one just finished: review the pull request, test the change on another machine or under load, port the same fix to a sibling repository, audit what was built. It writes the brief; it does not do the job. Output is one fenced code block with the whole prompt and nothing else, preceded by one to three lines naming the mode it chose and why. Before writing a word it decides the mode. **Checking mode** (the receiving session will review, audit, verify, or test): this session's conclusions are withheld, risk areas are written as questions with no answers attached ("does the run order survive?", never "the run order survives"), and things that look like defects but are claimed deliberate are framed as claims to judge, because a reviewer handed the answer confirms it instead of verifying it. **Extending mode** (the receiving session will continue, implement, port, or build on the work): every settled decision is stated plainly so nothing is re-derived. A task that is both is split into a checking section and an extending section inside the single block. In both modes the prompt names concrete identifiers (PR number and URL, repo, branch, paths, the exact tool or MCP server, the installed skill to invoke), states the provenance ("written by an AI session; treat claims in commit messages as claims to verify"), lists environment traps with what the failure looks like (the stale install, the cache that fakes a pass, the service that must be running), states ground rules (read-only, do not push), and says where the output goes and in what shape.
+
+**Requirements.** None. Behavioral: it changes what Claude writes into the chat.
+
+**How to run.** Auto-triggers on a "write me a prompt for another session" ask, or run `/delegation-prompt`. Declares no `allowed-tools`/`disallowed-tools`. It does not write the prompt to a file unless asked.
+
+**Use it for.** Handing a review, a load test, an audit, a port, or any follow-up to someone who was not in this conversation, without leaking the answer key to a reviewer or making an implementer redo settled work.
+
+**Triggers on phrases like.** "write me a prompt for another session", "give me something to paste into a fresh session", "write a prompt to review this", "brief another agent to test / port / audit this", or just "generate the prompt" / "write it up for the reviewer" after a piece of work is done.
+
+**What it does not do.** Save context so the *same* work can continue after a pause or a full context window (that is `session-handoff`). Perform the follow-up task itself. Invent detail to fill a gap: every number, filename, version, command, or decision in the prompt must trace to the user's words, a file it read, or a command it ran, otherwise it is cut or marked unknown ("the author did not say which other files changed; establish that yourself"), because an invented fact in a delegation prompt reaches a session that cannot contradict it. Put a token, password, API key, or connection string in the prompt; it names where the credential lives instead.
+
+**What it produces.** No files. One fenced code block in the chat.
+
+**Example.**
+
+```
+You: we're done with PR #114. Generate the prompt for the session that reviews it.
+Claude: Checking mode: the other session reviews this one's work, so my
+  conclusions stay out and the risk areas are questions, not reassurances.
+
+    Review pull request #114 in acme/billing-service (branch
+    feature/BIL-401-invoice-rounding, opened against develop):
+    https://github.com/acme/billing-service/pull/114
+
+    Read + comment only. Do not push, merge, or edit code.
+    ...
+    ## Repo facts you need
+    Run `npm run fixtures:build` before the integration tests. Without it they
+    fail with an ENOENT that looks like a code bug.
+    ...
+```
+
+**Install.**
+
+```
+npx skills add https://github.com/Mi9-LLC/agent-skills --skill delegation-prompt
+```
+
+**Origin.** Written at Mi9 with `skill-creator`; the "carry over only what you can trace to a source" rule was added after the skill's own eval runs showed prompts inventing an incident timing profile, a load-scenario description, and a "the only file changed" claim that were in nobody's message (those runs used an earlier eval set, since replaced). Eval fixtures live under [`evals/delegation-prompt/`](evals/delegation-prompt/).
+
+**Full definition:** [`skills/delegation-prompt/SKILL.md`](skills/delegation-prompt/SKILL.md).
+
+---
+
+## `session-handoff`
+
+**What it does.** Creates comprehensive handoff documents so a fresh AI agent session can pick up work with zero ambiguity, and resumes from them later. Two modes: **CREATE** — scaffold a handoff, fill in state/decisions/next-steps, validate it before finalizing; **RESUME** — list available handoffs, grade staleness against the current repo state, then load the handoff (and its chain of predecessors, if any) before starting work.
+
+**Requirements.** **Python 3.9+** (the bundled scripts use built-in generics like `list[str]`; stdlib only — `argparse`, `os`, `re`, `subprocess`, `datetime`, `pathlib` — nothing to `pip install`). A git repository improves the auto-filled metadata (branch, recent commits, modified files) but isn't required. No tokens or network.
+
+**How to run.** Auto-triggers on save-state / handoff / resume asks, or run `/session-handoff`. Declares no `allowed-tools` (unrestricted).
+
+**Use it for.** Preserving context before a long session runs out of room, handing off to a different agent or teammate, or picking a project back up after a break without re-deriving what you already figured out.
+
+**Triggers on phrases like.** "save state", "create handoff", "I need to pause", "context is getting full", "load handoff", "resume from", "continue where we left off". Also self-triggers proactively after substantial work (5+ file edits, complex debugging, an architecture decision).
+
+**What it does not do.** Let you finalize a handoff with secrets detected or a validation score below 70 — `validate_handoff.py` scans for API keys, passwords, tokens, private keys, and common connection-string/bearer-token patterns before sign-off. Let a resume proceed blind — `check_staleness.py` grades the handoff FRESH → SLIGHTLY_STALE → STALE → VERY_STALE from time elapsed, commits since, files changed, and branch divergence, and a VERY_STALE result is a signal to create a fresh handoff rather than trust the old one.
+
+**What it produces.** A Markdown handoff at `.claude/handoffs/YYYY-MM-DD-HHMMSS-<slug>.md` — metadata, current state summary, codebase understanding, decisions made with rationale, immediate next steps, pending work, critical files, patterns discovered, and gotchas — optionally linked to a predecessor with `--continues-from` to form a chain. The documented workflow writes only under `.claude/handoffs/`. Ships `scripts/` (`create_handoff.py`, `list_handoffs.py`, `validate_handoff.py`, `check_staleness.py`) and `references/` (`handoff-template.md`, `resume-checklist.md`).
+
+**Example.**
+
+```
+You: context is getting full, save state before we continue tomorrow
+→ python "${CLAUDE_SKILL_DIR}/scripts/create_handoff.py" implementing-user-auth
+  Wrote .claude/handoffs/2026-07-08-143022-implementing-user-auth.md
+  Validation: 88/100, no secrets detected, no TODOs remaining.
+  First step next session: wire the refresh-token rotation in src/auth/session.ts.
+```
+
+**Install.**
+
+```
+npx skills add https://github.com/Mi9-LLC/agent-skills --skill session-handoff
+```
+
+**Full definition:** [`skills/session-handoff/SKILL.md`](skills/session-handoff/SKILL.md) · **README:** [`skills/session-handoff/README.md`](skills/session-handoff/README.md) (plus the handoff template and resume checklist under `references/`).
+
+---
+
+## `session-cleanup`
+
+**What it does.** Runs the cleanup phase after a piece of work is finished, merged, or deployed: deletes the branches, plan documents, spec artifacts, scratch files, and background processes the session itself created, and leaves everything else in place with a note saying why. Two separate questions decide every deletion, and the skill's core claim is that conflating them is how a careful session does damage. **Is it mine?** — the ownership test, run before any git check: list what this session created, and treat anything else as belonging to a teammate, another agent session in the same checkout, or the state the repository was in on arrival. A branch can be stale, merged, and obviously finished and still not be yours to delete; when you are unsure whether you created something, you did not. **Is it recoverable?** — checked before the delete, not after: `git ls-remote --heads origin` and `git branch -r --contains <sha>` decide whether the work exists anywhere but this one local ref. Beyond that it covers `git branch -d` failing in both directions: it refuses a squash-merged branch whose content shipped an hour ago, and it also *succeeds* on a branch merged only to its own upstream and never to the target, printing a warning and deleting anyway, so a clean `-d` is not evidence the work landed. `git diff --stat <branch> <target>` and `git merge-base --is-ancestor refs/heads/<branch> <target>` settle it, and the report says which check was used. Three further restrictions: a protected list excluded before anything else (the repo's real default branch read from `git symbolic-ref`, the current branch, and long-lived `main`/`develop`/`staging`/`production`/`release/*` names, still reported when they carry unpushed commits); every branch name and path single-quoted in a shell command, because `$(id)`, `` `id` ``, `a;b` and `a&b` are all legal branch names that a bare `git branch -D $(id)` would execute; and a dirty worktree never removed under a batch confirmation, since its uncommitted changes exist nowhere else, plan documents (a file reading *"Status: not started"* is queued work, not finished work), spec artifacts (where the workflow archives a change, the archive is the record and archiving *is* the cleanup), processes (identify by what they are doing, not by name — a `gcloud` or `node` process may be the user's), worktrees (`git worktree remove`, never `rm -rf`, which leaves a registration in `.git/worktrees` that blocks the branch from being checked out anywhere else), and shared checkouts (the branch can change between two commands, so re-check `git branch --show-current` before committing, and message the other session before moving anything). The report is structured as removed / kept and why / at risk, because the exceptions are the part the user has to act on.
+
+**Requirements.** A git repository, for the branch checks. Everything else works anywhere.
+
+**How to run.** Auto-triggers on "clean up", "tidy up", "remove the branches", "delete the temp files", "kill the processes you started", or a question about what is left over after a merge — and is meant to fire whenever a deletion of a branch, plan file, or spec change is about to happen, even without the word "cleanup". Or run `/session-cleanup`. Declares no `allowed-tools`/`disallowed-tools`: the never-rules are workflow discipline, not a tool restriction.
+
+**Use it for.** The end of a finished task, especially in a checkout that teammates or other agent sessions share. Also as a pre-flight check on any single deletion you are unsure about.
+
+**Triggers on phrases like.** "clean up after yourself", "tidy up the branches", "what's left over", "delete the plan file now it's done", "kill the background processes", "remove the scratch files".
+
+**What it does not do.** Delete anything it did not create — a stale branch, an implemented-looking plan, someone else's scratch file are all reported instead. Leave a work product of its own in the scratchpad: a report or dossier a skill wrote there is either deleted, when its facts are already recorded somewhere findable, or moved to a place with a reader as a change you approve, because nothing indexes a session's scratchpad and no later session reads it. Use `git add -A` or `git add .` (staging is by explicit path, because in a shared checkout a sweep picks up work nobody has read). Commit or discard uncommitted changes that belong to someone else. Trust `git branch -d` about a squash-merged branch. Delete a commit that exists on no remote branch. Delete a remote branch: `git push origin --delete` removes the copy that made the local delete reversible and takes the branch from everyone else, so cleanup deletes local refs only and the remote one is left to the user or to the merge platform. Free disk space on the machine (Temp folders, caches, Docker disks): that is [`windows-disk-cleanup`](#windows-disk-cleanup).
+
+**What it produces.** No files. A cleanup report in the chat: what was removed, what was kept and why, and anything at risk — including a mistake that was made and reversed, because a cleanup that quietly deleted and restored something looks identical to one that never erred.
+
+**Example.**
+
+```
+You: we're done — clean up
+Claude: Removed: agent/csv-import (squash-merged in #10 — `git branch -d`
+  refused it, but `git diff --stat` against develop is empty), 3 scratch
+  files under .scratch/csv-import/, the vitest watcher I started.
+
+  Kept: feature/legacy-rounding — fully contained in develop and looks
+  finished, but this session did not create it. Delete it with
+  `git branch -d feature/legacy-rounding` if you want it gone.
+
+  At risk: agent/notify-admin holds fafd2c2, which `git branch -r
+  --contains` places on no remote. Deleting that branch destroys those
+  246 lines, so I left it.
+```
+
+**Pairs with.** [`execute-change`](#execute-change), which stops after its local commits and leaves a ledger, a reports folder, a plan brief, and a run branch or worktree behind for you to remove. [`session-handoff`](#session-handoff), when the work is pausing rather than finished — hand it over before cleaning up, not after.
+
+**Install.**
+
+```
+npx skills add https://github.com/Mi9-LLC/agent-skills --skill session-cleanup
+```
+
+**Origin.** Written at Mi9 from one real session's cleanup phase on 2026-09-04, including its two mistakes: a branch deleted because it was merged rather than because it was ours, and a plan document deleted while it still read "Status: not started". Not adapted from an external project. The `description` was chosen by a three-variant A/B against real `.claude/skills` registration on 2026-09-04 (42 queries plus 11 re-checks, `claude-opus-5`): the shipped description, one with the proactive clause removed, and the current one, which leads with the use-when clause and carries do-NOT carve-outs naming `session-handoff`, `retro` and `/simplify`. All three scored 14/14 — every positive fired, all eight hard negatives stayed quiet — so the set found no difference between them and the current wording was adopted on a pre-registered tiebreak, not on a measured win. **The behaviour eval is still owed**: nothing has yet checked that the skill changes which things get deleted. Results and caveats in [`evals/session-cleanup/`](evals/session-cleanup/). The protected-branch list, the branch-name quoting rule and the dirty-worktree refusal were prompted by reading [`trailofbits/skills`](https://github.com/trailofbits/skills) `git-cleanup` (CC-BY-SA-4.0), which covers branches and worktrees more thoroughly than this skill did and covers ownership, files and processes not at all. Its wording is **not** reused: every rule here was rewritten from behavior verified against git in this session, so the skill stays MIT. That verification also produced the `-d`-succeeds-on-upstream case above, which their skill states and this one now demonstrates.
+
+**Full definition:** [`skills/session-cleanup/SKILL.md`](skills/session-cleanup/SKILL.md).
+
+---
+
+## `repo-change-summary`
+
+**What it does.** Answers "how much did this repo change in month X?" with one deterministic table. A bundled POSIX-shell script (`scripts/summary.sh`) runs a validated `git log` pipeline across **all branches** — each commit counted once, merge commits excluded from the line/file/commit counts — and reports lines added, lines deleted, total lines changed (added + deleted — churn, not net), files modified two ways (distinct, and summed across commits), commits, pull requests merged, and distinct authors. The script prints a finished Markdown table and writes a styled, self-contained HTML report; the model relays the table verbatim and never re-derives a number by hand. A companion script (`scripts/multi-summary.sh --group NAME`) does the same for a **named group of repos**, processing them in parallel (bounded to 4 at a time) — one combined report with a rollup table (totals row; authors counted as distinct people across the group, never the column sum; repos whose fetch failed marked `*`; repos ordered by total changed ascending, smallest first) followed by every repo's full table in that same order. Groups are machine-local `.list` files under `~/.claude/repo-change-summary-groups/` (one repo path per line), kept outside the skill because clone paths differ per machine. An optional `--per-author` flag appends a per-developer **activity** table (lines, files, commits, plus PRs authored-and-merged via the Bitbucket API — git merge commits credit the merger, not the author) — ordered by total changed ascending (a presentation choice, not a ranking), explicitly labeled activity-not-performance, with any developer's single dominating file (lockfile, generated code) called out in a footnote rather than hidden. Bot identities (built-in: Bitbucket Pipelines; extendable via `bot-emails.list`) are excluded from the developer table and footnoted with their commit count, while the repo rollup keeps every commit.
+
+**Requirements.** `git` and a POSIX shell (Git Bash on Windows works) — no other dependencies. By default the script runs `git fetch` first so remote-only branches are included; a fetch failure is non-fatal (falls back to local branches with a warning), or skip the fetch with `--no-fetch`. The `--per-author` PR column additionally needs Python 3.9+ and Bitbucket credentials already stored for git (`git credential fill`; set `BITBUCKET_EMAIL` if your git email isn't your Atlassian login) — without them the column is omitted with a note, everything else still works. Emailing the report (`--email`) additionally needs Python 3.9+, a locally-installed headless Chrome or Edge (to render the HTML report to PDF), and SMTP credentials in a `repo-change-summary.env` file (kept in `~/.claude/`) — without these the email flags are simply unavailable and the rest of the skill is unaffected.
+
+**How to run.** Auto-triggers on monthly change-volume asks, or run `/repo-change-summary`. `allowed-tools: Bash`; no `model:` pin, so it runs on the session's model. Flags: `--month YYYY-MM` (default: current month), `--repo PATH` (default: current directory), `--out DIR` (where the HTML report lands; default: current directory), `--no-fetch`, `--no-open` (don't open the report in a browser), `--exclude PATTERN` (repeatable; excludes a file from every count by basename, with `*`/`?` glob support — see "What it does not do" for the default-excluded list). Optional emailing: `--email`, `--to LIST` (implies `--email`), `--subject STR`, `--email-dry-run` (preview only, sends nothing), `--env-file PATH`, `--mailmap PATH` — always dry-run first; see "What it produces" and `skills/repo-change-summary/references/emailing.md`.
+
+**Use it for.** Monthly reporting numbers — "how many lines changed in June", "how many PRs did we merge last month", a churn snapshot for a status update.
+
+**Triggers on phrases like.** "how many lines changed this month", "how many files did we modify in June", "how many pull requests were merged last month", "repo churn for 2026-06", "diff volume in May", "monthly change summary", "generate the monthly change report / HTML summary", "give me the summary report for STF" (a named repo group).
+
+**What it does not do.** Count a commit twice because it sits on several branches, or count merge commits' diffs (merged work is never double-counted). Count stash entries, tag-only commits, reverts that quote a merge subject, commit bodies that merely discuss a PR, or the same PR number twice — PRs are counted as distinct numbers from platform merge markers (GitHub / Bitbucket incl. its squash merges / GitLab), so markerless squash- or rebase-merges are not counted. Split one person into two authors over a name spelling — `.mailmap` is respected. Report the net line delta — "total lines changed" is churn (added + deleted). Count lockfiles or CI config toward any total by default — `package-lock.json`, `yarn.lock`, `pnpm-lock.yaml`, `composer.lock`, `Gemfile.lock`, `Cargo.lock`, `poetry.lock`, `Pipfile.lock`, `go.sum`, `pubspec.lock`, and `bitbucket-pipelines.yml` are excluded from every count out of the box — the default list lives in a shared `scripts/exclude-lib.sh` that both scripts source; add more with repeatable `--exclude PATTERN`, matched by basename with `*`/`?` glob support (an exact match is the fast path, character classes are not supported, and matching is case-sensitive). Modify the repo — it only reads git history and writes the one HTML report to `--out`. Never commits or pushes.
+
+**What it produces.** A Markdown summary table in the conversation, plus a self-contained styled HTML report named `YYYY-MM-DD-HHMM-repo-change-summary-<month>.html` in the output directory, opened in the default browser (suppress with `--no-open`). In group mode: one combined Markdown summary (rollup + per-repo tables) and one combined HTML report named `…-repo-change-summary-<group>-<month>.html`, with inline-SVG bar charts (no JS/CDN — offline-portable): lines changed by repo, and per developer (lines + PRs authored) when `--per-author` is on. With `--email`, also a PDF of that HTML report attached to an email with a modern, email-safe HTML body rendering the same summary table (plain-text alternative: the raw Markdown) — always **preview-first**: `--email-dry-run` resolves recipients and builds the PDF without sending, and only a confirmed re-run actually sends.
+
+**Example.**
+
+```
+You: how many lines of code changed in this repo in June?
+→ June, 2026 — Repository change summary (all branches · each commit counted once ·
+  merges excluded): 12,480 added · 7,912 deleted · 20,392 total changed ·
+  214 distinct files · 532 file-touches · 187 commits · 23 PRs merged · 6 authors.
+  HTML report: ./2026-07-17-1512-repo-change-summary-2026-06.html
+```
+
+**Install.**
+
+```
+npx skills add https://github.com/Mi9-LLC/agent-skills --skill repo-change-summary
+```
+
+**Full definition:** [`skills/repo-change-summary/SKILL.md`](skills/repo-change-summary/SKILL.md) (plus the `summary.sh` script under `scripts/`).
+
+---
+
+## `windows-disk-cleanup`
+
+**What it does.** Finds what fills a Windows machine's disk, says what can be removed without harm and how, and checks the result after you run the commands. A bundled read-only PowerShell script (`scripts/Measure-DiskUsage.ps1`) measures the drive's free space, the `TEMP` and `TMP` variables, the largest folders in the user profile and `AppData` with both their reported size and the space they really take on disk, a list of known locations (package caches, crash dumps, Windows Setup logs, AI model folders, placeholder folders), large folders whose name matches no installed program, Docker and WSL virtual disks, and repeating Temp growth such as Visual Studio Installer copies. The skill then sorts every large item into five groups — safe to delete, caches, shrink (do not delete), your call, do not delete — and gives one command per item. It checks each claim before making it: a folder is called a leftover only after four checks (no installed program or Store package, no running process, no environment variable or PATH entry pointing into it, and no extension of an installed editor such as VS Code using it); the Temp folder is named by full path, because the user's `TEMP` variable can point to another folder; a folder this shell cannot read is reported as not checked, not as empty; a database server or Docker volume is looked inside before its removal is suggested. A second script (`scripts/Clear-DiskSpace.ps1`) deletes the safe groups in one run when you start it: items in `AppData\Local\Temp` older than 2 days, VS Code `workspaceStorage` folders unused for 60 days (this also deletes the VS Code chat history kept for those folders), the leftover folders passed in `-LeftoverPaths`, kernel crash dumps, and Windows Setup monitor logs. `-DryRun` shows the sizes without deleting; without it the script restarts itself elevated (one UAC prompt) for the two Windows folders. After you run the commands, the skill measures again and explains every item that did not change.
+
+**Requirements.** Windows with Windows PowerShell 5.1 or PowerShell 7. Admin rights only for the Windows folders (`LiveKernelReports`, `Panther\monitor`) and for the Docker disk shrink; everything else runs as the normal user.
+
+**How to run.** Auto-triggers on a request to free disk space or to check what can be removed, on a question about whether the folders an uninstalled program left behind can be deleted, or on pasted `du`, TreeSize or WinDirStat output with that question. Or run `/windows-disk-cleanup`. Declares no `allowed-tools`: the rule that the agent never deletes is workflow discipline, not a tool restriction.
+
+**Use it for.** A full system drive, or a check every few months of what has grown since the last one.
+
+**Triggers on phrases like.** "free up disk space", "what can I delete from C:", "what is taking all the space", "check what files and folders can be removed", "Cursor is uninstalled but its folders are still in my profile, can those go?", "I ran the commands, check again".
+
+**What it does not do.** Delete anything itself — it measures, explains, and hands over the commands, even when asked to run them. Delete a virtual disk (`.vhdx`), anything under `C:\Windows` other than crash dumps and setup logs, `C:\Windows\Installer`, restore points, or Docker volumes without listing them first. Clean up after a coding session in a repository (branches, scratch files, worktrees) — that is [`session-cleanup`](#session-cleanup). Work on Linux or macOS.
+
+**What it produces.** No files. A report in the chat: the five groups as tables with on-disk sizes, the commands (each marked when it needs an admin shell), what could not be checked and why, and after a re-check a before/after comparison with the reason for anything unchanged. The cleanup script is given by its full path in the installed skill's folder; nothing is copied.
+
+**Example.**
+
+```
+You: check what can be removed from C:
+Claude: Measured. Free: 1,075 GB of 1,661 GB.
+  Safe to delete: AppData\Local\Temp 159.9 GB (Visual Studio Installer
+  copies left by its BackgroundDownload task, and loose .node files).
+  Shrink: the Docker folder 122.5 GB (docker_data.vhdx) — quit Docker
+  Desktop first, then compact it.
+  Caches: pnpm 12.8 GB.
+  Note: your TEMP variable points to C:\Temp, not AppData\Local\Temp —
+  the commands below name the folder by full path.
+You: ran all of it, check again
+Claude: Free: 1,312 GB (+237). Temp 159.9 → 0.1 GB, Docker folder
+  122.5 → 53.9 GB, pnpm 12.8 → 7.9 GB; the other 3.7 GB is the net
+  change of smaller items. CrossDevice shows 54 GB but takes 0.04 GB on disk
+  (phone placeholders) — nothing to free there.
+```
+
+**Pairs with.** [`session-cleanup`](#session-cleanup), which cleans what a coding session left in a repository; this skill cleans the machine.
+
+**Install.**
+
+```
+npx skills add https://github.com/Mi9-LLC/agent-skills --skill windows-disk-cleanup
+```
+
+**Origin.** Written at Mi9 on 2026-11-05 from one real cleanup across two days, including its mistakes: a Temp command written as `$env:TEMP` cleaned `C:\Temp` instead of the 160 GB `AppData\Local\Temp`; a script path given to run before the script was copied there; a Docker disk shrink that could not work while Docker Desktop was running; and a 54 GB folder that turned out to be phone placeholders using 0.04 GB. Each became a rule. Not adapted from an external project. **Trigger sweep on 2026-11-06** (`evals/windows-disk-cleanup/`, 15 prompts, `claude-opus-5-5`, real registration, every run in `dontAsk` mode so no prompt could delete files): 6 of 7 positives loaded the skill and 8 of 8 hard negatives stayed quiet. "Delete the temp files on my C drive" went to this skill and the same words scoped to a repository's `.scratch` folder went to `session-cleanup`. The one miss, "Cursor is uninstalled but its folders are still in my user profile. Can those go?", stayed quiet in 3 of 3 runs, because the description did not name the leftover folders of an uninstalled program. The description gained that clause, and a second sweep the same day (17 prompts, adding a second leftover wording and an uninstall-question negative) scored 8 of 8 positives and 9 of 9 hard negatives, with the Cursor prompt loading the skill in 3 of 3 runs. **The skill's behavior once loaded has not been measured.**
+
+**Full definition:** [`skills/windows-disk-cleanup/SKILL.md`](skills/windows-disk-cleanup/SKILL.md) (plus the locations and procedures under `references/` and the two scripts under `scripts/`).
 
 ---
 
