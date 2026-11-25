@@ -26,8 +26,8 @@ runs the commands. Two bundled scripts:
   `-DryRun`. It restarts itself elevated for the two Windows folders.
 
 `references/locations.md` holds what each location is and the exact procedures (Docker shrink,
-Visual Studio Installer task, second database server, Chrome model, placeholders, never-delete
-list). **Read the section for a location before recommending anything about it.**
+Visual Studio Installer task, second database server, Chrome model, OneDrive files kept on this
+PC, placeholders, never-delete list). **Read the section for a location before recommending anything about it.**
 
 ## Rules
 

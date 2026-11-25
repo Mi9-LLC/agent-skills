@@ -14,6 +14,7 @@ location before you recommend anything about it. Every command here is for the u
 - [Visual Studio Installer copies in Temp](#visual-studio-installer-copies-in-temp)
 - [A second database server version](#a-second-database-server-version)
 - [Chrome on-device AI model](#chrome-on-device-ai-model)
+- [OneDrive files kept on this PC](#onedrive-files-kept-on-this-pc)
 - [Folders that report more than they use](#folders-that-report-more-than-they-use)
 - [Never delete](#never-delete)
 
@@ -173,6 +174,22 @@ AI model. Deleting it alone does not last: Chrome downloads it again. Stop the d
 Then delete the folder if it is still there. To check whether a flag is set, read
 `enabled_labs_experiments` in `User Data\Local State`; an empty list means none is.
 
+## OneDrive files kept on this PC
+
+When a OneDrive folder's on-disk size is close to its reported size, its files are downloaded to
+this PC. Making them online-only frees that space; the files stay in OneDrive and download again
+when opened (needs internet). Check the file attributes first: `0x80000` (pinned, "Always keep on
+this device") and `0x100000` (unpinned), `0x400000` (online-only). The user first checks that the
+OneDrive tray icon says it is up to date.
+
+```powershell
+attrib +U -P "C:\Users\<user>\OneDrive\<folder>\*" /S /D
+```
+
+**The `\*` is required.** Without it, `/S` searches for items *named* `<folder>`, so only the folder
+itself is marked and no file inside it changes. OneDrive then removes the local copies over a few
+minutes. Re-measure the files' on-disk size and the count with `0x400000` to confirm.
+
 ## Folders that report more than they use
 
 Always compare the reported size with the on-disk size before recommending anything.
@@ -180,7 +197,9 @@ Always compare the reported size with the on-disk size before recommending anyth
 - `~\CrossDevice\<phone name>` — Windows shows a linked phone's files in File Explorer as cloud
   placeholders. It can report tens of GB while using almost nothing. Deleting it frees nothing;
   the feature is turned off in Settings → Bluetooth & devices → Mobile devices.
-- OneDrive and Google Drive folders with files-on-demand — same placeholder behavior.
+- OneDrive and Google Drive folders with files-on-demand — same placeholder behavior. A OneDrive
+  folder whose on-disk size is close to its reported size holds downloaded files instead; see
+  [OneDrive files kept on this PC](#onedrive-files-kept-on-this-pc).
 - `C:\Windows\WinSxS` — files are hard-linked into `System32`, so a folder sum counts them twice.
   The on-disk size counts them twice too: Windows reports the full size for every link, so the
   two columns agree and do not show the double count. Never delete from it by hand. Measure it properly and clean it with (admin):
