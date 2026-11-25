@@ -182,8 +182,21 @@ when opened (needs internet). Check the file attributes first: `0x80000` (pinned
 this device") and `0x100000` (unpinned), `0x400000` (online-only). The user first checks that the
 OneDrive tray icon says it is up to date.
 
+Find the OneDrive folders before anything else; do not assume `C:\Users\<user>\OneDrive`. The
+OneDrive app records each account's folder as `UserFolder` in the registry, and `$env:OneDrive`
+names only one of them. This lists the folders that exist:
+
 ```powershell
-attrib +U -P "C:\Users\<user>\OneDrive\<folder>\*" /S /D
+Get-ChildItem 'HKCU:\Software\Microsoft\OneDrive\Accounts' -ErrorAction SilentlyContinue |
+    ForEach-Object { (Get-ItemProperty $_.PSPath).UserFolder } |
+    Where-Object { $_ -and (Test-Path -LiteralPath $_) }
+```
+
+If it lists nothing, there is no OneDrive folder: report that and skip this section. Otherwise give
+the command only for a folder it listed:
+
+```powershell
+attrib +U -P "<OneDrive folder>\<folder>\*" /S /D
 ```
 
 **The `\*` is required.** Without it, `/S` searches for items *named* `<folder>`, so only the folder
